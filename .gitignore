@@ -1,0 +1,9 @@
+node_modules/
+*.tgz
+.DS_Store
+# local state is never part of the project
+settings.json
+state.json
+vault.enc.json
+vault.key*
+.claude/

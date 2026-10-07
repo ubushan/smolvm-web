@@ -1,0 +1,14 @@
+{
+  "name": "smolvm-web",
+  "version": "0.3.0",
+  "description": "Web UI for smolvm microVMs (talks to `smolvm serve`)",
+  "license": "Apache-2.0",
+  "private": true,
+  "bin": { "smolvm-web": "server.js" },
+  "files": ["server.js", "lib", "public", "start.cmd", "start.sh", "INSTALL.md"],
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js --autostart"
+  },
+  "engines": { "node": ">=18" }
+}

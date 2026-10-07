@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>smolvm web</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='4' y='6' width='24' height='20' rx='4' fill='%236d5dfc'/><rect x='9' y='12' width='5' height='3' rx='1' fill='white'/><rect x='17' y='12' width='6' height='3' rx='1' fill='white'/></svg>">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <span>smolvm</span><span class="muted">web</span>
+    </div>
+    <div id="health" class="health"><span class="dot"></span><span>подключение…</span></div>
+    <button id="proxy-chip" class="chip" hidden title="Настройки сети и прокси"></button>
+    <div class="spacer"></div>
+    <button id="btn-vault" class="btn ghost" title="Хранилище секретов и API-ключей">🔑 Секреты</button>
+    <button id="btn-settings" class="btn ghost icon" title="Сеть, прокси и сертификаты">⚙</button>
+    <button id="btn-theme" class="btn ghost icon" title="Тема">◐</button>
+    <button id="btn-create" class="btn primary">+ Новая машина</button>
+  </header>
+
+  <section id="capacity" class="capacity"></section>
+
+  <main class="layout">
+    <section class="panel list-panel">
+      <div class="panel-head">
+        <h2>Машины</h2>
+        <input id="filter" class="input small" placeholder="Фильтр…" autocomplete="off">
+        <button id="btn-refresh" class="btn ghost icon" title="Обновить">↻</button>
+      </div>
+      <div id="machines" class="machines"></div>
+    </section>
+
+    <section class="panel detail-panel" id="detail">
+      <div class="empty-state">
+        <div class="big">◇</div>
+        <p>Выберите машину слева или создайте новую.</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- Create machine -->
+  <dialog id="dlg-create" class="dialog">
+    <form id="form-create" method="dialog">
+      <header><h3>Новая машина</h3><button type="button" class="btn ghost icon" data-close>✕</button></header>
+      <div class="dialog-body">
+        <div class="grid2">
+          <label>Имя<input name="name" class="input" placeholder="dev" pattern="[A-Za-z0-9][A-Za-z0-9_.\-]*"></label>
+          <label>Образ (OCI)<input name="image" class="input" placeholder="alpine" value="alpine" list="image-suggest"></label>
+        </div>
+        <datalist id="image-suggest">
+          <option value="alpine"><option value="ubuntu:24.04"><option value="debian:bookworm-slim">
+          <option value="python:3.12-alpine"><option value="node:22-alpine"><option value="golang:1.23-alpine">
+        </datalist>
+        <div class="grid3">
+          <label>vCPU<input name="cpus" type="number" min="1" max="64" class="input" placeholder="4"></label>
+          <label>Память, MiB<input name="memoryMb" type="number" min="128" step="128" class="input" placeholder="8192"></label>
+          <label>Хранилище, GiB<input name="storageGb" type="number" min="1" class="input" placeholder="20"></label>
+        </div>
+        <div class="row checks">
+          <label class="check"><input type="checkbox" name="network" checked> Сеть (egress)</label>
+          <label class="check"><input type="checkbox" name="startAfter" checked> Запустить сразу</label>
+          <label class="check"><input type="checkbox" name="branchable"> Branchable</label>
+          <label class="check" id="create-proxy-wrap" hidden><input type="checkbox" name="useProxy" checked> Через корпоративный прокси</label>
+        </div>
+        <label>Команда workload (cmd)
+          <input name="cmd" class="input mono" placeholder="sh -c 'while true; do sleep 3600; done'">
+          <small class="muted">Пусто — для образов вроде python/node подставится «вечный» sleep, чтобы машина не завершилась сразу.</small>
+        </label>
+
+        <div id="create-secrets-wrap" hidden>
+          <div class="label-like">Секреты <span class="muted small">(ключи не попадают в машину — см. «🔑 Секреты»)</span></div>
+          <div id="create-secrets" class="secret-picks"></div>
+        </div>
+
+        <details>
+          <summary>Дополнительно</summary>
+          <label>Порты (host:guest, через запятую)<input name="ports" class="input mono" placeholder="8080:80, 2222:22"></label>
+          <label>Переменные окружения (KEY=VALUE, по строке)<textarea name="env" class="input mono" rows="3" placeholder="FOO=bar"></textarea></label>
+          <label>Монтирования (host:guest[:ro], по строке)<textarea name="mounts" class="input mono" rows="2" id="mounts-input" placeholder="/Users/me/project:/work"></textarea></label>
+          <label>Разрешённые хосты egress (через запятую)<input name="allowedHosts" class="input mono" placeholder="registry.npmjs.org, pypi.org"></label>
+          <div class="grid2">
+            <label>Рабочая директория<input name="workdir" class="input mono" placeholder="/work"></label>
+            <label>Overlay, GiB<input name="overlayGb" type="number" min="1" class="input" placeholder="10"></label>
+          </div>
+          <label>Restart policy
+            <select name="restart" class="input">
+              <option value="">— по умолчанию —</option>
+              <option>never</option><option>always</option><option>on-failure</option><option>unless-stopped</option>
+            </select>
+          </label>
+        </details>
+        <div id="create-error" class="error" hidden></div>
+      </div>
+      <footer>
+        <button type="button" class="btn ghost" data-close>Отмена</button>
+        <button type="submit" class="btn primary" id="btn-create-submit">Создать</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- Branch -->
+  <dialog id="dlg-branch" class="dialog small">
+    <form id="form-branch" method="dialog">
+      <header><h3>Ветка от <span id="branch-src"></span></h3><button type="button" class="btn ghost icon" data-close>✕</button></header>
+      <div class="dialog-body">
+        <label>Имя новой машины<input name="name" class="input" required></label>
+        <label class="check"><input type="checkbox" name="branchable"> Сделать ветку тоже branchable</label>
+        <label class="check"><input type="checkbox" name="freezeSource"> Заморозить источник</label>
+        <p class="muted small">Copy-on-write клон работающей машины: память, процессы и диски продолжат работу с той же точки. Источник должен быть запущен с флагом branchable.</p>
+        <div id="branch-error" class="error" hidden></div>
+      </div>
+      <footer>
+        <button type="button" class="btn ghost" data-close>Отмена</button>
+        <button type="submit" class="btn primary">Создать ветку</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- Confirm -->
+  <dialog id="dlg-confirm" class="dialog small">
+    <form method="dialog">
+      <header><h3 id="confirm-title">Подтверждение</h3></header>
+      <div class="dialog-body"><p id="confirm-text"></p>
+        <label class="check" id="confirm-force-wrap" hidden><input type="checkbox" id="confirm-force"> Принудительно (force)</label>
+      </div>
+      <footer>
+        <button value="cancel" class="btn ghost">Отмена</button>
+        <button value="ok" class="btn danger" id="confirm-ok">Удалить</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- Network / proxy settings -->
+  <dialog id="dlg-settings" class="dialog">
+    <form id="form-settings" method="dialog">
+      <header><h3>Сеть, прокси и сертификаты</h3><button type="button" class="btn ghost icon" data-close>✕</button></header>
+      <div class="dialog-body">
+        <p class="muted small">Для работы за корпоративным прокси без прямого доступа в интернет: образы, <code>pip</code>, <code>npm</code>, <code>apk</code>/<code>apt</code>, <code>git</code>, <code>curl</code> внутри машин будут ходить через прокси.</p>
+        <label class="check"><input type="checkbox" name="proxyEnabled"> <b>Использовать прокси</b></label>
+        <div class="grid-proxy">
+          <label>Адрес прокси<input name="proxyUrl" class="input mono" placeholder="http://proxy.corp.local:3128" autocomplete="off" spellcheck="false">
+            <small class="muted">Можно с логином: <code>http://user:pass@proxy:8080</code>. Для NTLM/Kerberos используйте локальный cntlm или px.</small>
+          </label>
+          <div class="row">
+            <button type="button" class="btn" id="btn-proxy-detect">Определить автоматически</button>
+            <button type="button" class="btn" id="btn-proxy-test">Проверить</button>
+          </div>
+        </div>
+        <div id="proxy-detect-out" class="small" hidden></div>
+        <div id="proxy-test-out" class="small" hidden></div>
+        <label>Без прокси (NO_PROXY, через запятую)<input name="noProxy" class="input mono" placeholder=".corp.local, 10.0.0.0/8, nexus.corp.local"></label>
+        <div class="checks-col">
+          <label class="check"><input type="checkbox" name="proxyPull"> Скачивать образы через прокси <span class="muted small">(запуск идёт через <code>smolvm machine start --proxy</code>)</span></label>
+          <label class="check"><input type="checkbox" name="proxyExec"> Передавать прокси в команды консоли и API exec</label>
+          <label class="check"><input type="checkbox" name="proxyProvision"> Настраивать машину после запуска <span class="muted small">(profile.d, pip.conf, npmrc, apt, git)</span></label>
+        </div>
+
+        <hr>
+        <label class="check"><input type="checkbox" name="caEnabled"> <b>Доверять корпоративным сертификатам</b> <span class="muted small">(TLS-инспекция на прокси)</span></label>
+        <label class="check"><input type="checkbox" name="caSystem"> Добавить сертификаты, которым доверяет этот компьютер <span class="muted small" id="ca-system-hint"></span></label>
+        <label>Корневой сертификат: PEM-текст или путь к файлу .pem/.crt/.cer на этом компьютере
+          <textarea name="caPem" class="input mono" rows="4" placeholder="-----BEGIN CERTIFICATE-----&#10;…&#10;-----END CERTIFICATE-----"></textarea>
+        </label>
+        <label class="check"><input type="checkbox" name="caReplace"> Заменить системный bundle в машине <span class="muted small">(чтобы доверяли apk, apt, curl, wget)</span></label>
+        <div id="ca-out" class="small muted"></div>
+        <div id="settings-error" class="error" hidden></div>
+        <p class="muted small">Новые настройки применяются к следующим запускам. Для уже запущенной машины нажмите «Применить прокси» в её карточке.</p>
+      </div>
+      <footer>
+        <button type="button" class="btn ghost" data-close>Отмена</button>
+        <button type="submit" class="btn primary">Сохранить</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- Vault -->
+  <dialog id="dlg-vault" class="dialog wide">
+    <div class="dlg-wrap">
+      <header><h3>🔑 Хранилище секретов</h3><button type="button" class="btn ghost icon" data-close>✕</button></header>
+      <div class="dialog-body">
+        <div id="vault-status" class="small muted"></div>
+        <div id="vault-list"></div>
+        <div class="row"><button type="button" class="btn primary" id="btn-secret-add">+ Добавить секрет</button></div>
+
+        <form id="form-secret" hidden autocomplete="off">
+          <hr>
+          <div class="grid2">
+            <label>Шаблон
+              <select name="preset" class="input">
+                <option value="">— свой —</option>
+                <option value="deepseek">DeepSeek</option>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="gemini">Google Gemini</option>
+                <option value="github">GitHub</option>
+              </select>
+            </label>
+            <label>Имя секрета<input name="name" class="input mono" required pattern="[A-Za-z0-9_.\-]{1,64}" placeholder="deepseek"></label>
+          </div>
+
+          <div class="label-like">Как передавать в машину</div>
+          <div class="modes">
+            <label class="mode"><input type="radio" name="mode" value="gateway">
+              <span><b>Шлюз smolvm-web</b> <span class="tag ok">безопасно</span> <span class="tag">работает через корп. прокси</span><br>
+              <span class="muted small">Машина получает токен-заглушку и <code>BASE_URL</code> шлюза на хосте. Шлюз подменяет токен на ключ и отправляет запрос к API (через прокси, если он настроен).</span></span></label>
+            <label class="mode"><input type="radio" name="mode" value="substitute">
+              <span><b>Подстановка smolvm</b> <span class="tag ok">безопасно</span> <span class="tag warn">нужен прямой интернет</span><br>
+              <span class="muted small">Родной механизм smolvm: в переменной лежит заглушка, ключ подставляется хостом в HTTPS-заголовок только к указанным хостам. Задаётся при создании машины; корпоративный прокси не поддерживается.</span></span></label>
+            <label class="mode"><input type="radio" name="mode" value="env">
+              <span><b>Переменная окружения</b> <span class="tag bad">машина видит значение</span><br>
+              <span class="muted small">Значение передаётся в команды консоли/exec как есть. Только для того, что программа должна прочитать сама (URL БД и т.п.).</span></span></label>
+          </div>
+
+          <div class="grid2">
+            <label>Переменная для ключа<input name="envVar" class="input mono" required placeholder="DEEPSEEK_API_KEY"></label>
+            <label data-mode="gateway">Переменная для base URL<input name="baseUrlVar" class="input mono" placeholder="DEEPSEEK_BASE_URL"></label>
+          </div>
+          <label data-mode="gateway">URL API (куда шлюз отправляет запросы)<input name="upstream" class="input mono" placeholder="https://api.deepseek.com"></label>
+          <label data-mode="substitute">Разрешённые хосты (точные имена, через запятую)<input name="hosts" class="input mono" placeholder="api.deepseek.com"></label>
+          <label data-mode="gateway substitute">Разрешённые HTTP-методы <span class="muted small">(пусто — все)</span><input name="methods" class="input mono" placeholder="GET, POST"></label>
+          <label>Значение
+            <input name="value" type="password" class="input mono" placeholder="sk-…" autocomplete="new-password" spellcheck="false">
+            <small class="muted" id="secret-value-hint">Хранится зашифрованным (AES-256-GCM), ключ — в хранилище ОС. Обратно в интерфейс не выдаётся.</small>
+          </label>
+          <label>Заметка<input name="note" class="input" maxlength="200" placeholder="для агента в машине agent-1"></label>
+          <div id="secret-error" class="error" hidden></div>
+          <div class="row">
+            <button type="button" class="btn ghost" id="btn-secret-cancel">Отмена</button>
+            <button type="submit" class="btn primary">Сохранить секрет</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </dialog>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
