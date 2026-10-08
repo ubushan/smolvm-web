@@ -1,6 +1,6 @@
 {
   "name": "smolvm-web",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Web UI for smolvm microVMs (talks to `smolvm serve`)",
   "license": "Apache-2.0",
   "private": true,

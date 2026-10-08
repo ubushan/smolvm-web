@@ -21,6 +21,12 @@ function h(tag, attrs = {}, ...children) {
   return el;
 }
 
+// replaceChildren that skips null/false like h() does.
+function fill(el, ...children) {
+  el.replaceChildren(...children.flat().filter((c) => c != null && c !== false));
+  return el;
+}
+
 function fmtMb(mb) {
   if (mb == null) return '—';
   return mb >= 1024 ? `${(mb / 1024).toFixed(mb % 1024 ? 1 : 0)} GiB` : `${mb} MiB`;
@@ -264,10 +270,14 @@ async function action(name, label, fn, okMsg) {
 const actions = {
   start: (m, branchable) => action(m.name, state.info?.proxyActive ? 'запуск (прокси)…' : 'запуск…', async () => {
     const r = await api('POST', `/api/v1/machines/${enc(m.name)}/start${branchable ? '?branchable=true' : ''}`, {});
-    reportProvision(m.name, r?._webProvision);
-    for (const w of r?._webWarnings || []) toast(`${m.name}: ${w}`, 'err');
+    reportStart(m.name, r);
     return r;
   }, `${m.name} запущена`),
+  restart: (m) => action(m.name, 'перезапуск…', async () => {
+    const r = await api('POST', `/ui/machines/${enc(m.name)}/restart`, {});
+    reportStart(m.name, r);
+    return r;
+  }, `${m.name} перезапущена`),
   async provision(m) {
     await action(m.name, 'настройка…', async () => {
       const r = await api('POST', `/ui/machines/${enc(m.name)}/provision`, {});
@@ -295,6 +305,21 @@ const actions = {
     $('#dlg-branch').showModal();
   },
 };
+
+function reportStart(name, r) {
+  reportProvision(name, r?._webProvision);
+  for (const w of r?._webWarnings || []) toast(`${name}: ${w}`, 'err');
+  if (r?._webPrepared?.length) toast(`${name}: применено перед запуском — ${r._webPrepared.join('; ')}`, 'ok');
+  reportDirs(name, r?._webDirs);
+}
+
+function reportDirs(name, d) {
+  if (!d) return;
+  for (const e of d.errors || []) toast(`${name}: директории — ${e}`, 'err');
+  for (const w of d.warnings || []) toast(`${name}: ${w}`);
+  if (d.users?.length) toast(`${name}: созданы пользователи ${d.users.join(', ')}`, 'ok');
+  if (d.aclInstalled) toast(`${name}: установлен пакет acl`, 'ok');
+}
 
 function reportProvision(name, p, explicit) {
   if (!p) return;
@@ -474,9 +499,32 @@ async function tabOverview(body, m) {
       h('label', { class: 'check' }, toggle, ' Использовать прокси и корпоративные сертификаты'),
       h('span', { class: 'muted small' }, mp.provisioned ? 'настройки записаны в машину' : 'в машину ещё не записаны')));
   }
+  await renderMachineIsolation(body, m);
   await renderMachineSecrets(body, m);
   body.append(h('div', { class: 'section-title' }, 'JSON'));
   body.append(h('pre', { class: 'json' }, JSON.stringify(info, null, 2)));
+}
+
+// Egress filter and directories at a glance, with links to their pages.
+async function renderMachineIsolation(body, m) {
+  let eg = null; let dv = null;
+  try { [eg, dv] = await Promise.all([api('GET', '/ui/egress'), api('GET', `/ui/machines/${enc(m.name)}/dirs`)]); } catch { return; }
+  if (current()?.name !== m.name || state.tab !== 'overview') return;
+  const em = eg.machines[m.name];
+  const lists = (em?.lists || []).map((id) => eg.lists.find((l) => l.id === id)?.name).filter(Boolean);
+  body.append(h('div', { class: 'section-title' }, 'Изоляция'));
+  body.append(h('div', { class: 'iso-grid' },
+    h('div', { class: 'iso' },
+      h('div', {}, h('b', {}, '🌐 Интернет: '), em?.enabled
+        ? h('span', { class: 'tag ok' }, em.strict ? 'только allow list (жёстко)' : 'allow list')
+        : h('span', { class: 'tag warn' }, 'без фильтра smolvm-web')),
+      em?.enabled ? h('div', { class: 'muted small' }, `Списки: ${lists.join(', ') || '—'}; своих правил: ${em.rules.length}`) : null,
+      h('a', { href: `#/egress?machine=${enc(m.name)}`, class: 'small' }, 'Настроить allow list →')),
+    h('div', { class: 'iso' },
+      h('div', {}, h('b', {}, '📁 Директории: '), dv.dirs.length ? `${dv.dirs.length} (${dv.dirs.map((d) => d.guestPath).join(', ')})` : 'не подключены'),
+      dv.users.length ? h('div', { class: 'muted small' }, `Пользователи: ${dv.users.map((u) => u.name).join(', ')}`) : null,
+      dv.pending.add.length || dv.pending.remove.length ? h('div', { class: 'small warnc' }, 'Монтирования изменятся при следующем запуске') : null,
+      h('a', { href: `#/dirs?machine=${enc(m.name)}`, class: 'small' }, 'Права пользователей →'))));
 }
 
 // --- console (exec over SSE)
@@ -774,6 +822,7 @@ function openCreate() {
   if (!f.name.value) f.name.placeholder = `vm-${Math.random().toString(36).slice(2, 7)}`;
   $('#create-proxy-wrap').hidden = !state.info?.proxyActive;
   fillCreateSecrets();
+  fillCreateIsolation();
   $('#dlg-create').showModal();
   f.name.focus();
 }
@@ -835,6 +884,11 @@ function buildCreateBody(f) {
   if (f.restart.value) body.restart = { policy: f.restart.value };
   const picked = [...document.querySelectorAll('#create-secrets input:checked')].map((i) => i.value);
   if (picked.length) body._webSecrets = picked;
+  if (f.egressOn.checked) {
+    body._webEgress = { enabled: true, strict: f.egressStrict.checked, lists: [...document.querySelectorAll('#create-egress-lists input:checked')].map((i) => i.value) };
+  }
+  const dirsPicked = [...document.querySelectorAll('#create-dirs input:checked')].map((i) => i.value);
+  if (dirsPicked.length) body._webDirs = dirsPicked;
   return body;
 }
 
@@ -1119,6 +1173,27 @@ $('#form-secret').addEventListener('submit', async (e) => {
   } catch (ex) { err.textContent = ex.message; err.hidden = false; }
 });
 
+async function fillCreateIsolation() {
+  const f = $('#form-create');
+  let eg = { lists: [], defaults: {} }; let dd = { dirs: [] };
+  try { [eg, dd] = await Promise.all([api('GET', '/ui/egress'), api('GET', '/ui/dirs')]); } catch {}
+  f.egressOn.checked = !!eg.defaults?.enabled;
+  f.egressStrict.checked = !!eg.defaults?.strict;
+  syncCreateEgress();
+  $('#create-egress-lists').replaceChildren(...eg.lists.map((l) => h('label', { class: 'check' },
+    h('input', { type: 'checkbox', value: l.id, checked: l.default }), ` ${l.name} `, h('span', { class: 'muted small' }, `(${l.rules.length})`))));
+  $('#create-dirs-wrap').hidden = !dd.dirs.length;
+  $('#create-dirs').replaceChildren(...dd.dirs.map((d) => h('label', { class: 'check', title: d.hostPath },
+    h('input', { type: 'checkbox', value: d.id }), ` ${d.id} → ${d.guestPath} `, h('span', { class: `tag ${d.ceiling === 'rw' ? 'warn' : 'ok'}` }, d.ceiling))));
+}
+function syncCreateEgress() {
+  const on = $('#form-create').egressOn.checked;
+  $('#create-egress').hidden = !on;
+  // The filter itself goes out through the corporate proxy.
+  $('#create-proxy-wrap').hidden = on || !state.info?.proxyActive;
+}
+$('#form-create').egressOn.addEventListener('change', syncCreateEgress);
+
 async function fillCreateSecrets() {
   const wrap = $('#create-secrets-wrap');
   const box = $('#create-secrets');
@@ -1175,6 +1250,26 @@ $('#btn-theme').addEventListener('click', () => {
   applyTheme(next);
 });
 
+// ---------- pages ----------
+const pages = {}; // id -> { render(el, params), leave() }
+let pageCleanup = null;
+function routeParams() {
+  const m = location.hash.match(/^#\/(\w*)(?:\?(.*))?$/);
+  return { page: (m && m[1]) || 'machines', params: new URLSearchParams((m && m[2]) || '') };
+}
+function route() {
+  const { page, params } = routeParams();
+  const id = pages[page] ? page : 'machines';
+  if (pageCleanup) { try { pageCleanup(); } catch {} pageCleanup = null; }
+  state.page = id;
+  $('#page-machines').hidden = id !== 'machines';
+  $('#capacity').hidden = id !== 'machines';
+  for (const k of Object.keys(pages)) $(`#page-${k}`).hidden = k !== id;
+  document.querySelectorAll('#pagenav a').forEach((a) => a.classList.toggle('active', a.dataset.page === id));
+  if (id !== 'machines') pageCleanup = pages[id].render($(`#page-${id}`), params) || null;
+}
+window.addEventListener('hashchange', route);
+
 // ---------- loop ----------
 let ticking = false;
 async function tick() {
@@ -1187,6 +1282,6 @@ async function tick() {
     if (state.healthy && (!wasHealthy || $('#detail').dataset.name !== (state.selected || '')) && current()) renderDetail();
   } finally { ticking = false; }
 }
-refreshInfo().then(tick);
+refreshInfo().then(tick).then(route);
 setInterval(() => { if (!document.hidden) tick(); }, 3000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });

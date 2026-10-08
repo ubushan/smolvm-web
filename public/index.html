@@ -13,6 +13,11 @@
       <span class="logo" aria-hidden="true"></span>
       <span>smolvm</span><span class="muted">web</span>
     </div>
+    <nav class="pagenav" id="pagenav">
+      <a href="#/" data-page="machines">Машины</a>
+      <a href="#/egress" data-page="egress" title="Allow list ресурсов интернета для машин">🌐 Интернет</a>
+      <a href="#/dirs" data-page="dirs" title="Разрешённые директории хоста и права пользователей">📁 Директории</a>
+    </nav>
     <div id="health" class="health"><span class="dot"></span><span>подключение…</span></div>
     <button id="proxy-chip" class="chip" hidden title="Настройки сети и прокси"></button>
     <div class="spacer"></div>
@@ -24,7 +29,7 @@
 
   <section id="capacity" class="capacity"></section>
 
-  <main class="layout">
+  <main class="layout" id="page-machines">
     <section class="panel list-panel">
       <div class="panel-head">
         <h2>Машины</h2>
@@ -41,6 +46,9 @@
       </div>
     </section>
   </main>
+
+  <main class="page" id="page-egress" hidden></main>
+  <main class="page" id="page-dirs" hidden></main>
 
   <!-- Create machine -->
   <dialog id="dlg-create" class="dialog">
@@ -70,6 +78,19 @@
           <input name="cmd" class="input mono" placeholder="sh -c 'while true; do sleep 3600; done'">
           <small class="muted">Пусто — для образов вроде python/node подставится «вечный» sleep, чтобы машина не завершилась сразу.</small>
         </label>
+
+        <div class="isolation">
+          <div class="label-like">Изоляция агента</div>
+          <label class="check"><input type="checkbox" name="egressOn"> Интернет только по allow list <span class="muted small">(egress-фильтр smolvm-web, см. «🌐 Интернет»)</span></label>
+          <div id="create-egress" class="sub" hidden>
+            <div id="create-egress-lists" class="secret-picks"></div>
+            <label class="check"><input type="checkbox" name="egressStrict"> Жёсткая изоляция <span class="muted small">— машине доступен только хост, обойти фильтр нельзя</span></label>
+          </div>
+          <div id="create-dirs-wrap" hidden>
+            <div class="label-like">Директории хоста <span class="muted small">(права пользователей — на странице «📁 Директории»)</span></div>
+            <div id="create-dirs" class="secret-picks"></div>
+          </div>
+        </div>
 
         <div id="create-secrets-wrap" hidden>
           <div class="label-like">Секреты <span class="muted small">(ключи не попадают в машину — см. «🔑 Секреты»)</span></div>
@@ -241,5 +262,7 @@
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
   <script src="/app.js"></script>
+  <script src="/egress.js"></script>
+  <script src="/dirs.js"></script>
 </body>
 </html>

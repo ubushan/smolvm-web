@@ -21,6 +21,8 @@ const up = require('./lib/upstream');
 const mc = require('./lib/machines');
 const vault = require('./lib/vault');
 const gateway = require('./lib/gateway');
+const egress = require('./lib/egress');
+const dirs = require('./lib/dirs');
 
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 7777);
@@ -117,16 +119,99 @@ function forward(req, res, bodyBuf) {
   else req.pipe(upReq);
 }
 
+// ---------- start ----------
+async function startMachine(name, { apiPath, body = {}, branchable = false }) {
+  const fail = (status, error, code) => Object.assign(new Error(error), { status, code });
+  let prepared;
+  try { prepared = await mc.prepareStart(name); } catch (e) { throw fail(400, `подготовка к запуску: ${e.message}`, 'PREPARE_FAILED'); }
+  let plan;
+  try { plan = await mc.startPlan(name); } catch (e) { throw fail(400, e.message, 'BAD_PROXY'); }
+  // The CLI cannot pass registryAuth/egressInterceptor or CUDA pool parameters.
+  const viaCli = plan.viaCli && !/[?&](forkPoolSize|branchPoolSize|cudaVramLimitMib)=/.test(apiPath) && !Object.keys(body).length;
+  if (plan.proxy?.egress) await egress.start();
+
+  let info;
+  try {
+    await mc.pushCredentialValues(name, plan.native);
+    if (viaCli) info = await mc.startViaCli(name, { branchable, proxy: plan.proxy });
+    else {
+      const r = await up.request('POST', apiPath, body);
+      if (r.status !== 200) throw Object.assign(new Error(r.data?.error || `HTTP ${r.status}`), { status: r.status, body: r.data });
+      info = r.data;
+    }
+  } catch (e) {
+    if (e.body) throw e;
+    throw fail(e.status || 500, `${viaCli ? 'запуск через smolvm CLI' : 'запуск'}: ${e.message}`, 'START_FAILED');
+  }
+  if (plan.warnings.length) info._webWarnings = plan.warnings;
+  if (prepared.length) info._webPrepared = prepared;
+  try {
+    const pr = await mc.provision(name);
+    if (!pr.skipped) info._webProvision = { ok: true, ...pr };
+  } catch (e) {
+    info._webProvision = { ok: false, error: e.message };
+  }
+  try {
+    const dr = await mc.provisionDirs(name);
+    if (!dr.skipped) info._webDirs = dr;
+  } catch (e) {
+    info._webDirs = { errors: [e.message], warnings: [], users: [] };
+  }
+  return info;
+}
+
+async function machineState(name) {
+  const r = await up.request('GET', `/api/v1/machines/${encodeURIComponent(name)}`);
+  return r.status === 200 ? r.data.state : null;
+}
+
 // ---------- proxy-aware intercepts ----------
 const M = '/api/v1/machines/([^/?]+)';
 const ROUTES = [
-  // Create: proxy env into the workload, secrets bound to the machine, per-machine proxy opt-out.
+  // Create: proxy (or egress-filter) env into the workload, secrets bound to
+  // the machine, directory views mounted, per-machine proxy opt-out.
   ['POST', /^\/api\/v1\/machines$/, async (req, res, _m, url) => {
     const body = await readJson(req);
     const useProxy = url.searchParams.get('webProxy') !== '0';
     const secretNames = Array.isArray(body._webSecrets) ? body._webSecrets.map(String) : [];
-    delete body._webSecrets;
-    if (useProxy) {
+    const eg = body._webEgress && typeof body._webEgress === 'object' ? body._webEgress : null;
+    const dirIds = Array.isArray(body._webDirs) ? body._webDirs.map(String) : [];
+    delete body._webSecrets; delete body._webEgress; delete body._webDirs;
+    try { dirs.checkFreeMounts(body.mounts); } catch (e) { return sendJson(res, 400, { error: e.message, code: 'BAD_MOUNT' }); }
+
+    if (secretNames.length || eg?.enabled || dirIds.length) {
+      if (!body.name) return sendJson(res, 400, { error: 'Для машины с секретами, директориями или egress-фильтром укажите имя', code: 'BAD_REQUEST' });
+      const exists = await up.request('GET', `/api/v1/machines/${encodeURIComponent(body.name)}`);
+      if (exists.status === 200) return sendJson(res, 409, { error: `Машина ${body.name} уже существует`, code: 'CONFLICT' });
+    }
+    const cleanup = async () => {
+      if (secretNames.length) await vault.forgetMachine(body.name);
+      if (eg?.enabled) egress.forgetMachine(body.name);
+      if (dirIds.length) dirs.forgetMachine(body.name);
+    };
+
+    if (eg?.enabled) {
+      egress.forgetMachine(body.name); // stale record of a machine with the same name
+      try {
+        egress.setMachine(body.name, { enabled: true, strict: !!eg.strict, ...(Array.isArray(eg.lists) ? { lists: eg.lists } : {}), ...(Array.isArray(eg.rules) ? { rules: eg.rules } : {}) });
+      } catch (e) { egress.forgetMachine(body.name); return sendJson(res, 400, { error: e.message, code: 'BAD_EGRESS' }); }
+      const st = await egress.start();
+      if (!st.listening) { egress.forgetMachine(body.name); return sendJson(res, 500, { error: `egress-фильтр не запущен: ${st.error}`, code: 'EGRESS_DOWN' }); }
+      let p;
+      try { p = await mc.effectiveProxy(body.name); } catch (e) { egress.forgetMachine(body.name); return sendJson(res, 400, { error: e.message, code: 'BAD_EGRESS' }); }
+      const env = px.proxyEnv(p.url, p.noProxy);
+      body.env = px.mergeEnv(body.env, env);
+      body.network = true;
+      const patch = { envApplied: px.fingerprint(env) };
+      if (eg.strict) {
+        const ip = await px.hostIp();
+        if (!ip) { egress.forgetMachine(body.name); return sendJson(res, 400, { error: 'Жёсткая изоляция: не удалось определить адрес хоста, доступный из машины', code: 'BAD_EGRESS' }); }
+        const cidr = `${ip}/32`;
+        body.allowedCidrs = [...new Set([...(Array.isArray(body.allowedCidrs) ? body.allowedCidrs : []), cidr])];
+        patch.strictApplied = cidr;
+      }
+      egress.setMachine(body.name, patch);
+    } else if (useProxy) {
       const p = await mc.effectiveProxy(null).catch((e) => ({ error: e.message }));
       if (p?.error) return sendJson(res, 400, { error: p.error, code: 'BAD_PROXY' });
       if (p) {
@@ -134,11 +219,13 @@ const ROUTES = [
         body.network = true;
       }
     }
+    let dirMounts = [];
+    if (dirIds.length) {
+      try { dirMounts = dirs.attachAtCreate(body.name, dirIds); } catch (e) { await cleanup(); return sendJson(res, 400, { error: e.message, code: 'BAD_DIR' }); }
+      body.mounts = [...(Array.isArray(body.mounts) ? body.mounts : []), ...dirMounts];
+    }
     if (secretNames.length) {
-      if (!body.name) return sendJson(res, 400, { error: 'Для машины с секретами укажите имя', code: 'BAD_REQUEST' });
-      const exists = await up.request('GET', `/api/v1/machines/${encodeURIComponent(body.name)}`);
-      if (exists.status === 200) return sendJson(res, 409, { error: `Машина ${body.name} уже существует`, code: 'CONFLICT' });
-      try { await vault.bind(body.name, secretNames); } catch (e) { return sendJson(res, 400, { error: e.message, code: 'BAD_SECRET' }); }
+      try { await vault.bind(body.name, secretNames); } catch (e) { await cleanup(); return sendJson(res, 400, { error: e.message, code: 'BAD_SECRET' }); }
       const bound = await vault.machineSecrets(body.name);
       const native = bound.filter((x) => x.mode === 'substitute');
       if (native.length) {
@@ -158,44 +245,28 @@ const ROUTES = [
     }
     url.searchParams.delete('webProxy');
     req.url = url.pathname + (url.search || '');
-    const r = await up.request('POST', req.url, body);
-    if (r.status === 200 && r.data?.name) cfg.setMachineProxy(r.data.name, useProxy);
-    else if (secretNames.length) await vault.forgetMachine(body.name);
+    let r;
+    try { r = await up.request('POST', req.url, body); } catch (e) { await cleanup(); throw e; }
+    if (r.status === 200 && r.data?.name) {
+      cfg.setMachineProxy(r.data.name, useProxy);
+      // Records left by a machine of the same name deleted outside smolvm-web must not apply to this one.
+      if (!eg?.enabled) egress.forgetMachine(r.data.name);
+      if (dirMounts.length) dirs.markApplied(r.data.name, dirMounts);
+      else dirs.forgetMachine(r.data.name);
+    } else await cleanup();
     sendJson(res, r.status, r.data);
   }],
 
-  // Start: CLI when the proxy/gateway must be reachable, API (with credential
-  // values pushed first) for smolvm substitution; then provision the guest.
+  // Start: CLI when the proxy/gateway/egress filter must be reachable, API
+  // (with credential values pushed first) for smolvm substitution; then
+  // provision the guest.
   ['POST', new RegExp(`^${M}/start$`), async (req, res, m, url) => {
     const name = decodeURIComponent(m[1]);
     const raw = await readBody(req);
     const body = raw.length ? JSON.parse(raw.toString('utf8') || '{}') || {} : {};
     const branchable = url.searchParams.get('branchable') === 'true' || url.searchParams.get('forkable') === 'true';
-    let plan;
-    try { plan = await mc.startPlan(name); } catch (e) { return sendJson(res, 400, { error: e.message, code: 'BAD_PROXY' }); }
-    // The CLI cannot pass registryAuth/egressInterceptor or CUDA pool parameters.
-    const viaCli = plan.viaCli && !/[?&](forkPoolSize|branchPoolSize|cudaVramLimitMib)=/.test(req.url) && !Object.keys(body).length;
-
-    let info;
-    try {
-      await mc.pushCredentialValues(name, plan.native);
-      if (viaCli) info = await mc.startViaCli(name, { branchable, proxy: plan.proxy });
-      else {
-        const r = await up.request('POST', req.url, body);
-        if (r.status !== 200) return sendJson(res, r.status, r.data);
-        info = r.data;
-      }
-    } catch (e) {
-      return sendJson(res, e.status || 500, { error: `${viaCli ? 'запуск через smolvm CLI' : 'запуск'}: ${e.message}`, code: 'START_FAILED' });
-    }
-    if (plan.warnings.length) info._webWarnings = plan.warnings;
-    try {
-      const pr = await mc.provision(name);
-      if (!pr.skipped) info._webProvision = { ok: true, ...pr };
-    } catch (e) {
-      info._webProvision = { ok: false, error: e.message };
-    }
-    sendJson(res, 200, info);
+    try { sendJson(res, 200, await startMachine(name, { apiPath: req.url, body, branchable })); }
+    catch (e) { sendJson(res, e.status || 500, e.body || { error: e.message, code: e.code || 'START_FAILED' }); }
   }],
 
   // Exec: inject proxy (and CA, once provisioned) env; explicit env wins.
@@ -224,7 +295,19 @@ const ROUTES = [
   ['DELETE', new RegExp(`^${M}$`), async (req, res, m) => {
     const name = decodeURIComponent(m[1]);
     const r = await up.request('DELETE', req.url);
-    if (r.status === 200) { cfg.forgetMachine(name); await vault.forgetMachine(name); }
+    if (r.status === 200) { cfg.forgetMachine(name); await vault.forgetMachine(name); egress.forgetMachine(name); dirs.forgetMachine(name); }
+    sendJson(res, r.status, r.data);
+  }],
+
+  // Branch: the clone shares the source's mounts and in-memory env, so it inherits its policies.
+  ['POST', new RegExp(`^${M}/branches$`), async (req, res, m) => {
+    const name = decodeURIComponent(m[1]);
+    const body = await readJson(req);
+    const r = await up.request('POST', req.url, body);
+    if (r.status === 200) {
+      const to = r.data?.name || body.name;
+      if (to) { dirs.copyMachine(name, to); egress.copyMachine(name, to); }
+    }
     sendJson(res, r.status, r.data);
   }],
 ];
@@ -249,6 +332,8 @@ const UI = [
       proxyActive: !!(s.proxy.enabled && s.proxy.url),
       caActive: !!s.ca.enabled,
       guestProxy: g,
+      egress: { ...egress.status(), defaults: egress.defaults() },
+      dirsStrict: dirs.strict(),
     });
   }],
   ['GET', /^\/ui\/settings$/, (req, res) => sendJson(res, 200, publicSettings())],
@@ -332,6 +417,109 @@ const UI = [
     const name = decodeURIComponent(m[1]);
     try { sendJson(res, 200, await mc.provision(name)); }
     catch (e) { sendJson(res, 500, { error: e.message }); }
+  }],
+  // ---------- egress filter (allow lists) ----------
+  ['GET', /^\/ui\/egress$/, async (req, res) => {
+    sendJson(res, 200, { ...egress.view(), hostIp: await px.hostIp(), corporateProxy: !!(cfg.getSettings().proxy.enabled && cfg.getSettings().proxy.url) });
+  }],
+  ['PUT', /^\/ui\/egress\/settings$/, async (req, res) => {
+    try { sendJson(res, 200, egress.saveSettings(await readJson(req))); } catch (e) { sendJson(res, 400, { error: e.message }); }
+  }],
+  ['PUT', /^\/ui\/egress\/lists\/([^/]+)$/, async (req, res, m) => {
+    try { sendJson(res, 200, egress.saveList(decodeURIComponent(m[1]), await readJson(req))); } catch (e) { sendJson(res, 400, { error: e.message }); }
+  }],
+  ['DELETE', /^\/ui\/egress\/lists\/([^/]+)$/, async (req, res, m) => {
+    egress.deleteList(decodeURIComponent(m[1]));
+    sendJson(res, 200, { deleted: true });
+  }],
+  ['PUT', /^\/ui\/egress\/machines\/([^/]+)$/, async (req, res, m) => {
+    const name = decodeURIComponent(m[1]);
+    const body = await readJson(req);
+    const before = egress.getMachine(name);
+    let after;
+    try { after = egress.setMachine(name, body); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+    const notes = [];
+    if (after.enabled) {
+      const st = await egress.start();
+      if (!st.listening) notes.push(`egress-фильтр не запущен: ${st.error}`);
+    }
+    const state = await machineState(name).catch(() => null);
+    const toggled = !before || before.enabled !== after.enabled || before.strict !== after.strict || !!body.rotate;
+    if (state === 'running' && toggled) {
+      // Console/exec env follows at once; the guest profile is rewritten now; the workload's own env and the strict policy on the next start.
+      try { await mc.provision(name); notes.push('Настройки прокси в машине обновлены (profile.d, pip, npm, apt, git).'); } catch (e) { notes.push(`не удалось обновить настройки в машине: ${e.message}`); }
+      notes.push('Основной процесс машины и жёсткая изоляция переключатся при следующем запуске через smolvm-web.');
+    }
+    sendJson(res, 200, { machine: egress.view().machines[name], notes });
+  }],
+  ['GET', /^\/ui\/egress\/log$/, (req, res, _m, url) => {
+    const p = url.searchParams;
+    sendJson(res, 200, { entries: egress.log({ machine: p.get('machine') || '', decision: p.get('decision') || '', q: p.get('q') || '', limit: Math.min(Number(p.get('limit')) || 300, 3000) }) });
+  }],
+  ['GET', /^\/ui\/egress\/denied$/, (req, res, _m, url) => sendJson(res, 200, { denied: egress.deniedSummary(url.searchParams.get('machine') || '') })],
+  // Allow a destination (from the log): into a list or into the machine's own rules.
+  ['POST', /^\/ui\/egress\/allow$/, async (req, res) => {
+    const { machine, host, ports, into, note } = await readJson(req);
+    try {
+      const rule = egress.normalizeRule({ host, ports, note: note || (machine ? `разрешено из журнала (${machine})` : '') });
+      if (into === 'machine') {
+        const mm = egress.getMachine(machine);
+        if (!mm) throw new Error(`Машина ${machine} не под egress-фильтром`);
+        egress.setMachine(machine, { rules: [...mm.rules, rule] });
+      } else {
+        const list = egress.view().lists.find((l) => l.id === into);
+        if (!list) throw new Error('Нет такого списка');
+        egress.saveList(list.id, { ...list, rules: [...list.rules, rule] });
+      }
+      sendJson(res, 200, { rule });
+    } catch (e) { sendJson(res, 400, { error: e.message }); }
+  }],
+  ['POST', /^\/ui\/egress\/check$/, async (req, res) => {
+    const { machine, target } = await readJson(req);
+    try { sendJson(res, 200, egress.explain(machine, target)); } catch (e) { sendJson(res, 400, { error: e.message }); }
+  }],
+
+  // ---------- allowed directories ----------
+  ['GET', /^\/ui\/dirs$/, (req, res) => sendJson(res, 200, { strict: dirs.strict(), dirs: dirs.listDirs(), platform: process.platform })],
+  ['PUT', /^\/ui\/dirs-settings$/, async (req, res) => {
+    const body = await readJson(req);
+    sendJson(res, 200, { strict: dirs.setStrict(!!body.strict) });
+  }],
+  ['PUT', /^\/ui\/dirs\/([^/]+)$/, async (req, res, m) => {
+    try { sendJson(res, 200, dirs.saveDir(decodeURIComponent(m[1]), await readJson(req))); } catch (e) { sendJson(res, 400, { error: e.message }); }
+  }],
+  ['DELETE', /^\/ui\/dirs\/([^/]+)$/, async (req, res, m) => {
+    try { dirs.deleteDir(decodeURIComponent(m[1])); sendJson(res, 200, { deleted: true }); } catch (e) { sendJson(res, 400, { error: e.message }); }
+  }],
+  ['GET', /^\/ui\/machines\/([^/]+)\/dirs$/, (req, res, m) => sendJson(res, 200, dirs.machineView(decodeURIComponent(m[1])))],
+  ['PUT', /^\/ui\/machines\/([^/]+)\/dirs$/, async (req, res, m) => {
+    const name = decodeURIComponent(m[1]);
+    try { dirs.saveMachine(name, await readJson(req)); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+    const view = dirs.machineView(name);
+    const state = await machineState(name).catch(() => null);
+    let report = null;
+    // Per-user changes inside mounted views apply at once.
+    if (state === 'running') {
+      try { report = await mc.provisionDirs(name); } catch (e) { report = { errors: [e.message], warnings: [], users: [] }; }
+    }
+    sendJson(res, 200, { ...view, state, report });
+  }],
+  ['POST', /^\/ui\/machines\/([^/]+)\/dirs\/apply$/, async (req, res, m) => {
+    try { sendJson(res, 200, await mc.provisionDirs(decodeURIComponent(m[1]))); } catch (e) { sendJson(res, 500, { error: e.message }); }
+  }],
+  ['POST', /^\/ui\/machines\/([^/]+)\/dirs\/verify$/, async (req, res, m) => {
+    try { sendJson(res, 200, await dirs.verify(decodeURIComponent(m[1]))); } catch (e) { sendJson(res, 500, { error: e.message }); }
+  }],
+  // Stop and start through smolvm-web, so pending mounts and the strict policy are applied.
+  ['POST', /^\/ui\/machines\/([^/]+)\/restart$/, async (req, res, m) => {
+    const name = decodeURIComponent(m[1]);
+    const state = await machineState(name);
+    if (state === 'running' || state === 'paused') {
+      const r = await up.request('POST', `/api/v1/machines/${encodeURIComponent(name)}/stop`, {});
+      if (r.status !== 200) return sendJson(res, r.status, r.data);
+    }
+    try { sendJson(res, 200, await startMachine(name, { apiPath: `/api/v1/machines/${encodeURIComponent(name)}/start` })); }
+    catch (e) { sendJson(res, e.status || 500, e.body || { error: e.message, code: e.code || 'START_FAILED' }); }
   }],
 ];
 
@@ -470,4 +658,7 @@ server.listen(PORT, HOST, () => {
       console.log(st.listening ? `шлюз секретов: порт ${gateway.PORT}` : `шлюз секретов не запущен: ${st.error}`);
     }
   }).catch((e) => console.log(`хранилище секретов: ${e.message}`));
+  if (egress.anyEnabled()) {
+    egress.start().then((st) => console.log(st.listening ? `egress-фильтр: порт ${egress.PORT}` : `egress-фильтр не запущен: ${st.error}`));
+  }
 });

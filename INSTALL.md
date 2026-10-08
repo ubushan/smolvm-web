@@ -35,14 +35,14 @@ cd smolvm-web
 
 ```bash
 cd smolvm-web
-npm pack                     # → smolvm-web-0.3.0.tgz (только нужные файлы)
+npm pack                     # → smolvm-web-0.4.0.tgz (только нужные файлы)
 ```
 
 Скопируйте `.tgz` на Windows (флешка, общая папка, `scp`) и распакуйте в PowerShell:
 
 ```powershell
 mkdir C:\smolvm-web; cd C:\smolvm-web
-tar -xzf $HOME\Downloads\smolvm-web-0.3.0.tgz --strip-components=1
+tar -xzf $HOME\Downloads\smolvm-web-0.4.0.tgz --strip-components=1
 Get-ChildItem -Recurse | Unblock-File     # снять метку «загружено из интернета»
 ```
 
