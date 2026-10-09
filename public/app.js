@@ -1413,7 +1413,7 @@ async function openSettings() {
   f.repoUser.value = r.username || ''; f.repoPassword.value = '';
   f.repoPassword.placeholder = r.hasPassword ? 'сохранён — оставьте пустым, чтобы не менять' : '';
   f.repoPip.value = r.pip || ''; f.repoNpm.value = r.npm || ''; f.repoAptDebian.value = r.aptDebian || '';
-  f.repoAptSecurity.value = r.aptSecurity || ''; f.repoGoproxy.value = r.goproxy || ''; f.repoGuestAuth.checked = !!r.guestAuth;
+  f.repoAptSecurity.value = r.aptSecurity || ''; f.repoGoproxy.value = r.goproxy || ''; f.repoGithub.value = r.github || ''; f.repoGuestAuth.checked = !!r.guestAuth;
   f.smolvmBin.value = s.smolvm?.bin || ''; f.smolvmBin.placeholder = s.smolvmBinDefault || 'smolvm';
   $('#smolvm-check-out').hidden = true;
   syncRepoHint();
@@ -1459,7 +1459,7 @@ function settingsFromForm() {
       registry: f.repoRegistry.value.trim(), rewrite: f.repoRewrite.checked, username: f.repoUser.value.trim(),
       ...(f.repoPassword.value ? { password: f.repoPassword.value } : {}),
       pip: f.repoPip.value.trim(), npm: f.repoNpm.value.trim(), aptDebian: f.repoAptDebian.value.trim(),
-      aptSecurity: f.repoAptSecurity.value.trim(), goproxy: f.repoGoproxy.value.trim(), guestAuth: f.repoGuestAuth.checked,
+      aptSecurity: f.repoAptSecurity.value.trim(), goproxy: f.repoGoproxy.value.trim(), github: f.repoGithub.value.trim(), guestAuth: f.repoGuestAuth.checked,
     },
     smolvm: { bin: f.smolvmBin.value.trim() },
   };

@@ -104,6 +104,7 @@
 | npm | `https://artifactory.corp.local/api/npm/npm-remote` | `NPM_CONFIG_REGISTRY` и `registry=` в глобальном `npmrc` (установка агентов тоже идёт через него) |
 | apt: вместо deb.debian.org/debian и …/debian-security | `https://artifactory.corp.local/artifactory/debian-remote` | заменяет адреса в `/etc/apt/sources.list` и `/etc/apt/sources.list.d/debian.sources` (оригиналы — `*.smolvm-orig`) |
 | Go | `https://artifactory.corp.local/artifactory/api/go/go-remote` | `GOPROXY` (+ `GONOSUMDB=*`), `/etc/profile.d/smolvm-go.sh` |
+| GitHub releases | `https://artifactory.corp.local/artifactory/github-remote` (generic remote на `https://github.com`) | откуда качать бинарники с GitHub при установке агентов вместо `https://github.com`. Веб-терминал ttyd в Debian-образах сначала ставится пакетом через apt (то есть через ваше apt-зеркало), к GitHub обращаемся только если пакета нет |
 
 **Уже созданные машины.** Образ машины фиксируется при создании, а smolvm не умеет менять его у существующей машины. Машина, созданная до настройки реестра, продолжит качать образ с Docker Hub; без прямого доступа запуск упадёт (`crane manifest failed … index.docker.io … TLS handshake timeout`) — smolvm-web покажет, какой образ из реестра будет использован, и предложит создать машину заново. Машина, которая ни разу не запускалась, пуста — её можно просто удалить. (Встроенный в smolvm `mirror` для `docker.io` в `~/.config/smolvm/config.toml` не помогает: образ скачивается под именем зеркала и потом не находится.)
 

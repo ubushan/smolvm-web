@@ -276,7 +276,10 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
           <label>apt: вместо deb.debian.org/debian<input name="repoAptDebian" class="input mono" placeholder="https://artifactory.corp/artifactory/debian-remote" spellcheck="false"></label>
           <label>apt: вместо …/debian-security<input name="repoAptSecurity" class="input mono" placeholder="https://artifactory.corp/artifactory/debian-security-remote" spellcheck="false"></label>
         </div>
-        <label>Go (GOPROXY)<input name="repoGoproxy" class="input mono" placeholder="https://artifactory.corp/artifactory/api/go/go-remote" spellcheck="false"></label>
+        <div class="grid2">
+          <label>Go (GOPROXY)<input name="repoGoproxy" class="input mono" placeholder="https://artifactory.corp/artifactory/api/go/go-remote" spellcheck="false"></label>
+          <label>GitHub releases: вместо https://github.com<input name="repoGithub" class="input mono" placeholder="https://artifactory.corp/artifactory/github-remote" spellcheck="false"></label>
+        </div>
         <label class="check"><input type="checkbox" name="repoGuestAuth"> Передавать пользователя и токен в машину для pip/npm/apt/Go <span class="muted small">(агент сможет их прочитать; не нужно, если репозитории читаются анонимно)</span></label>
         <p class="muted small">Логин к реестру образов передаётся smolvm на хосте (как <code>docker login</code>) и в машину не попадает. Адреса репозиториев автоматически разрешены фильтру «Доступ в сеть». Для <code>https://</code>-репозиториев машина получает сертификаты, которым доверяет этот компьютер (внутренний CA — тоже). smolvm serve, запущенный smolvm-web (<code>--autostart</code>), подхватывает логин сразу; если вы запускаете его сами, задайте ему <code>DOCKER_CONFIG=&lt;папка настроек smolvm-web&gt;/docker</code>.</p>
 
