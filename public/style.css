@@ -493,3 +493,9 @@ pre.diff .d-c { color: #a1a1aa; }
 @media (max-width: 820px) { .grid-siem { grid-template-columns: 1fr 1fr; } }
 .tbl tr.revoked td { opacity: .6; }
 .host-warning { margin: 12px 16px 0; display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+
+/* footer: running version (git commit) */
+.app-footer { flex-shrink: 0; display: flex; gap: 12px; align-items: center; justify-content: flex-end; flex-wrap: wrap; padding: 4px 16px 8px; font-size: 12px; color: var(--muted, #888); }
+.app-footer code { font-family: var(--mono, monospace); }
+.app-restart { color: var(--warn, #b45309); }
+@media (max-width: 1440px) { header .btn .lbl { display: none; } }

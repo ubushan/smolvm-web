@@ -13,6 +13,7 @@
     <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></symbol>
     <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
     <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l3 3M15 8l2 2"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
     <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></symbol>
     <symbol id="i-contrast" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v18a9 9 0 0 0 0-18z" fill="currentColor"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
@@ -60,8 +61,8 @@
     <div id="health" class="health"><span class="dot"></span><span>подключение…</span></div>
     <button id="proxy-chip" class="chip" hidden title="Настройки сети и прокси"></button>
     <div class="spacer"></div>
-    <button id="btn-vault" class="btn ghost" title="Хранилище секретов и API-ключей"><svg class="ic"><use href="#i-key"/></svg>Секреты</button>
-    <button id="btn-settings" class="btn ghost icon" title="Сеть, прокси и сертификаты"><svg class="ic"><use href="#i-sliders"/></svg></button>
+    <button id="btn-vault" class="btn ghost" title="Хранилище секретов и API-ключей"><svg class="ic"><use href="#i-key"/></svg><span class="lbl">Секреты</span></button>
+    <button id="btn-settings" class="btn ghost" title="Сеть, прокси, сертификаты, репозитории, путь к smolvm"><svg class="ic"><use href="#i-gear"/></svg><span class="lbl">Настройки</span></button>
     <button id="btn-theme" class="btn ghost icon" title="Тема"><svg class="ic"><use href="#i-contrast"/></svg></button>
     <button id="btn-create" class="btn primary"><svg class="ic"><use href="#i-plus"/></svg>Машина</button>
   </header>
@@ -368,6 +369,8 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
   </dialog>
 
   <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <footer id="app-footer" class="app-footer"><span id="app-version">smolvm-web</span><span id="app-restart" class="app-restart" hidden></span></footer>
 
   <script src="/app.js"></script>
   <script src="/egress.js"></script>

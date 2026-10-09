@@ -42,6 +42,7 @@ const PORT = Number(process.env.PORT || 7777);
 const AUTOSTART = process.argv.includes('--autostart') || process.env.SMOLVM_AUTOSTART === '1';
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const VERSION = require('./package.json').version;
+const buildInfo = require('./lib/version');
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const PROXIED = [/^\/api\/v1\//, /^\/health$/, /^\/capacity$/];
@@ -705,6 +706,7 @@ const UI = [
     const g = s.proxy.url ? await px.guestUrl(s.proxy.url) : null;
     sendJson(res, 200, {
       version: VERSION,
+      build: { ...buildInfo.RUNNING, disk: buildInfo.current() },
       platform: process.platform,
       upstream: up.UPSTREAM,
       listen: up.listenArg(),
@@ -1064,7 +1066,7 @@ function portBusy(why) {
 }
 
 server.listen(PORT, HOST, () => {
-  console.log(`smolvm-web: http://${HOST === '0.0.0.0' ? '127.0.0.1' : HOST}:${PORT}`);
+  console.log(`smolvm-web ${VERSION}${buildInfo.RUNNING.commit ? ` (${buildInfo.RUNNING.commit.slice(0, 7)})` : ''}: http://${HOST === '0.0.0.0' ? '127.0.0.1' : HOST}:${PORT}`);
   console.log(`настройки: ${cfg.DIR}`);
   if (winhost.IS_WIN) {
     const wh = winhost.status();

@@ -1323,10 +1323,24 @@ function showText(title, text) {
   $('#dlg-help').showModal();
 }
 
+// ---------- version footer ----------
+function renderVersion() {
+  const b = state.info?.build;
+  if (!b) return;
+  const short = (c) => (c ? c.slice(0, 7) : '');
+  const v = $('#app-version');
+  v.replaceChildren(`smolvm-web ${b.version}`, ...(b.commit ? [' · коммит ', h('code', { title: b.commit }, short(b.commit))] : []), ...(b.branch ? [` (${b.branch})`] : []));
+  const r = $('#app-restart');
+  // The code on disk changed (git pull) but the server still runs the old one.
+  r.hidden = !(b.commit && b.disk?.commit && b.disk.commit !== b.commit);
+  if (!r.hidden) r.textContent = `на диске уже ${short(b.disk.commit)} — перезапустите smolvm-web, чтобы применить обновление`;
+}
+
 // ---------- platform & proxy settings ----------
 async function refreshInfo() {
   try { state.info = await api('GET', '/ui/info'); } catch { return; }
   renderHostWarning();
+  renderVersion();
   const chip = $('#proxy-chip');
   const i = state.info;
   chip.hidden = false;
