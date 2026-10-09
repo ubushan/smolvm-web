@@ -1,5 +1,5 @@
 'use strict';
-// Page «🌐 Интернет»: allow lists for the egress filter, per-machine policy, live log.
+// Page «Доступ в сеть»: allow lists for the egress filter, per-machine policy, live log.
 
 (() => {
   const DECISION = { true: ['ok', 'разрешено'], false: ['bad', 'заблокировано'] };
@@ -7,6 +7,7 @@
   let root = null;
   let params = null;
   let logTimer = null;
+  let logRoot = null;   // element of the «Журнал» page
   const logFilter = { machine: '', decision: '', q: '' };
 
   const machineNames = () => [...new Set([...state.machines.map((m) => m.name), ...Object.keys(data?.machines || {})])].sort();
@@ -25,7 +26,7 @@
       h('td', {}, h('input', { class: 'input mono ports-in', name: 'ports', value: r.ports || '443', placeholder: '443', title: 'Порты: 443, 80, 8000-8100 или * — любой' })),
       h('td', {}, h('input', { class: 'input small-in', name: 'note', value: r.note || '', placeholder: 'зачем' })),
       h('td', { class: 'center' }, h('input', { type: 'checkbox', name: 'enabled', checked: r.enabled !== false, title: 'Включено' })),
-      h('td', {}, h('button', { type: 'button', class: 'btn ghost danger', title: 'Удалить правило', onclick: () => tr.remove() }, '✕')));
+      h('td', {}, h('button', { type: 'button', class: 'btn ghost danger icon', title: 'Удалить правило', onclick: () => tr.remove() }, ic('x'))));
     tr.dataset.id = r.id || '';
     return tr;
   }
@@ -66,7 +67,7 @@
         h('thead', {}, h('tr', {}, h('th', {}, 'Хост / шаблон / CIDR'), h('th', {}, 'Порты'), h('th', {}, 'Заметка'), h('th', { class: 'center' }, 'Вкл'), h('th', {}, ''))),
         tbody)),
       h('div', { class: 'row' },
-        h('button', { type: 'button', class: 'btn', onclick: () => { const r = ruleRow(); tbody.append(r); r.querySelector('input').focus(); } }, '+ Правило'),
+        h('button', { type: 'button', class: 'btn', onclick: () => { const r = ruleRow(); tbody.append(r); r.querySelector('input').focus(); } }, [ic('plus'), 'Правило']),
         h('button', { type: 'button', class: 'btn ghost', onclick: () => { bulkBox.hidden = !bulkBox.hidden; } }, 'Вставить списком'),
         tplSel, h('span', { class: 'spacer' }), ...extra, save),
       bulkBox, err);
@@ -78,17 +79,18 @@
     const statusTag = st.listening ? h('span', { class: 'tag ok' }, `фильтр слушает :${st.port}`)
       : st.error ? h('span', { class: 'tag bad' }, `фильтр не запущен: ${st.error}`) : h('span', { class: 'tag' }, 'фильтр запустится, когда понадобится');
     return h('section', { class: 'card intro' },
-      h('div', { class: 'row' }, h('h2', {}, '🌐 Доступ машин в интернет'), statusTag,
-        h('span', { class: 'tag' }, data.corporateProxy ? 'выход: через корпоративный прокси' : 'выход: напрямую с хоста'),
-        data.hostIp ? h('span', { class: 'tag' }, `адрес хоста для машин: ${data.hostIp}`) : h('span', { class: 'tag bad' }, 'адрес хоста не определён')),
-      h('details', {}, h('summary', {}, 'Как это работает'),
+      h('div', { class: 'row' }, h('h2', { class: 'h-ic' }, ic('globe'), 'Доступ машин в сеть'), helpButton('Как работает фильтр «Доступ в сеть»',
         h('p', { class: 'small' }, 'Машине с включённым фильтром в HTTP_PROXY/HTTPS_PROXY подставляется прокси smolvm-web на хосте со своим токеном. Каждое соединение (CONNECT для HTTPS, обычные HTTP-запросы) сверяется с allow list машины: подключёнными списками и её собственными правилами. Разрешённое уходит в интернет хоста — через корпоративный прокси, если он настроен. Всё остальное получает 403 и попадает в журнал, откуда его можно разрешить одной кнопкой. Изменения правил действуют сразу, без перезапуска машины.'),
         h('ul', { class: 'small' },
           h('li', {}, h('code', {}, 'api.example.com'), ' — ровно этот хост; ', h('code', {}, '.example.com'), ' — хост и все поддомены; ', h('code', {}, '*.example.com'), ' — только поддомены; ', h('code', {}, '10.0.0.0/8'), ', ', h('code', {}, '192.0.2.10'), ' — IP-адреса; ', h('code', {}, '*'), ' — любой хост.'),
           h('li', {}, 'Порты: ', h('code', {}, '443'), ', ', h('code', {}, '443,80'), ', ', h('code', {}, '8000-8100'), ', ', h('code', {}, '*'), '. Путь внутри HTTPS не виден (TLS не расшифровывается) — фильтр работает по хосту и порту.'),
           h('li', {}, 'Адреса хоста, loopback, link-local (169.254.x — metadata) и частных сетей доступны только по явному правилу IP/CIDR — даже если разрешённое имя на них резолвится. ', h('code', {}, '*'), ' их не открывает.'),
           h('li', {}, h('b', {}, 'Жёсткая изоляция'), ': smolvm получает egress-политику «только IP хоста», так что программы, игнорирующие HTTP_PROXY, не выйдут в сеть в обход фильтра. Применяется при запуске через smolvm-web (машина должна быть остановлена). Учтите: машине станут доступны и другие сервисы хоста, слушающие внешний интерфейс.'),
-          h('li', {}, 'Образы при старте скачиваются отдельным токеном, которому дополнительно разрешены реестры (настройка ниже).'))));
+          h('li', {}, 'Образы при старте скачиваются отдельным токеном, которому дополнительно разрешены реестры (настройка ниже).'))), statusTag,
+        h('span', { class: 'tag' }, data.corporateProxy ? 'выход: через корпоративный прокси' : 'выход: напрямую с хоста'),
+        data.hostIp ? h('span', { class: 'tag' }, `адрес хоста для машин: ${data.hostIp}`) : h('span', { class: 'tag bad' }, 'адрес хоста не определён'),
+        h('span', { class: 'spacer' }), h('a', { class: 'btn', href: '#/log' }, 'Журнал соединений →')),
+      );
   }
 
   function machinesCard() {
@@ -121,7 +123,7 @@
         h('td', {}, lists),
         h('td', {}, m.enabled ? h('button', { class: 'btn ghost', onclick: () => { editRow.hidden = !editRow.hidden; } }, `Свои правила (${m.rules.length})`) : null),
         h('td', {},
-          h('button', { class: 'btn ghost', onclick: () => { logFilter.machine = name; renderLog(); root.querySelector('#eg-log')?.scrollIntoView({ behavior: 'smooth' }); } }, 'Журнал'),
+          h('a', { class: 'btn ghost', href: `#/log?machine=${enc(name)}` }, 'Журнал'),
           st === 'running' && m.enabled && pending ? h('button', { class: 'btn', onclick: async () => { await actions.restart(state.machines.find((x) => x.name === name)); await load(); render(); } }, '↻ Перезапустить') : null));
       return [tr, editRow];
     });
@@ -164,23 +166,19 @@
           if (!nm) { toast('Укажите название списка', 'err'); return; }
           try { await api('PUT', '/ui/egress/lists/new', { name: nm, default: false, rules: t ? t.rules.map((r) => ({ ...r, note: t.name })) : [] }); await load(); render(); }
           catch (e) { toast(e.message, 'err'); }
-        } }, '+ Новый список')));
-  }
-
-  function logCard() {
-    const wrap = h('section', { class: 'card', id: 'eg-log' });
-    return wrap;
+        } }, [ic('plus'), 'Новый список'])));
   }
 
   async function renderLog() {
-    const wrap = root?.querySelector('#eg-log');
+    const wrap = logRoot?.querySelector('#eg-log');
     if (!wrap) return;
+    if (!data) { try { await load(); } catch {} }
     let entries = []; let denied = [];
     try {
       const q = new URLSearchParams({ machine: logFilter.machine, decision: logFilter.decision, q: logFilter.q, limit: '300' });
       [{ entries }, { denied }] = await Promise.all([api('GET', `/ui/egress/log?${q}`), api('GET', `/ui/egress/denied?machine=${enc(logFilter.machine)}`)]);
     } catch (e) { fill(wrap, h('div', { class: 'error' }, e.message)); return; }
-    if (!root?.contains(wrap)) return;
+    if (!logRoot?.contains(wrap)) return;
     const focused = document.activeElement && wrap.contains(document.activeElement) ? document.activeElement.name : null;
     const machineSel = h('select', { class: 'input small', name: 'm' }, h('option', { value: '' }, 'все машины'), machineNames().map((n) => h('option', { value: n, selected: n === logFilter.machine }, n)));
     const decSel = h('select', { class: 'input small', name: 'd' }, [['', 'все'], ['deny', 'заблокированные'], ['allow', 'разрешённые']].map(([v, t]) => h('option', { value: v, selected: v === logFilter.decision }, t)));
@@ -210,7 +208,7 @@
             h('td', {}, h('div', { class: 'row nowrap' }, scope, into, h('button', { class: 'btn primary', onclick: async () => {
               try {
                 await api('POST', '/ui/egress/allow', { machine: d.machine, host: scope.value, ports: String(d.port), into: into.value });
-                toast(`${scope.value}:${d.port} разрешён`, 'ok'); await load(); render();
+                toast(`${scope.value}:${d.port} разрешён`, 'ok'); await load(); renderLog();
               } catch (e) { toast(e.message, 'err'); }
             } }, 'Разрешить'))));
         })))) : null;
@@ -226,7 +224,7 @@
         h('td', { class: 'small' }, e.allow ? `${e.rule || ''}${e.source ? ` · ${e.source}` : ''}` : (e.reason || ''), e.error ? h('div', { class: 'badc' }, e.error) : null),
         h('td', { class: 'mono small' }, e.allow ? `↓${fmtBytes(e.bytesIn)} ↑${fmtBytes(e.bytesOut)}${e.open ? ' …' : ''}${e.via ? ` · ${e.via === 'proxy' ? 'корп.' : 'напр.'}` : ''}` : ''))))) : h('p', { class: 'muted' }, 'Записей нет.');
     fill(wrap,
-      h('div', { class: 'card-head' }, h('h3', {}, 'Журнал соединений'), h('span', { class: 'spacer' }), machineSel, decSel, qIn),
+      h('div', { class: 'card-head' }, h('h3', {}, 'Соединения'), h('span', { class: 'spacer' }), machineSel, decSel, qIn),
       deniedBox, table,
       h('p', { class: 'muted small' }, `Последние ${entries.length} записей из памяти; полный журнал — ${state.info?.configDir || '…'}/egress.log`));
     if (focused) wrap.querySelector(`[name=${focused}]`)?.focus();
@@ -271,19 +269,34 @@
   function render() {
     if (!root || !data) return;
     const y = root.scrollTop;
-    fill(root, intro(), machinesCard(), listsCard(), logCard(), checkCard(), settingsCard());
-    renderLog();
+    fill(root, intro(), machinesCard(), listsCard(), checkCard(), settingsCard());
     root.scrollTop = y;
   }
 
   pages.egress = {
     render(el, p) {
       root = el; params = p;
-      logFilter.machine = p.get('machine') || '';
       fill(el, h('p', { class: 'muted' }, 'Загрузка…'));
       load().then(render).catch((e) => fill(el, h('div', { class: 'error' }, e.message)));
-      logTimer = setInterval(() => { if (!document.hidden && !el.querySelector('#eg-log .denied:hover, #eg-log .denied :focus')) renderLog(); }, 3000);
-      return () => { clearInterval(logTimer); root = null; };
+      return () => { root = null; };
+    },
+  };
+
+  // Page «Журнал»: every request through the egress filter, with one-click allow.
+  pages.log = {
+    render(el, p) {
+      logRoot = el;
+      logFilter.machine = p.get('machine') || '';
+      logFilter.decision = p.get('decision') || logFilter.decision;
+      fill(el,
+        h('section', { class: 'card intro' },
+          h('div', { class: 'card-head' }, h('h2', {}, 'Журнал соединений'),
+            h('span', { class: 'muted small' }, 'все запросы машин через фильтр «Доступ в сеть»: что разрешено, что заблокировано и почему'),
+            h('span', { class: 'spacer' }), h('a', { class: 'btn ghost', href: '#/egress' }, 'Правила доступа →'))),
+        h('section', { class: 'card', id: 'eg-log' }, h('p', { class: 'muted' }, 'Загрузка…')));
+      load().then(renderLog).catch((e) => fill(el.querySelector('#eg-log'), h('div', { class: 'error' }, e.message)));
+      logTimer = setInterval(() => { if (!document.hidden && !el.querySelector('#eg-log .denied:hover, #eg-log .denied :focus, #eg-log select:focus')) renderLog(); }, 3000);
+      return () => { clearInterval(logTimer); logRoot = null; };
     },
   };
 })();

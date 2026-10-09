@@ -22,6 +22,22 @@ function h(tag, attrs = {}, ...children) {
 }
 
 // replaceChildren that skips null/false like h() does.
+// "?" button that opens the help dialog with the given content.
+function helpButton(title, ...content) {
+  return h('button', { type: 'button', class: 'btn ghost icon help-btn', title: `Справка: ${title}`, 'aria-label': `Справка: ${title}`, onclick: () => {
+    $('#help-title').replaceChildren(ic('help'), title);
+    $('#help-body').replaceChildren(...content.flat().filter(Boolean).map((c) => (c instanceof Node ? c.cloneNode(true) : document.createTextNode(String(c)))));
+    $('#dlg-help').showModal();
+  } }, ic('help'));
+}
+
+// Inline icon from the sprite in index.html.
+function ic(name) {
+  const t = document.createElement('template');
+  t.innerHTML = `<svg class="ic"><use href="#i-${name}"/></svg>`;
+  return t.content.firstChild;
+}
+
 function fill(el, ...children) {
   el.replaceChildren(...children.flat().filter((c) => c != null && c !== false));
   return el;
@@ -70,10 +86,10 @@ function shellSplit(str) {
   return out;
 }
 
-function toast(msg, kind = '') {
+function toast(msg, kind = '', ms) {
   const t = h('div', { class: `toast ${kind}` }, msg);
   $('#toasts').append(t);
-  setTimeout(() => t.remove(), kind === 'err' ? 8000 : 4000);
+  setTimeout(() => t.remove(), ms || (kind === 'err' ? 8000 : 4000));
 }
 
 // ---------- API ----------
@@ -137,6 +153,7 @@ const state = {
   selected: localStorage.getItem('smolvm.selected') || null,
   tab: localStorage.getItem('smolvm.tab') || 'overview',
   busy: new Map(), // name -> label of in-flight action
+  preparing: {},   // name -> { label, step } from the server (first start, init, agent install)
   healthy: false,
   info: null, // /ui/info: platform, upstream, proxy status
   filter: '',
@@ -184,8 +201,9 @@ function stat(label, value, pct) {
 async function refreshMachines() {
   if (!state.healthy) { renderList(); return; }
   try {
-    const res = await api('GET', '/api/v1/machines');
+    const [res, prep] = await Promise.all([api('GET', '/api/v1/machines'), api('GET', '/ui/preparing').catch(() => ({}))]);
     state.machines = (res.machines || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    state.preparing = prep || {};
   } catch (e) {
     state.machines = [];
   }
@@ -200,7 +218,12 @@ async function refreshMachines() {
 
 function stateBadge(m) {
   const busy = state.busy.get(m.name);
-  if (busy) return `<span class="badge busy">${esc(busy)}</span>`;
+  const prep = state.preparing?.[m.name];
+  // Preparing (first start, Smolfile init, agent install) wins over a plain "запуск…".
+  if (prep && (!busy || /запуск/.test(busy))) {
+    return `<span class="badge prep" title="${esc(prep.step || '')}"><i class="spin" aria-hidden="true"></i>${esc(prep.label)}</span>`;
+  }
+  if (busy) return `<span class="badge busy"><i class="spin" aria-hidden="true"></i>${esc(busy.replace(/…$/, ''))}</span>`;
   return `<span class="badge ${esc(m.state)}">${esc(stateLabel(m.state))}</span>`;
 }
 function stateLabel(s) {
@@ -220,11 +243,11 @@ function renderList() {
   const f = state.filter.toLowerCase();
   const list = state.machines.filter((m) => !f || m.name.toLowerCase().includes(f) || (m.image || '').toLowerCase().includes(f));
   if (!list.length) {
-    set(`<div class="list-empty">${state.machines.length ? 'Ничего не найдено' : 'Машин пока нет.<br><br><button class="btn primary" onclick="openCreate()">+ Создать первую</button>'}</div>`);
+    set(`<div class="list-empty">${state.machines.length ? 'Ничего не найдено' : 'Машин пока нет.<br><br><button class="btn primary" onclick="openCreate()">Создать первую</button>'}</div>`);
     return;
   }
   const html = list.map((m) => `
-    <div class="machine ${m.name === state.selected ? 'active' : ''}" data-name="${esc(m.name)}">
+    <div class="machine ${m.name === state.selected ? 'active' : ''} ${state.preparing?.[m.name] ? 'preparing' : m.state === 'running' ? 'running' : ''}" data-name="${esc(m.name)}">
       <div class="name">${esc(m.name)}</div>
       <div>${stateBadge(m)}</div>
       <div class="meta">${esc(m.image || '—')} · ${m.cpus} vCPU · ${fmtMb(m.memoryMb)}${m.network ? ' · net' : ''}${m.branchable ? ' · branchable' : ''}${m.parentMachine ? ` · ⑂ ${esc(m.parentMachine)}` : ''}</div>
@@ -237,6 +260,28 @@ $('#machines').addEventListener('click', (e) => {
   if (row) select(row.dataset.name);
 });
 $('#filter').addEventListener('input', (e) => { state.filter = e.target.value; renderList(); });
+// Search: a magnifier that expands into the filter field.
+{
+  const box = $('#search');
+  const input = $('#filter');
+  const setOpen = (open) => {
+    box.classList.toggle('open', open);
+    input.tabIndex = open ? 0 : -1;
+    if (open) input.focus();
+  };
+  $('#btn-search').addEventListener('click', () => {
+    if (!box.classList.contains('open')) return setOpen(true);
+    if (input.value) { input.value = ''; state.filter = ''; renderList(); input.focus(); } else setOpen(false);
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { input.value = ''; state.filter = ''; renderList(); setOpen(false); $('#btn-search').focus(); }
+  });
+  input.addEventListener('blur', () => { if (!input.value) setTimeout(() => { if (document.activeElement !== input) setOpen(false); }, 120); });
+  // "/" focuses search when not typing elsewhere.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) && !document.querySelector('dialog[open]') && state.page === 'machines') { e.preventDefault(); setOpen(true); }
+  });
+}
 $('#btn-refresh').addEventListener('click', () => tick());
 
 function select(name) {
@@ -309,6 +354,12 @@ const actions = {
 function reportStart(name, r) {
   reportProvision(name, r?._webProvision);
   for (const w of r?._webWarnings || []) toast(`${name}: ${w}`, 'err');
+  if (r?._webInit) {
+    const i = r._webInit;
+    const more = h('a', { href: '#', onclick: (e) => { e.preventDefault(); showText(`init — ${name}`, i.log || '(вывода нет)'); } }, 'Показать вывод');
+    toast(h('span', {}, i.ok ? `${name}: команды init из Smolfile выполнены (${i.count}). ` : `${name}: ${i.error}. Init повторится при следующем запуске. `, more), i.ok ? 'ok' : 'err', 20000);
+  }
+  if (r?._webInstall) toast(`${name}: устанавливаются агенты — прогресс во вкладке «Агенты»`, 'ok');
   if (r?._webPrepared?.length) toast(`${name}: применено перед запуском — ${r._webPrepared.join('; ')}`, 'ok');
   reportDirs(name, r?._webDirs);
 }
@@ -363,11 +414,12 @@ $('#form-branch').addEventListener('submit', async (e) => {
 // ---------- detail ----------
 const TABS = [
   ['overview', 'Обзор'],
+  ['agents', 'Агенты'],
   ['console', 'Консоль'],
   ['logs', 'Логи'],
   ['files', 'Файлы'],
   ['images', 'Образы'],
-  ['egress', 'Egress'],
+  ['egress', 'Блокировки сети'],
 ];
 
 function renderDetail() {
@@ -376,7 +428,7 @@ function renderDetail() {
   const m = state.machines.find((x) => x.name === state.selected);
   box.dataset.name = m ? m.name : '';
   if (!m) {
-    box.innerHTML = `<div class="empty-state"><div class="big">◇</div><p>Выберите машину слева или создайте новую.</p></div>`;
+    box.innerHTML = `<div class="empty-state"><div class="big"><svg class="ic"><use href="#i-server"/></svg></div><p>Выберите машину слева или создайте новую.</p></div>`;
     return;
   }
   box.innerHTML = '';
@@ -401,7 +453,7 @@ function updateDetailHead(m) {
   const head = $('#detail .detail-head');
   if (!head || $('#detail').dataset.name !== m.name) return;
   const busy = state.busy.has(m.name);
-  const sig = JSON.stringify([m.name, m.state, state.busy.get(m.name), m.branchable, m.parentMachine, state.info?.proxyActive, state.info?.caActive]);
+  const sig = JSON.stringify([m.name, m.state, state.busy.get(m.name), state.preparing?.[m.name], m.branchable, m.parentMachine, state.info?.proxyActive, state.info?.caActive]);
   if (head.dataset.sig === sig) return;
   head.dataset.sig = sig;
   const running = m.state === 'running';
@@ -413,14 +465,20 @@ function updateDetailHead(m) {
     h('span', { html: stateBadge(m) }),
     m.parentMachine ? h('span', { class: 'tag' }, `⑂ от ${m.parentMachine}`) : null,
     h('div', { class: 'actions' },
-      stopped ? btn('▶ Старт', () => actions.start(m)) : null,
-      stopped ? btn('▶ Старт (branchable)', () => actions.start(m, true), { title: 'Запустить как источник веток (нужно для branch и pause на старых версиях macOS)' }) : null,
-      running ? btn('⏸ Пауза', () => actions.pause(m), { title: 'Сохранить RAM, CPU и диски и остановить' }) : null,
-      paused ? btn('⏵ Возобновить', () => actions.resume(m)) : null,
-      running ? btn('⑂ Ветка', () => actions.branch(m), { disabled: !m.branchable, title: m.branchable ? 'Copy-on-write клон работающей машины' : 'Машина должна быть запущена как branchable' }) : null,
-      running && (state.info?.proxyActive || state.info?.caActive) ? btn('🌐 Применить прокси', () => actions.provision(m), { title: 'Записать настройки прокси и сертификаты в работающую машину' }) : null,
-      running ? btn('■ Стоп', () => actions.stop(m)) : null,
-      btn('Удалить', () => actions.remove(m), { cls: 'danger' }),
+      stopped ? btn([ic('play'), 'Старт'], () => actions.start(m), { cls: 'primary' }) : null,
+
+      running ? btn([ic('pause'), 'Пауза'], () => actions.pause(m), { title: 'Сохранить RAM, CPU и диски и остановить' }) : null,
+      paused ? btn([ic('play'), 'Возобновить'], () => actions.resume(m), { cls: 'primary' }) : null,
+      running ? btn([ic('branch'), 'Ветка'], () => actions.branch(m), { disabled: !m.branchable, title: m.branchable ? 'Copy-on-write клон работающей машины' : 'Машина должна быть запущена как branchable' }) : null,
+      running && (state.info?.proxyActive || state.info?.caActive) ? btn([ic('globe'), 'Применить прокси'], () => actions.provision(m), { title: 'Записать настройки прокси и сертификаты в работающую машину' }) : null,
+      running ? btn([ic('stop'), 'Стоп'], () => actions.stop(m)) : null,
+      stopped ? h('details', { class: 'menu' },
+        h('summary', { class: 'btn ghost icon', title: 'Ещё' }, '⋯'),
+        h('div', { class: 'menu-pop' },
+          h('button', { class: 'menu-item', disabled: busy, onclick: (e) => { e.target.closest('details').open = false; actions.start(m, true); } },
+            h('b', {}, 'Запустить с ветвлением'),
+            h('span', { class: 'muted small' }, 'Режим branchable: от работающей машины можно делать «Ветки» — мгновенные копии вместе с процессами и памятью, например чтобы параллельно опробовать несколько решений. Для обычной работы не нужен.')))) : null,
+      btn([ic('trash')], () => actions.remove(m), { cls: 'ghost danger icon', title: 'Удалить машину' }),
     ),
   ].filter(Boolean));
 }
@@ -433,7 +491,7 @@ function renderTab() {
   const m = current();
   if (!body || !m) return;
   body.innerHTML = '';
-  ({ overview: tabOverview, console: tabConsole, logs: tabLogs, files: tabFiles, images: tabImages, egress: tabEgress }[state.tab] || tabOverview)(body, m);
+  ({ overview: tabOverview, agents: tabAgents, console: tabConsole, logs: tabLogs, files: tabFiles, images: tabImages, egress: tabEgress }[state.tab] || tabOverview)(body, m);
 }
 
 function needsRunning(body, m, what) {
@@ -444,9 +502,34 @@ function needsRunning(body, m, what) {
 }
 
 // --- overview
+// A card in the same style as the agents: icon, title, status badge, content.
+function block({ icon, title, sub, badge, on, items = [], empty, footer }) {
+  return h('section', { class: `block ${on ? 'on' : ''}` },
+    h('div', { class: 'agent-head' },
+      h('span', { class: 'mark m-icon' }, ic(icon)),
+      h('div', {}, h('div', { class: 'a-title' }, title), sub ? h('div', { class: 'a-sub' }, sub) : null),
+      h('span', { class: 'spacer' }),
+      badge ? h('span', { class: `badge ${on ? 'running' : 'stopped'}` }, badge) : null),
+    items.length ? h('div', { class: 'blist' }, items) : empty ? h('div', { class: 'muted small' }, empty) : null,
+    footer ? h('div', { class: 'row block-foot' }, footer) : null);
+}
+const bitem = (main, side) => h('div', { class: 'bitem' }, h('div', { class: 'bmain' }, main), side ? h('div', { class: 'bside' }, side) : null);
+const plural = (n, one, few, many) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? few : many}`;
+
 async function tabOverview(body, m) {
-  let info = m;
-  try { info = await api('GET', `/api/v1/machines/${enc(m.name)}`); } catch {}
+  const [infoR, miR, egR, dvR] = await Promise.allSettled([
+    api('GET', `/api/v1/machines/${enc(m.name)}`),
+    api('GET', `/ui/machines/${enc(m.name)}`),
+    api('GET', '/ui/egress'),
+    api('GET', `/ui/machines/${enc(m.name)}/dirs`),
+    loadVault(),
+  ]);
+  if (!$('#tab-body') || current()?.name !== m.name || state.tab !== 'overview') return;
+  const info = infoR.value || m;
+  const mi = miR.value || { useProxy: true, provisioned: null, secrets: [], agentPorts: [] };
+  const eg = egR.value || null;
+  const dv = dvR.value || null;
+
   const kv = [
     ['Состояние', stateLabel(info.state)],
     ['Образ', info.image || '—'],
@@ -457,74 +540,118 @@ async function tabOverview(body, m) {
     ['Диск (факт.)', info.diskUsedMb != null ? fmtMb(info.diskUsedMb) : '—'],
     ['Storage / Overlay', `${info.storageGb ?? 20} / ${info.overlayGb ?? 10} GiB`],
     ['Сеть', info.network ? `вкл${info.networkBackend ? ` (${info.networkBackend})` : ''}` : 'выкл'],
-    ['Egress трафик', info.egressBytes != null ? fmtBytes(info.egressBytes) : '—'],
-    ['PID', info.pid ?? '—'],
-    ['Branchable', info.branchable ? 'да' : 'нет'],
+    ['Исходящий трафик', info.egressBytes != null ? fmtBytes(info.egressBytes) : '—'],
     ['Создана', fmtAgo(info.createdAt)],
     ['GPU / CUDA', `${info.gpu ? 'GPU' : '—'} / ${info.cuda ? 'CUDA' : '—'}`],
   ];
-  if (!$('#tab-body') || current()?.name !== m.name || state.tab !== 'overview') return;
   body.innerHTML = '';
   body.append(h('div', { class: 'kv' }, kv.map(([k, v]) => h('div', {}, h('div', { class: 'k' }, k), h('div', { class: 'v' }, String(v))))));
 
-  if (info.ports?.length) {
-    body.append(h('div', { class: 'section-title' }, 'Порты'));
-    body.append(h('table', { class: 'tbl' },
-      h('tr', {}, h('th', {}, 'Хост'), h('th', {}, 'Гость'), h('th', {}, '')),
-      info.ports.map((p) => h('tr', {}, h('td', { class: 'mono' }, p.host), h('td', { class: 'mono' }, p.guest),
-        h('td', {}, h('a', { href: `http://localhost:${p.host}`, target: '_blank', rel: 'noopener' }, 'открыть ↗'))))));
+  const blocks = [];
+
+  // Ports
+  const ports = info.ports || [];
+  blocks.push(block({
+    icon: 'plug', title: 'Порты', sub: 'с машины на этот компьютер (localhost)', on: ports.length > 0,
+    badge: ports.length ? String(ports.length) : 'нет',
+    items: ports.map((p) => {
+      const ag = (mi.agentPorts || []).find((a) => a.host === p.host && a.guest === p.guest);
+      return bitem(
+        [h('span', { class: 'mono' }, `${p.host} → ${p.guest}`), h('span', { class: 'muted small' }, ag ? ` агент: ${ag.title}` : ' ваш порт')],
+        ag ? h('a', { href: '#', onclick: (e) => { e.preventDefault(); switchTab('agents'); }, title: 'Порт агента защищён паролем' }, 'Агенты →')
+          : h('a', { href: `http://localhost:${p.host}`, target: '_blank', rel: 'noopener' }, 'открыть ↗'));
+    }),
+    empty: 'Нет опубликованных портов. Добавляются при создании машины (поле «Порты») или профилем с агентами.',
+  }));
+
+  // Mounts
+  const mounts = info.mounts || [];
+  blocks.push(block({
+    icon: 'folder', title: 'Монтирования', sub: 'папки компьютера внутри машины', on: mounts.length > 0,
+    badge: mounts.length ? String(mounts.length) : 'нет',
+    items: mounts.map((x) => bitem(
+      [h('span', { class: 'mono' }, x.target), h('div', { class: 'muted small mono ellipsis', title: x.source }, x.source)],
+      h('span', { class: `tag ${x.readonly ? 'ok' : 'warn'}` }, x.readonly ? 'только чтение' : 'чтение и запись'))),
+    empty: 'Папки компьютера не подключены.',
+    footer: h('a', { href: `#/dirs?machine=${enc(m.name)}`, class: 'small' }, 'Подключить директории →'),
+  }));
+
+  // Internet (egress filter + smolvm policy)
+  if (eg) {
+    const em = eg.machines[m.name];
+    const lists = (em?.lists || []).map((id) => eg.lists.find((l) => l.id === id)?.name).filter(Boolean);
+    const policy = [...(info.allowedHosts || []), ...(info.allowedCidrs || [])];
+    blocks.push(block({
+      icon: 'globe', title: 'Доступ в сеть', sub: 'куда машине можно ходить', on: !!em?.enabled,
+      badge: em?.enabled ? (em.strict ? 'allow list · жёстко' : 'allow list') : 'без фильтра',
+      items: [
+        em?.enabled ? bitem('Списки', h('span', { class: 'small' }, lists.join(', ') || '—')) : null,
+        em?.enabled ? bitem('Свои правила', h('span', { class: 'small' }, String(em.rules.length))) : null,
+        policy.length ? bitem('Политика smolvm', h('span', { class: 'mono small ellipsis', title: policy.join(', ') }, policy.join(', '))) : null,
+        !info.network ? bitem('Сеть машины', h('span', { class: 'tag bad' }, 'выключена')) : null,
+      ].filter(Boolean),
+      empty: 'Машина ходит в интернет без ограничений smolvm-web.',
+      footer: [h('a', { href: `#/egress?machine=${enc(m.name)}`, class: 'small' }, 'Настроить allow list →'), h('a', { href: `#/log?machine=${enc(m.name)}`, class: 'small' }, 'Журнал →')],
+    }));
   }
-  if (info.mounts?.length) {
-    body.append(h('div', { class: 'section-title' }, 'Монтирования'));
-    body.append(h('table', { class: 'tbl' },
-      h('tr', {}, h('th', {}, 'Хост'), h('th', {}, 'Гость'), h('th', {}, 'Режим')),
-      info.mounts.map((x) => h('tr', {}, h('td', { class: 'mono' }, x.source), h('td', { class: 'mono' }, x.target), h('td', {}, x.readonly ? 'ro' : 'rw')))));
+
+  // Directories & users
+  if (dv) {
+    blocks.push(block({
+      icon: 'users', title: 'Директории', sub: 'права пользователей машины', on: dv.dirs.length > 0,
+      badge: dv.dirs.length ? plural(dv.dirs.length, 'папка', 'папки', 'папок') : 'нет',
+      items: [
+        ...dv.dirs.map((d) => bitem(h('span', { class: 'mono' }, d.guestPath), null)),
+        dv.users.length ? bitem('Пользователи', h('span', { class: 'small' }, dv.users.map((u) => u.name).join(', '))) : null,
+        dv.pending.add.length || dv.pending.remove.length ? h('div', { class: 'small warnc' }, 'Монтирования изменятся при следующем запуске') : null,
+      ].filter(Boolean),
+      empty: 'Разрешённые директории не подключены.',
+      footer: h('a', { href: `#/dirs?machine=${enc(m.name)}`, class: 'small' }, 'Права пользователей →'),
+    }));
   }
-  if (info.allowedHosts || info.allowedCidrs) {
-    body.append(h('div', { class: 'section-title' }, 'Политика egress'));
-    body.append(h('div', { class: 'mono small' }, [...(info.allowedHosts || []), ...(info.allowedCidrs || [])].join(', ') || 'всё запрещено'));
+
+  // Secrets
+  {
+    const avail = vaultCache.filter((x) => x.mode !== 'substitute' && !mi.secrets.some((b) => b.name === x.name));
+    const sel = avail.length ? h('select', { class: 'input small' }, avail.map((x) => h('option', { value: x.name }, `${x.name} (${MODE_LABEL[x.mode]})`))) : null;
+    blocks.push(block({
+      icon: 'key', title: 'Секреты', sub: 'API-ключи без передачи в машину', on: mi.secrets.length > 0,
+      badge: mi.secrets.length ? String(mi.secrets.length) : 'нет',
+      items: mi.secrets.map((x) => bitem(
+        [h('span', { class: 'with-mark' }, mark(secretMark(vaultCache.find((v) => v.name === x.name) || x), true), h('span', { class: 'mono' }, x.name), h('span', { class: `tag ${MODE_TAG[x.mode]}` }, MODE_LABEL[x.mode])),
+          h('div', { class: 'muted small mono' }, `$${x.envVar}${x.baseUrlVar ? `, $${x.baseUrlVar}` : ''}`)],
+        x.mode !== 'substitute'
+          ? h('button', { class: 'btn ghost small-btn', onclick: () => changeSecrets(m, [], [x.name]) }, 'Отвязать')
+          : h('span', { class: 'muted small' }, 'при создании'))),
+      empty: vaultCache.length ? 'К машине не привязано секретов.' : 'В хранилище пока нет секретов.',
+      footer: sel
+        ? [sel, h('button', { class: 'btn', onclick: () => changeSecrets(m, [sel.value], []) }, [ic('plus'), 'Привязать'])]
+        : h('a', { href: '#', class: 'small', onclick: (e) => { e.preventDefault(); openVault(); } }, 'Хранилище секретов →'),
+    }));
   }
+
+  // Corporate proxy (only when configured)
   if (state.info?.proxyActive || state.info?.caActive) {
-    let mp = { useProxy: true, provisioned: null };
-    try { mp = await api('GET', `/ui/machines/${enc(m.name)}`); } catch {}
-    const toggle = h('input', { type: 'checkbox', checked: mp.useProxy });
+    const toggle = h('input', { type: 'checkbox', checked: mi.useProxy });
     toggle.addEventListener('change', async () => {
       try {
         await api('PUT', `/ui/machines/${enc(m.name)}`, { useProxy: toggle.checked });
         toast(toggle.checked ? 'Прокси включён для машины (со следующего запуска/команды)' : 'Прокси для машины выключен', 'ok');
       } catch (e) { toast(e.message, 'err'); toggle.checked = !toggle.checked; }
     });
-    body.append(h('div', { class: 'section-title' }, 'Корпоративный прокси'));
-    body.append(h('div', { class: 'row' },
-      h('label', { class: 'check' }, toggle, ' Использовать прокси и корпоративные сертификаты'),
-      h('span', { class: 'muted small' }, mp.provisioned ? 'настройки записаны в машину' : 'в машину ещё не записаны')));
+    blocks.push(block({
+      icon: 'sliders', title: 'Корпоративный прокси', sub: 'прокси и сертификаты для машины', on: mi.useProxy,
+      badge: mi.useProxy ? 'включён' : 'выключен',
+      items: [bitem('Настройки в машине', h('span', { class: 'small' }, mi.provisioned ? 'записаны' : 'ещё не записаны'))],
+      footer: h('label', { class: 'check small' }, toggle, 'Использовать прокси и сертификаты'),
+    }));
   }
-  await renderMachineIsolation(body, m);
-  await renderMachineSecrets(body, m);
-  body.append(h('div', { class: 'section-title' }, 'JSON'));
-  body.append(h('pre', { class: 'json' }, JSON.stringify(info, null, 2)));
-}
 
-// Egress filter and directories at a glance, with links to their pages.
-async function renderMachineIsolation(body, m) {
-  let eg = null; let dv = null;
-  try { [eg, dv] = await Promise.all([api('GET', '/ui/egress'), api('GET', `/ui/machines/${enc(m.name)}/dirs`)]); } catch { return; }
-  if (current()?.name !== m.name || state.tab !== 'overview') return;
-  const em = eg.machines[m.name];
-  const lists = (em?.lists || []).map((id) => eg.lists.find((l) => l.id === id)?.name).filter(Boolean);
-  body.append(h('div', { class: 'section-title' }, 'Изоляция'));
-  body.append(h('div', { class: 'iso-grid' },
-    h('div', { class: 'iso' },
-      h('div', {}, h('b', {}, '🌐 Интернет: '), em?.enabled
-        ? h('span', { class: 'tag ok' }, em.strict ? 'только allow list (жёстко)' : 'allow list')
-        : h('span', { class: 'tag warn' }, 'без фильтра smolvm-web')),
-      em?.enabled ? h('div', { class: 'muted small' }, `Списки: ${lists.join(', ') || '—'}; своих правил: ${em.rules.length}`) : null,
-      h('a', { href: `#/egress?machine=${enc(m.name)}`, class: 'small' }, 'Настроить allow list →')),
-    h('div', { class: 'iso' },
-      h('div', {}, h('b', {}, '📁 Директории: '), dv.dirs.length ? `${dv.dirs.length} (${dv.dirs.map((d) => d.guestPath).join(', ')})` : 'не подключены'),
-      dv.users.length ? h('div', { class: 'muted small' }, `Пользователи: ${dv.users.map((u) => u.name).join(', ')}`) : null,
-      dv.pending.add.length || dv.pending.remove.length ? h('div', { class: 'small warnc' }, 'Монтирования изменятся при следующем запуске') : null,
-      h('a', { href: `#/dirs?machine=${enc(m.name)}`, class: 'small' }, 'Права пользователей →'))));
+  body.append(h('div', { class: 'blocks' }, blocks));
+  body.append(h('details', { class: 'tech' },
+    h('summary', {}, 'Технические детали'),
+    h('p', { class: 'muted small' }, 'Полный ответ smolvm об этой машине (GET /api/v1/machines/…): PID, статистика памяти, сетевой режим, политики. Нужен для диагностики.'),
+    h('pre', { class: 'json' }, JSON.stringify(info, null, 2))));
 }
 
 // --- console (exec over SSE)
@@ -717,7 +844,7 @@ function tabFiles(body, m) {
           const isDir = /^dir/.test(e.kind);
           const full = join(dir, e.name);
           return h('tr', { class: 'clickable', ondblclick: () => (isDir ? open(full) : download(full)), onclick: (ev) => { if (isDir && !ev.target.closest('button')) open(full); } },
-            h('td', { class: 'mono' }, `${isDir ? '📁' : e.kind === 'symlink' ? '🔗' : '📄'} ${e.name}`),
+            h('td', { class: 'mono' }, h('span', { class: 'fname' }, ic(isDir ? 'folder' : e.kind === 'symlink' ? 'link' : 'file'), e.name)),
             h('td', { class: 'muted' }, e.kind),
             h('td', { class: 'mono' }, isDir ? '' : fmtBytes(e.size)),
             h('td', {}, !isDir ? h('button', { class: 'btn ghost', onclick: () => download(full) }, '⇩ Скачать') : null));
@@ -802,7 +929,8 @@ function tabImages(body, m) {
 
 // --- egress
 async function tabEgress(body, m) {
-  body.append(h('p', { class: 'muted small' }, 'Исходящие соединения, заблокированные политикой egress (allowedHosts / allowedCidrs).'));
+  body.append(h('p', { class: 'muted small' }, 'Исходящие соединения этой машины, которые заблокировала сама smolvm: из-за списка разрешённых хостов машины или строгого режима smolvm serve (закрыта локальная сеть и хост). Только просмотр. Правила доступа в интернет — на странице ',
+    h('a', { href: '#/egress' }, 'Доступ в сеть'), ', журнал всех запросов через фильтр — на странице ', h('a', { href: `#/log?machine=${enc(m.name)}` }, 'Журнал'), '.'));
   const list = h('div', {}, h('p', { class: 'muted' }, 'Загрузка…'));
   body.append(list);
   try {
@@ -821,6 +949,7 @@ function openCreate() {
   $('#create-error').hidden = true;
   if (!f.name.value) f.name.placeholder = `vm-${Math.random().toString(36).slice(2, 7)}`;
   $('#create-proxy-wrap').hidden = !state.info?.proxyActive;
+  fillCreateProfiles();
   fillCreateSecrets();
   fillCreateIsolation();
   $('#dlg-create').showModal();
@@ -882,6 +1011,7 @@ function buildCreateBody(f) {
   if (f.allowedHosts.value.trim()) body.allowedHosts = csv(f.allowedHosts.value);
   if (f.workdir.value.trim()) body.workdir = f.workdir.value.trim();
   if (f.restart.value) body.restart = { policy: f.restart.value };
+  if (createProfile) body._webProfile = createProfile;
   const picked = [...document.querySelectorAll('#create-secrets input:checked')].map((i) => i.value);
   if (picked.length) body._webSecrets = picked;
   if (f.egressOn.checked) {
@@ -897,6 +1027,7 @@ $('#form-create').addEventListener('submit', async (e) => {
   const f = e.target;
   const errBox = $('#create-error');
   errBox.hidden = true;
+  if (createProfile === SMOLFILE) return createFromSmolfile(f, errBox);
   let body;
   try { body = buildCreateBody(f); } catch (err) { errBox.textContent = err.message; errBox.hidden = false; return; }
   const startAfter = f.startAfter.checked;
@@ -911,6 +1042,7 @@ $('#form-create').addEventListener('submit', async (e) => {
     toast(`Машина ${created.name} создана`, 'ok');
     await refreshMachines();
     select(created.name);
+    if (body._webProfile) switchTab('agents');
     if (startAfter) await actions.start(created, branchable);
   } catch (err) {
     errBox.textContent = err.message;
@@ -919,6 +1051,59 @@ $('#form-create').addEventListener('submit', async (e) => {
     submit.disabled = false; submit.textContent = 'Создать';
   }
 });
+
+// ---------- create from Smolfile ----------
+async function createFromSmolfile(f, errBox) {
+  const content = f.smolfile.value;
+  if (!content.trim()) { errBox.textContent = 'Вставьте Smolfile или загрузите файл'; errBox.hidden = false; return; }
+  const name = f.name.value.trim() || f.name.placeholder;
+  const startAfter = f.startAfter.checked;
+  const submit = $('#btn-create-submit');
+  submit.disabled = true; submit.textContent = 'Создание…';
+  try {
+    // 1. Smolfile -> API request (validated server-side, like smolvm does).
+    const p = await api('POST', '/ui/smolfile/parse', { content, baseDir: f.smolfileBase.value.trim() || null });
+    // 2. A regular create with smolvm-web's extras on top.
+    const body = { ...p.request, name, _webSmolfile: { init: p.init, env: p.env, baseDir: p.baseDir } };
+    const picked = [...document.querySelectorAll('#create-secrets input:checked')].map((i) => i.value);
+    if (picked.length) body._webSecrets = picked;
+    if (f.egressOn.checked) body._webEgress = { enabled: true, strict: f.egressStrict.checked, lists: [...document.querySelectorAll('#create-egress-lists input:checked')].map((i) => i.value) };
+    const optOut = state.info?.proxyActive && !f.useProxy.checked;
+    const created = await api('POST', `/api/v1/machines${optOut ? '?webProxy=0' : ''}`, body);
+    $('#dlg-create').close();
+    f.reset();
+    toast(`Машина ${created.name} создана из Smolfile`, 'ok');
+    for (const w of p.warnings || []) toast(`${created.name}: ${w}`, '', 10000);
+    await refreshMachines();
+    select(created.name);
+    if (startAfter) {
+      if (p.init.length) toast(`${created.name}: после запуска выполнятся команды init (${p.init.length})`);
+      await actions.start(created);
+    }
+  } catch (err) {
+    errBox.textContent = err.message;
+    errBox.hidden = false;
+  } finally {
+    submit.disabled = false; submit.textContent = 'Создать';
+  }
+}
+
+$('#smolfile-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.size > 256 * 1024) { toast('Файл больше 256 КБ', 'err'); return; }
+  const f = $('#form-create');
+  f.smolfile.value = await file.text();
+  e.target.value = '';
+  toast(`Загружен ${file.name}`, 'ok');
+});
+
+// Read-only text in the help dialog (init output and the like).
+function showText(title, text) {
+  $('#help-title').replaceChildren(ic('terminal'), title);
+  $('#help-body').replaceChildren(h('pre', { class: 'json', style: 'max-height:60vh' }, text));
+  $('#dlg-help').showModal();
+}
 
 // ---------- platform & proxy settings ----------
 async function refreshInfo() {
@@ -1099,7 +1284,7 @@ async function renderVault() {
   list.append(h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
     h('tr', {}, h('th', {}, 'Имя'), h('th', {}, 'Режим'), h('th', {}, 'Переменная'), h('th', {}, 'Куда'), h('th', {}, 'Машины'), h('th', {}, '')),
     v.secrets.map((x) => h('tr', {},
-      h('td', { class: 'mono' }, x.name, x.note ? h('div', { class: 'muted small' }, x.note) : null),
+      h('td', {}, h('span', { class: 'with-mark' }, mark(secretMark(x), true), h('span', { class: 'mono' }, x.name)), x.note ? h('div', { class: 'muted small' }, x.note) : null),
       h('td', {}, h('span', { class: `tag ${MODE_TAG[x.mode]}` }, MODE_LABEL[x.mode])),
       h('td', { class: 'mono small' }, x.envVar, x.baseUrlVar ? h('div', { class: 'muted' }, x.baseUrlVar) : null),
       h('td', { class: 'mono small' }, x.mode === 'gateway' ? x.upstream : x.mode === 'substitute' ? x.hosts.join(', ') : '—'),
@@ -1202,31 +1387,7 @@ async function fillCreateSecrets() {
   box.innerHTML = '';
   for (const x of vaultCache) {
     box.append(h('label', { class: 'check', title: x.note || '' }, h('input', { type: 'checkbox', value: x.name }),
-      ` ${x.name} `, h('span', { class: `tag ${MODE_TAG[x.mode]}` }, MODE_LABEL[x.mode])));
-  }
-}
-
-async function renderMachineSecrets(body, m) {
-  let info;
-  try { info = await api('GET', `/ui/machines/${enc(m.name)}`); await loadVault(); } catch { return; }
-  if (!info.secrets.length && !vaultCache.length) return;
-  body.append(h('div', { class: 'section-title' }, 'Секреты'));
-  if (info.secrets.length) {
-    body.append(h('table', { class: 'tbl' },
-      h('tr', {}, h('th', {}, 'Секрет'), h('th', {}, 'Режим'), h('th', {}, 'В машине'), h('th', {}, '')),
-      info.secrets.map((x) => h('tr', {},
-        h('td', { class: 'mono' }, x.name),
-        h('td', {}, h('span', { class: `tag ${MODE_TAG[x.mode]}` }, MODE_LABEL[x.mode])),
-        h('td', { class: 'mono small' }, `$${x.envVar}`, x.baseUrlVar ? `, $${x.baseUrlVar}` : ''),
-        h('td', {}, x.mode !== 'substitute' ? h('button', { class: 'btn ghost', onclick: () => changeSecrets(m, [], [x.name]) }, 'Отвязать') : h('span', { class: 'muted small' }, 'задан при создании'))))));
-  } else body.append(h('p', { class: 'muted small' }, 'К машине не привязано секретов.'));
-  const avail = vaultCache.filter((x) => x.mode !== 'substitute' && !info.secrets.some((b) => b.name === x.name));
-  if (avail.length) {
-    const sel = h('select', { class: 'input small' }, avail.map((x) => h('option', { value: x.name }, `${x.name} (${MODE_LABEL[x.mode]})`)));
-    body.append(h('div', { class: 'row' }, sel, h('button', { class: 'btn', onclick: () => changeSecrets(m, [sel.value], []) }, '+ Привязать')));
-  }
-  if (info.secrets.some((x) => x.mode === 'gateway')) {
-    body.append(h('p', { class: 'muted small' }, 'Для шлюза машина должна быть запущена через smolvm-web (перезапустите её после привязки). Пример для OpenAI-совместимого SDK: base_url = $DEEPSEEK_BASE_URL, api_key = $DEEPSEEK_API_KEY.'));
+      mark(secretMark(x), true), ` ${x.name} `, h('span', { class: `tag ${MODE_TAG[x.mode]}` }, MODE_LABEL[x.mode])));
   }
 }
 
@@ -1236,6 +1397,267 @@ async function changeSecrets(m, add, remove) {
     toast(add.length ? `Секрет привязан к ${m.name}` : `Секрет отвязан от ${m.name}`, 'ok');
   } catch (e) { toast(e.message, 'err'); }
   if (state.tab === 'overview') renderTab();
+}
+
+// ---------- profiles (create) ----------
+let createProfile = null;
+let profilesCache = null;
+// Profile/agent/provider marks: brand glyphs from the sprite, or a text fallback.
+const MARK_ICON = { claude: 'b-claude', dsh: 'b-deepseek', deepseek: 'b-deepseek', opencode: 'b-opencode', openai: 'b-openai',
+  gemini: 'b-gemini', openrouter: 'b-openrouter', github: 'b-github', term: 'i-terminal', blank: 'i-plus', all: 'i-bot', key: 'i-key' };
+const MARK_TEXT = { sf: '{ }' };
+const SMOLFILE = '__smolfile';
+function mark(m, small) {
+  const el = h('span', { class: `mark m-${m}${small ? ' sm' : ''}` });
+  if (MARK_ICON[m]) {
+    const t = document.createElement('template');
+    t.innerHTML = `<svg class="ic"><use href="#${MARK_ICON[m]}"/></svg>`;
+    el.append(t.content.firstChild);
+  } else el.textContent = MARK_TEXT[m] || '?';
+  return el;
+}
+// Which provider a secret belongs to (for its mark).
+function secretMark(x) {
+  const s = `${x.upstream || ''} ${(x.hosts || []).join(' ')} ${x.envVar || ''}`.toLowerCase();
+  if (/anthropic/.test(s)) return 'claude';
+  if (/deepseek/.test(s)) return 'deepseek';
+  if (/openrouter/.test(s)) return 'openrouter';
+  if (/openai/.test(s)) return 'openai';
+  if (/gemini|generativelanguage|google/.test(s)) return 'gemini';
+  if (/github/.test(s)) return 'github';
+  return 'key';
+}
+
+async function fillCreateProfiles() {
+  const box = $('#create-profiles');
+  if (!profilesCache) {
+    try { profilesCache = (await api('GET', '/ui/profiles')).profiles; } catch { profilesCache = []; }
+  }
+  const f = $('#form-create');
+  const pick = (id) => {
+    createProfile = id;
+    f.classList.toggle('sf-mode', id === SMOLFILE);
+    box.querySelectorAll('.profile').forEach((b) => b.classList.toggle('active', (b.dataset.id || null) === (id || null) || (!id && !b.dataset.id)));
+    const p = profilesCache.find((x) => x.id === id);
+    if (id === SMOLFILE) {
+      const hint = $('#create-profile-hint');
+      hint.hidden = false;
+      hint.textContent = 'Образ, ресурсы, порты, тома, сеть и init берутся из Smolfile. Ниже можно добавить то, чем управляет smolvm-web: корпоративный прокси, фильтр «Доступ в сеть» и секреты.';
+      if (!f.name.value) f.name.placeholder = `sf-${Math.random().toString(36).slice(2, 6)}`;
+      setTimeout(() => f.smolfile.focus(), 0);
+      return;
+    }
+    f.image.value = p ? p.image : 'alpine';
+    f.memoryMb.placeholder = p ? String(p.memoryMb) : '8192';
+    f.cpus.placeholder = p ? String(p.cpus) : '4';
+    if (p && (!f.name.value || /^vm-/.test(f.name.placeholder))) f.name.placeholder = `${p.id}-${Math.random().toString(36).slice(2, 5)}`;
+    const hint = $('#create-profile-hint');
+    hint.hidden = !p;
+    if (p) hint.textContent = `Агенты: ${p.agents.map((a) => a.title).join(', ')}. Установка — автоматически после первого запуска (~2–3 мин). Для доступа к моделям отметьте секрет DeepSeek или Anthropic ниже (режим «Шлюз»).`;
+    // Suggest the matching provider secrets.
+    if (p) document.querySelectorAll('#create-secrets input').forEach((i) => {
+      const x = vaultCache.find((v) => v.name === i.value);
+      if (x && x.mode !== 'substitute' && /deepseek|anthropic/i.test(`${x.upstream} ${x.envVar}`)) i.checked = true;
+    });
+  };
+  box.replaceChildren(
+    h('button', { type: 'button', class: 'profile', onclick: () => pick(null) }, mark('blank'),
+      h('span', { class: 'p-name' }, 'Пустая машина'), h('span', { class: 'p-desc' }, 'Любой OCI-образ, без агентов')),
+    h('button', { type: 'button', class: 'profile', 'data-id': SMOLFILE, onclick: () => pick(SMOLFILE) }, mark('sf'),
+      h('span', { class: 'p-name' }, 'Из Smolfile'), h('span', { class: 'p-desc' }, 'Вставьте или загрузите Smolfile (TOML)')),
+    ...profilesCache.map((p) => h('button', { type: 'button', class: 'profile', 'data-id': p.id, onclick: () => pick(p.id) }, mark(p.mark),
+      h('span', { class: 'p-name' }, p.title), h('span', { class: 'p-desc' }, p.desc))),
+  );
+  pick(null);
+}
+
+// ---------- agents tab ----------
+// Agents open in a new browser tab. The tab is opened synchronously on click
+// (so popup blockers allow it) and pointed at the agent once it is up.
+function agentTab() {
+  const w = window.open('', '_blank');
+  if (w) {
+    try { w.opener = null; } catch {}
+    try { w.document.title = 'Запуск агента…'; w.document.body.style.cssText = 'font:14px system-ui;color:#71717a;background:#09090b;display:grid;place-items:center;height:100vh;margin:0'; w.document.body.textContent = 'Запуск агента…'; } catch {}
+  }
+  return w;
+}
+function agentUrl(url) {
+  // Same host name as this page: localhost and 127.0.0.1 are different sites,
+  // and agent cookies (dsh) are SameSite=Strict.
+  const u = new URL(url);
+  if (['127.0.0.1', 'localhost'].includes(location.hostname)) u.hostname = location.hostname;
+  return u.toString();
+}
+function goAgent(w, url) {
+  url = agentUrl(url);
+  if (w && !w.closed) w.location.replace(url);
+  else if (!window.open(url, '_blank', 'noopener')) toast(h('span', {}, 'Браузер заблокировал новую вкладку. ', h('a', { href: url, target: '_blank', rel: 'noopener' }, 'Открыть агента')), 'err');
+}
+
+async function tabAgents(body, m) {
+  const head = h('div', { class: 'col', style: 'display:flex;flex-direction:column;gap:14px' });
+  const taskBox = h('div');
+  // Sub-sections: the agents themselves, and one-shot headless tasks.
+  let sub = localStorage.getItem('smolvm.agentsSub') === 'task' ? 'task' : 'agents';
+  const subBtn = (id, icon, label) => h('button', { class: `tab ${sub === id ? 'active' : ''}`, 'data-sub': id, onclick: () => {
+    sub = id; localStorage.setItem('smolvm.agentsSub', id);
+    subnav.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.sub === id));
+    head.hidden = id !== 'agents'; taskBox.hidden = id !== 'task';
+  } }, ic(icon), label);
+  const subnav = h('nav', { class: 'tabs subtabs' }, subBtn('agents', 'bot', 'Агенты'), subBtn('task', 'send', 'Задача без интерфейса'));
+  head.hidden = sub !== 'agents'; taskBox.hidden = sub !== 'task';
+  body.append(subnav, head, taskBox);
+  let alive = true;
+  let timer = null;
+  let st = null;
+  let lastSig = '';
+  tabCleanup = () => { alive = false; clearTimeout(timer); };
+
+  const refresh = async () => {
+    if (!alive) return;
+    clearTimeout(timer);
+    try { st = await api('GET', `/ui/machines/${enc(m.name)}/agents`); } catch (e) { head.replaceChildren(h('div', { class: 'error' }, e.message)); return; }
+    if (!alive) return;
+    // Re-render only on change, so buttons are not replaced under the cursor.
+    const sig = JSON.stringify(st);
+    if (sig !== lastSig) { lastSig = sig; renderHead(); }
+    if (!taskBox.querySelector('textarea')) renderTask();
+    timer = setTimeout(refresh, st.job?.status === 'running' ? 1500 : 5000);
+  };
+
+  function renderHead() {
+    const nodes = [];
+    const running = st.machineRunning;
+    if (!st.agents.length) {
+      const picks = st.available.map((a) => h('label', { class: 'check' }, h('input', { type: 'checkbox', value: a.id }), ` ${a.title} `, h('span', { class: 'muted small' }, a.desc)));
+      nodes.push(h('section', { class: 'card' },
+        h('div', { class: 'card-head' }, h('h3', {}, 'Подключить агентов')),
+        h('p', { class: 'muted small' }, 'Агенты ставятся в машину (нужен образ с Node.js на Debian, например node:22-bookworm-slim) и открываются прямо здесь. Для портов машина будет перезапущена.'),
+        h('div', { class: 'checks-col' }, picks),
+        h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: async () => {
+          const add = picks.map((l) => l.querySelector('input')).filter((i) => i.checked).map((i) => i.value);
+          if (!add.length) return toast('Выберите агентов', 'err');
+          try {
+            const r = await api('POST', `/ui/machines/${enc(m.name)}/agents`, { add });
+            if (r.restartNeeded) {
+              toast('Перезапускаю машину, чтобы опубликовать порты агентов…');
+              await actions.stop(m);
+              await actions.start({ ...m });
+            }
+            await api('POST', `/ui/machines/${enc(m.name)}/agents/install`, {}).catch((e) => toast(e.message, 'err'));
+          } catch (e) { toast(e.message, 'err'); }
+          refresh();
+        } }, 'Подключить и установить'))));
+      head.replaceChildren(...nodes);
+      return;
+    }
+
+    // Install state
+    const job = st.job;
+    if (job?.status === 'running' || job?.status === 'error' || !st.installed) {
+      const STEPS = ['Системные пакеты', 'Пользователь', 'Веб-терминал ttyd', 'npm', 'Проверка', 'Готово'];
+      const cur = STEPS.findIndex((x) => (job?.step || '').startsWith(x));
+      const term = h('div', { class: 'term' });
+      term.textContent = job?.log || '';
+      nodes.push(h('section', { class: 'install' },
+        h('div', { class: 'card-head' },
+          h('h3', {}, job?.status === 'running' ? 'Установка агентов…' : job?.status === 'error' ? 'Установка не удалась' : 'Агенты не установлены'),
+          h('span', { class: 'spacer' }),
+          job?.status !== 'running' ? h('button', { class: 'btn primary', disabled: !running, title: running ? '' : 'Сначала запустите машину', onclick: async () => {
+            try { await api('POST', `/ui/machines/${enc(m.name)}/agents/install`, {}); } catch (e) { toast(e.message, 'err'); }
+            refresh();
+          } }, [ic('download'), job?.status === 'error' ? 'Повторить' : 'Установить']) : null),
+        job ? h('div', { class: 'steps' }, STEPS.map((x, i) => h('span', { class: i < cur || job.status === 'ok' ? 'done' : i === cur ? 'now' : '' }, x))) : null,
+        job?.error ? h('div', { class: 'error' }, job.error) : null,
+        job ? term : h('p', { class: 'muted small' }, running ? 'Нажмите «Установить» — займёт 2–3 минуты.' : 'Запустите машину — установка начнётся автоматически.')));
+      requestAnimationFrame(() => { term.scrollTop = term.scrollHeight; });
+    }
+    if (st.missingPorts.length) {
+      nodes.push(h('div', { class: 'notice' }, `Порты агентов (${st.missingPorts.map((p) => p.host).join(', ')}) ещё не опубликованы — они применятся при следующем запуске машины. `,
+        running ? h('button', { class: 'btn', onclick: async () => { await actions.stop(m); await actions.start({ ...m }); refresh(); } }, 'Перезапустить') : null));
+    }
+    if (!st.providers?.providers?.length) {
+      nodes.push(h('div', { class: 'notice' }, 'К машине не привязан ключ модели. Добавьте DeepSeek или Anthropic в «Секреты» (режим «Шлюз») и привяжите на вкладке «Обзор» — агенты подхватят его при следующем запуске.'));
+    }
+
+    nodes.push(h('div', { class: 'agents' }, st.agents.map((a) => {
+      const can = running && a.installed && a.portReady;
+      const auto = a.id === 'claude' ? h('input', { type: 'checkbox', title: 'Без подтверждений: --dangerously-skip-permissions (машина — песочница)' }) : null;
+      const startBtn = h('button', { class: 'btn primary', disabled: !can, title: 'Запустить и открыть в новой вкладке', onclick: async () => {
+        const w = agentTab();
+        startBtn.disabled = true; startBtn.textContent = 'Запуск…';
+        try {
+          const r = await api('POST', `/ui/machines/${enc(m.name)}/agents/${a.id}/start`, { autonomous: !!auto?.checked });
+          goAgent(w, r.url);
+        } catch (e) { if (w) w.close(); toast(`${a.title}: ${e.message}`, 'err'); }
+        lastSig = ''; refresh();
+      } }, [ic('play'), 'Запустить']);
+      return h('div', { class: `agent ${a.running ? 'running' : ''}` },
+        h('div', { class: 'agent-head' }, mark(a.mark),
+          h('div', {}, h('div', { class: 'a-title' }, a.title), h('div', { class: 'a-sub' }, a.kind === 'tty' ? 'терминал' : 'веб-интерфейс', ` · порт ${a.hostPort}`)),
+          h('span', { class: 'spacer' }),
+          h('span', { class: `badge ${a.running ? 'running' : 'stopped'}` }, a.running ? 'работает' : !a.installed ? 'не установлен' : 'остановлен')),
+        a.provider ? h('div', { class: 'muted small' }, `Модель: ${a.provider}`) : a.id !== 'terminal' ? h('div', { class: 'muted small' }, 'Модель: не задана') : h('div', { class: 'muted small' }, a.desc),
+        h('div', { class: 'row' },
+          a.running
+            ? [h('button', { class: 'btn primary', title: 'Открыть в новой вкладке', onclick: async () => {
+                const w = agentTab();
+                try { const r = await api('GET', `/ui/machines/${enc(m.name)}/agents/${a.id}/open`); goAgent(w, r.url); } catch (e) { if (w) w.close(); toast(e.message, 'err'); }
+              } }, [ic('external'), 'Открыть']),
+              h('button', { class: 'btn', onclick: async () => {
+                try { await api('POST', `/ui/machines/${enc(m.name)}/agents/${a.id}/stop`, {}); } catch (e) { toast(e.message, 'err'); }
+                refresh();
+              } }, [ic('stop'), 'Стоп'])]
+            : startBtn,
+          auto ? h('label', { class: 'check small', title: auto.title }, auto, 'автономно') : null));
+    })));
+    head.replaceChildren(...nodes);
+  }
+
+  function renderTask() {
+    const withTask = st.agents.filter((a) => a.task && a.installed);
+    if (!withTask.length) {
+      taskBox.replaceChildren(h('div', { class: 'block' }, h('div', { class: 'muted small' }, st.agents.length
+        ? 'Задачи выполняют Claude Code, OpenCode и DeepSeek Harness — дождитесь их установки (подраздел «Агенты»).'
+        : 'Подключите агентов в подразделе «Агенты» — после установки здесь можно давать им задачи без интерфейса.')));
+      return;
+    }
+    const sel = h('select', { class: 'input small' }, withTask.map((a) => h('option', { value: a.id }, a.title)));
+    const prompt = h('textarea', { class: 'input', rows: 3, placeholder: 'Например: создай в /work простой HTTP-сервер на Python и проверь, что он отвечает' });
+    const auto = h('input', { type: 'checkbox' });
+    const out = h('div', { class: 'term', hidden: true });
+    let ctrl = null;
+    const run = h('button', { class: 'btn primary' }, [ic('send'), 'Выполнить']);
+    run.addEventListener('click', async () => {
+      if (ctrl) { ctrl.abort(); return; }
+      if (!prompt.value.trim()) return;
+      out.hidden = false; out.textContent = '';
+      ctrl = new AbortController();
+      run.replaceChildren(ic('stop'), 'Прервать');
+      const write = (t, cls) => { out.append(cls ? h('span', { class: cls }, t) : document.createTextNode(t)); out.scrollTop = out.scrollHeight; };
+      write(`$ ${sel.selectedOptions[0].textContent}: ${prompt.value.trim()}\n`, 'cmd');
+      try {
+        const res = await api('POST', `/ui/machines/${enc(m.name)}/agents/${sel.value}/task`, { prompt: prompt.value, autonomous: auto.checked }, { raw: true, signal: ctrl.signal });
+        await readSSE(res, (ev, data) => {
+          if (ev === 'stdout') write(data.endsWith('\n') ? data : `${data}\n`);
+          else if (ev === 'stderr') write(data.endsWith('\n') ? data : `${data}\n`, 'err');
+          else if (ev === 'exit') { let c = '?'; try { c = JSON.parse(data).exitCode; } catch {} write(`[exit ${c}]\n`, c === 0 ? 'ok' : 'err'); }
+          else if (ev === 'error') write(`error: ${data}\n`, 'err');
+        });
+      } catch (e) { if (e.name !== 'AbortError') write(`ошибка: ${e.message}\n`, 'err'); else write('^C\n', 'sys'); }
+      ctrl = null;
+      run.replaceChildren(ic('send'), 'Выполнить');
+    });
+    prompt.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) run.click(); });
+    taskBox.replaceChildren(h('section', { class: 'card task' },
+      h('div', { class: 'card-head' }, h('h3', {}, 'Задача без интерфейса'), h('span', { class: 'muted small' }, 'агент выполнит её в /work и вернёт результат сюда; окно агента не открывается')),
+      prompt,
+      h('div', { class: 'row' }, sel, h('label', { class: 'check small', title: 'Claude Code: --dangerously-skip-permissions; остальные агенты не спрашивают подтверждений' }, auto, 'без подтверждений'), h('span', { class: 'spacer' }), h('span', { class: 'muted small' }, '⌘/Ctrl+Enter'), run),
+      out));
+  }
+
+  refresh();
 }
 
 // ---------- theme ----------

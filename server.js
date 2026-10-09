@@ -21,6 +21,9 @@ const up = require('./lib/upstream');
 const mc = require('./lib/machines');
 const vault = require('./lib/vault');
 const gateway = require('./lib/gateway');
+const agents = require('./lib/agents');
+const agentproxy = require('./lib/agentproxy');
+const smolfile = require('./lib/smolfile');
 const egress = require('./lib/egress');
 const dirs = require('./lib/dirs');
 
@@ -120,7 +123,21 @@ function forward(req, res, bodyBuf) {
 }
 
 // ---------- start ----------
-async function startMachine(name, { apiPath, body = {}, branchable = false }) {
+const starting = new Set(); // machines inside startMachine (any client)
+
+async function startMachine(name, opts) {
+  starting.add(name);
+  try { return await startMachineInner(name, opts); } finally { starting.delete(name); }
+}
+
+// What each machine is busy preparing right now (for the «подготовка» badge).
+function preparing() {
+  const out = {};
+  for (const n of starting) out[n] = { label: 'запуск', step: 'запуск машины и настройка' };
+  return out;
+}
+
+async function startMachineInner(name, { apiPath, body = {}, branchable = false }) {
   const fail = (status, error, code) => Object.assign(new Error(error), { status, code });
   let prepared;
   try { prepared = await mc.prepareStart(name); } catch (e) { throw fail(400, `подготовка к запуску: ${e.message}`, 'PREPARE_FAILED'); }
@@ -133,7 +150,7 @@ async function startMachine(name, { apiPath, body = {}, branchable = false }) {
   let info;
   try {
     await mc.pushCredentialValues(name, plan.native);
-    if (viaCli) info = await mc.startViaCli(name, { branchable, proxy: plan.proxy });
+    if (viaCli) { info = await mc.startViaCli(name, { branchable, proxy: plan.proxy }); delete info._cliLog; }
     else {
       const r = await up.request('POST', apiPath, body);
       if (r.status !== 200) throw Object.assign(new Error(r.data?.error || `HTTP ${r.status}`), { status: r.status, body: r.data });
@@ -157,6 +174,16 @@ async function startMachine(name, { apiPath, body = {}, branchable = false }) {
   } catch (e) {
     info._webDirs = { errors: [e.message], warnings: [], users: [] };
   }
+  // First start of a Smolfile machine: its `init`, once, after proxy/CA/dirs are in place.
+  if (smolfile.initPending(name)) {
+    try { info._webInit = await smolfile.runInit(name); } catch (e) { info._webInit = { ok: false, error: e.message, log: '' }; }
+  }
+  // First start of a profile machine: install its agents in the background.
+  const am = agents.get(name);
+  if (am && !am.installed && agents.job(name)?.status !== 'running') {
+    agents.startInstall(name);
+    info._webInstall = true;
+  }
   return info;
 }
 
@@ -176,7 +203,25 @@ const ROUTES = [
     const secretNames = Array.isArray(body._webSecrets) ? body._webSecrets.map(String) : [];
     const eg = body._webEgress && typeof body._webEgress === 'object' ? body._webEgress : null;
     const dirIds = Array.isArray(body._webDirs) ? body._webDirs.map(String) : [];
-    delete body._webSecrets; delete body._webEgress; delete body._webDirs;
+    const profileId = typeof body._webProfile === 'string' && agents.PROFILES[body._webProfile] ? body._webProfile : null;
+    const sfMeta = body._webSmolfile && typeof body._webSmolfile === 'object' ? body._webSmolfile : null;
+    delete body._webSecrets; delete body._webEgress; delete body._webDirs; delete body._webProfile; delete body._webSmolfile;
+    if (profileId) {
+      // An agent profile: Debian + Node image, a long-lived workload, published agent ports.
+      const p = agents.PROFILES[profileId];
+      if (!body.name) return sendJson(res, 400, { error: 'Для машины с профилем укажите имя', code: 'BAD_REQUEST' });
+      const exists = await up.request('GET', `/api/v1/machines/${encodeURIComponent(body.name)}`);
+      if (exists.status === 200) return sendJson(res, 409, { error: `Машина ${body.name} уже существует`, code: 'CONFLICT' });
+      body.image = body.image || p.image;
+      body.cpus = body.cpus || p.cpus;
+      body.memoryMb = body.memoryMb || p.memoryMb;
+      body.network = true;
+      if (!body.cmd) body.cmd = ['sh', '-c', 'while true; do sleep 3600; done'];
+      agents.forget(body.name);
+      const ports = await agents.declare(body.name, p.agents, profileId);
+      body.ports = [...(Array.isArray(body.ports) ? body.ports : []), ...ports];
+      if (eg?.enabled) eg.rules = [...(Array.isArray(eg.rules) ? eg.rules : []), ...agents.egressRules(profileId)];
+    }
     try { dirs.checkFreeMounts(body.mounts); } catch (e) { return sendJson(res, 400, { error: e.message, code: 'BAD_MOUNT' }); }
 
     if (secretNames.length || eg?.enabled || dirIds.length) {
@@ -185,6 +230,7 @@ const ROUTES = [
       if (exists.status === 200) return sendJson(res, 409, { error: `Машина ${body.name} уже существует`, code: 'CONFLICT' });
     }
     const cleanup = async () => {
+      if (profileId) agents.forget(body.name);
       if (secretNames.length) await vault.forgetMachine(body.name);
       if (eg?.enabled) egress.forgetMachine(body.name);
       if (dirIds.length) dirs.forgetMachine(body.name);
@@ -228,6 +274,23 @@ const ROUTES = [
       try { await vault.bind(body.name, secretNames); } catch (e) { await cleanup(); return sendJson(res, 400, { error: e.message, code: 'BAD_SECRET' }); }
       const bound = await vault.machineSecrets(body.name);
       const native = bound.filter((x) => x.mode === 'substitute');
+      // Substitution values live in `smolvm serve`, so the machine must start through
+      // it — under the strict egress floor, which walls off the host and the LAN:
+      // the egress filter, the corporate proxy and the secret gateway all live there.
+      const viaHost = [
+        eg?.enabled && 'фильтр «Доступ в сеть»',
+        useProxy && (await mc.effectiveProxy(null).catch(() => null)) && 'корпоративный прокси',
+        bound.some((x) => x.mode === 'gateway') && 'секреты в режиме «Шлюз»',
+      ].filter(Boolean);
+      if (native.length && viaHost.length) {
+        await cleanup();
+        return sendJson(res, 400, {
+          code: 'SECRET_MODE_CONFLICT',
+          error: `Секрет ${native.map((x) => `«${x.name}»`).join(', ')} в режиме «Подстановка smolvm» нельзя сочетать с: ${viaHost.join(', ')}. `
+            + 'Такую машину запускает smolvm serve в строгом режиме, и хост/LAN из неё недоступны. '
+            + 'Переведите секрет в режим «Шлюз smolvm-web» (Секреты → Изменить) или снимите эти опции.',
+        });
+      }
       if (native.length) {
         body.network = true;
         body.credentials = {
@@ -253,7 +316,10 @@ const ROUTES = [
       if (!eg?.enabled) egress.forgetMachine(r.data.name);
       if (dirMounts.length) dirs.markApplied(r.data.name, dirMounts);
       else dirs.forgetMachine(r.data.name);
+      smolfile.forget(r.data.name);
+      if (sfMeta) smolfile.remember(r.data.name, { init: sfMeta.init, env: sfMeta.env, workdir: body.workdir, baseDir: sfMeta.baseDir });
     } else await cleanup();
+    if (r.status !== 200 && profileId && !secretNames.length && !eg?.enabled && !dirIds.length) agents.forget(body.name);
     sendJson(res, r.status, r.data);
   }],
 
@@ -295,7 +361,7 @@ const ROUTES = [
   ['DELETE', new RegExp(`^${M}$`), async (req, res, m) => {
     const name = decodeURIComponent(m[1]);
     const r = await up.request('DELETE', req.url);
-    if (r.status === 200) { cfg.forgetMachine(name); await vault.forgetMachine(name); egress.forgetMachine(name); dirs.forgetMachine(name); }
+    if (r.status === 200) { cfg.forgetMachine(name); await vault.forgetMachine(name); egress.forgetMachine(name); dirs.forgetMachine(name); agents.forget(name); agentproxy.closeFor(`${name}/`); smolfile.forget(name); }
     sendJson(res, r.status, r.data);
   }],
 
@@ -318,7 +384,68 @@ function publicSettings() {
   return { ...s, ca: { ...s.ca } };
 }
 
+const AG = '^/ui/machines/([^/]+)/agents';
 const UI = [
+  ['GET', /^\/ui\/preparing$/, (req, res) => {
+    const out = preparing();
+    for (const j of smolfile.runningInits()) out[j.name] = { label: 'подготовка', step: j.step };
+    for (const j of agents.runningJobs()) out[j.name] = { label: 'подготовка', step: `установка агентов: ${j.step}` };
+    sendJson(res, 200, out);
+  }],
+  // Smolfile -> API create request (+ init, warnings); see lib/smolfile.js.
+  ['POST', /^\/ui\/smolfile\/parse$/, async (req, res) => {
+    const body = await readJson(req);
+    try { sendJson(res, 200, smolfile.toRequest(body.content, { baseDir: body.baseDir })); }
+    catch (e) { sendJson(res, e.status || 500, { error: e.message, code: 'SMOLFILE' }); }
+  }],
+  ['GET', /^\/ui\/profiles$/, (req, res) => sendJson(res, 200, { profiles: agents.profiles() })],
+  ['GET', new RegExp(`${AG}$`), async (req, res, m) => sendJson(res, 200, await agents.status(decodeURIComponent(m[1])))],
+  // Attach agents to an existing machine: ports are published on the next start.
+  ['POST', new RegExp(`${AG}$`), async (req, res, m) => {
+    const name = decodeURIComponent(m[1]);
+    const { add = [] } = await readJson(req);
+    const ids = add.filter((id) => agents.AGENTS[id]);
+    if (!ids.length) return sendJson(res, 400, { error: 'не выбраны агенты' });
+    await agents.declare(name, ids);
+    const st = await machineState(name);
+    sendJson(res, 200, { restartNeeded: st === 'running', ...(await agents.status(name)) });
+  }],
+  ['POST', new RegExp(`${AG}/install$`), async (req, res, m) => {
+    const name = decodeURIComponent(m[1]);
+    if (!agents.get(name)) await agents.declare(name, ['terminal']);
+    if ((await machineState(name)) !== 'running') return sendJson(res, 409, { error: 'Запустите машину, чтобы установить агентов' });
+    agents.startInstall(name);
+    sendJson(res, 200, await agents.status(name));
+  }],
+  ['POST', new RegExp(`${AG}/([\\w-]+)/start$`), async (req, res, m) => {
+    const name = decodeURIComponent(m[1]);
+    const body = await readJson(req);
+    try { sendJson(res, 200, await agents.start(name, m[2], { autonomous: !!body.autonomous })); }
+    catch (e) { sendJson(res, 400, { error: e.message }); }
+  }],
+  ['POST', new RegExp(`${AG}/([\\w-]+)/stop$`), async (req, res, m) => {
+    try { await agents.stop(decodeURIComponent(m[1]), m[2]); sendJson(res, 200, { stopped: true }); }
+    catch (e) { sendJson(res, 400, { error: e.message }); }
+  }],
+  ['GET', new RegExp(`${AG}/([\\w-]+)/open$`), async (req, res, m) => {
+    try { sendJson(res, 200, await agents.open(decodeURIComponent(m[1]), m[2])); }
+    catch (e) { sendJson(res, 400, { error: e.message }); }
+  }],
+  ['GET', new RegExp(`${AG}/([\\w-]+)/log$`), async (req, res, m) => {
+    try { sendJson(res, 200, { log: await agents.logTail(decodeURIComponent(m[1]), m[2], 20000) }); }
+    catch (e) { sendJson(res, 400, { error: e.message }); }
+  }],
+  // One-shot headless task, streamed back as the exec/stream SSE.
+  ['POST', new RegExp(`${AG}/([\\w-]+)/task$`), async (req, res, m) => {
+    const name = decodeURIComponent(m[1]);
+    const { prompt, autonomous } = await readJson(req);
+    if (!prompt || !String(prompt).trim()) return sendJson(res, 400, { error: 'пустая задача' });
+    let body;
+    try { body = await agents.taskBody(name, m[2], prompt, { autonomous: !!autonomous }); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+    req.url = `/api/v1/machines/${encodeURIComponent(name)}/exec/stream`;
+    req.method = 'POST';
+    forward(req, res, Buffer.from(JSON.stringify(body)));
+  }],
   ['GET', /^\/ui\/info$/, async (req, res) => {
     const s = cfg.getSettings();
     const g = s.proxy.url ? await px.guestUrl(s.proxy.url) : null;
@@ -371,7 +498,9 @@ const UI = [
   ['GET', /^\/ui\/machines\/([^/]+)$/, async (req, res, m) => {
     const name = decodeURIComponent(m[1]);
     const secrets = (await vault.machineSecrets(name).catch(() => [])).map((x) => ({ name: x.name, mode: x.mode, envVar: x.envVar, baseUrlVar: x.baseUrlVar }));
-    sendJson(res, 200, { useProxy: cfg.machineUsesProxy(name), provisioned: cfg.getProvisioned(name) || null, secrets });
+    const am = agents.get(name);
+    const agentPorts = am ? am.agents.filter((id) => am.ports?.[id]).map((id) => ({ id, title: agents.AGENTS[id].title, host: am.ports[id], guest: agents.AGENTS[id].port })) : [];
+    sendJson(res, 200, { useProxy: cfg.machineUsesProxy(name), provisioned: cfg.getProvisioned(name) || null, secrets, agentPorts });
   }],
   // Attach/detach gateway and env secrets on an existing machine (substitution is fixed at create).
   ['PUT', /^\/ui\/machines\/([^/]+)\/secrets$/, async (req, res, m) => {

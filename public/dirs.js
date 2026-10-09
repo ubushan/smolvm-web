@@ -1,5 +1,5 @@
 'use strict';
-// Page «📁 Директории»: allowed host directories and per-user access inside machines.
+// Page «Директории»: allowed host directories and per-user access inside machines.
 
 (() => {
   const LEVEL = { none: 'нет доступа', ro: 'чтение', rw: 'чтение и запись' };
@@ -78,7 +78,7 @@
         rows)) : h('p', { class: 'muted' }, 'Список пуст.'),
       formSlot,
       h('div', { class: 'row' },
-        h('button', { class: 'btn primary', onclick: () => { fill(formSlot, dirForm(null)); formSlot.querySelector('input')?.focus(); } }, '+ Добавить директорию'),
+        h('button', { class: 'btn primary', onclick: () => { fill(formSlot, dirForm(null)); formSlot.querySelector('input')?.focus(); } }, [ic('plus'), 'Добавить директорию']),
         h('span', { class: 'spacer' }),
         h('label', { class: 'check' }, strict, ' Строгий режим: в форме создания машины монтировать только директории из этого списка')));
   }
@@ -109,7 +109,7 @@
       const cols = [...work.users.map((u) => u.name), '*'];
       const usersBox = h('div', { class: 'chips' },
         work.users.map((u, i) => h('span', { class: 'user-chip' }, h('b', {}, u.name), u.uid ? h('span', { class: 'muted small' }, ` uid ${u.uid}`) : null,
-          h('button', { class: 'btn ghost icon', title: 'Убрать', onclick: () => { work.users.splice(i, 1); for (const d of work.dirs) delete d.access[u.name]; draw(); } }, '✕'))),
+          h('button', { class: 'btn ghost icon', title: 'Убрать', onclick: () => { work.users.splice(i, 1); for (const d of work.dirs) delete d.access[u.name]; draw(); } }, ic('x')))),
         work.users.length ? null : h('span', { class: 'muted small' }, 'Пользователей нет — права заданы только для «остальных».'));
       const uName = h('input', { class: 'input small', placeholder: 'agent', pattern: '[a-z_][a-z0-9_\\-]*' });
       const uUid = h('input', { class: 'input small uid-in', type: 'number', min: 1, max: 60000, placeholder: 'uid' });
@@ -139,7 +139,7 @@
               const paths = shown?.paths?.[c];
               return h('td', {}, s, paths?.length ? h('div', { class: 'muted small mono' }, paths.join(' · ')) : null);
             }),
-            h('td', {}, h('button', { class: 'btn ghost danger', title: 'Отключить от машины', onclick: () => { work.dirs.splice(i, 1); draw(); } }, '✕')));
+            h('td', {}, h('button', { class: 'btn ghost danger icon', title: 'Отключить от машины', onclick: () => { work.dirs.splice(i, 1); draw(); } }, ic('x'))));
         }))) : h('p', { class: 'muted' }, 'К машине не подключено директорий.');
 
       const avail = reg.dirs.filter((d) => !work.dirs.some((x) => x.id === d.id));
@@ -163,7 +163,7 @@
         h('div', { class: 'label-like' }, 'Пользователи в машине'),
         h('p', { class: 'muted small' }, 'Запускайте агентов от этих пользователей (в консоли — поле «user», в API exec — "user"). Отсутствующие пользователи создаются при применении. root в машине обходит права гостя и имеет доступ ко всему, что смонтировано, — ограничение для root только «Максимум» директории.'),
         usersBox,
-        h('div', { class: 'row' }, uName, uUid, h('button', { class: 'btn', onclick: addUser }, '+ Пользователь'),
+        h('div', { class: 'row' }, uName, uUid, h('button', { class: 'btn', onclick: addUser }, [ic('plus'), 'Пользователь']),
           owners.length ? h('span', { class: 'muted small' }, `Для записи в директории хоста uid пользователя должен совпадать с владельцем на хосте: ${owners.join(', ')}`) : null),
         h('div', { class: 'label-like' }, 'Права на директории'),
         matrix,
@@ -174,7 +174,7 @@
           for (const u of work.users) access[u.name] = d.defaultAccess;
           work.dirs.push({ id: d.id, guestPath: d.guestPath, access });
           draw();
-        } }, '+ Подключить директорию')) : reg.dirs.length ? null : h('p', { class: 'muted small' }, 'Сначала добавьте директорию в список выше.'),
+        } }, [ic('plus'), 'Подключить директорию'])) : reg.dirs.length ? null : h('p', { class: 'muted small' }, 'Сначала добавьте директорию в список выше.'),
         pending ? h('div', { class: 'notice' }, `Монтирования изменятся при следующем запуске через smolvm-web: +${v.pending.add.length} −${v.pending.remove.length}. `,
           running ? h('button', { class: 'btn', onclick: async () => { await actions.restart(m); await load(); await renderMachine(); } }, '↻ Перезапустить сейчас') : null) : null,
         err,
@@ -187,10 +187,7 @@
             try { verifyResult = await api('POST', `/ui/machines/${enc(selected)}/dirs/verify`, {}); drawVerify(report); } catch (e) { fill(report, h('div', { class: 'error' }, e.message)); }
           } }, '✓ Проверить фактические права') : null,
           !running ? h('span', { class: 'muted small' }, 'Права пользователей применяются в запущенной машине; сейчас она не запущена — применится при старте.') : null),
-        report,
-        h('details', { class: 'small' }, h('summary', {}, 'Как устроено'),
-          h('p', {}, 'Каждая директория монтируется в машину до двух раз: представление «чтение и запись» и представление только для чтения (read-only обеспечивает хост). Оба лежат в ', h('code', {}, '/.smolvm-dirs/<имя>/'), ' за «шлюзами» — каталогами с правами 0700 и POSIX ACL, которые пропускают только нужных пользователей (пакет acl ставится в машину автоматически). Путь в машине — ссылка на самое широкое представление, у каждого пользователя есть ', h('code', {}, '~/<имя>'), ' на его собственное, для режима «только чтение» при наличии записи — ', h('code', {}, '<путь>-ro'), '.'),
-          h('p', {}, 'Изменение прав между «чтением», «записью» и «нет доступа» внутри уже смонтированных представлений применяется сразу. Новое представление или новая директория требуют перезапуска: smolvm меняет монтирования только у остановленной машины.')));
+        report);
       if (verifyResult) drawVerify(report);
     };
     draw();
@@ -211,7 +208,9 @@
   async function render() {
     if (!root || !reg) return;
     fill(root,
-      h('section', { class: 'card intro' }, h('div', { class: 'row' }, h('h2', {}, '📁 Директории хоста и права пользователей'),
+      h('section', { class: 'card intro' }, h('div', { class: 'row' }, h('h2', { class: 'h-ic' }, ic('folder'), 'Директории хоста и права пользователей'), helpButton('Как устроены директории и права',
+          h('p', {}, 'Каждая директория монтируется в машину до двух раз: представление «чтение и запись» и представление только для чтения (read-only обеспечивает хост). Оба лежат в ', h('code', {}, '/.smolvm-dirs/<имя>/'), ' за «шлюзами» — каталогами с правами 0700 и POSIX ACL, которые пропускают только нужных пользователей (пакет acl ставится в машину автоматически). Путь в машине — ссылка на самое широкое представление, у каждого пользователя есть ', h('code', {}, '~/<имя>'), ' на его собственное, для режима «только чтение» при наличии записи — ', h('code', {}, '<путь>-ro'), '.'),
+          h('p', {}, 'Изменение прав между «чтением», «записью» и «нет доступа» внутри уже смонтированных представлений применяется сразу. Новое представление или новая директория требуют перезапуска: smolvm меняет монтирования только у остановленной машины.')),
         reg.strict ? h('span', { class: 'tag ok' }, 'строгий режим') : h('span', { class: 'tag' }, 'произвольные монтирования разрешены'))),
       registryCard(), await machineCard());
     renderMachine();
