@@ -54,8 +54,8 @@
     </div>
     <nav class="pagenav" id="pagenav">
       <a href="#/" data-page="machines"><svg class="ic"><use href="#i-server"/></svg>Машины</a>
-      <a href="#/egress" data-page="egress" title="Allow list ресурсов интернета для машин"><svg class="ic"><use href="#i-globe"/></svg>Доступ в сеть</a>
-      <a href="#/log" data-page="log" title="Журнал соединений машин через фильтр «Доступ в сеть»"><svg class="ic"><use href="#i-list"/></svg>Журнал</a>
+      <a href="#/egress" data-page="egress" title="Allow list ресурсов интернета для машин"><svg class="ic"><use href="#i-globe"/></svg>Сеть</a>
+      <a href="#/log" data-page="log" title="Журнал соединений машин через фильтр «Сеть»"><svg class="ic"><use href="#i-list"/></svg>Журнал</a>
       <a href="#/audit" data-page="audit" title="Журнал действий: команды, изменения файлов, экспорт в SIEM, оповещения"><svg class="ic"><use href="#i-shield"/></svg>Аудит</a>
       <a href="#/dirs" data-page="dirs" title="Разрешённые директории хоста и права пользователей"><svg class="ic"><use href="#i-folder"/></svg>Директории</a>
     </nav>
@@ -152,7 +152,7 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
 
         <div class="isolation">
           <div class="label-like">Изоляция агента</div>
-          <label class="check"><input type="checkbox" name="egressOn"> Доступ в сеть только по allow list <span class="muted small">(egress-фильтр smolvm-web, см. «Доступ в сеть»)</span></label>
+          <label class="check"><input type="checkbox" name="egressOn"> Доступ в сеть только по allow list <span class="muted small">(egress-фильтр smolvm-web, см. «Сеть»)</span></label>
           <div id="create-egress" class="sub" hidden>
             <div id="create-egress-lists" class="secret-picks"></div>
             <label class="check"><input type="checkbox" name="egressStrict"> Жёсткая изоляция <span class="muted small">— машине доступен только хост, обойти фильтр нельзя</span></label>
@@ -305,7 +305,7 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
               <label>GitHub releases: вместо https://github.com<input name="repoGithub" class="input mono" placeholder="https://artifactory.corp/artifactory/github-remote" spellcheck="false"></label>
             </div>
             <label class="check"><input type="checkbox" name="repoGuestAuth"> Передавать пользователя и токен в машину для pip/npm/apt/Go <span class="muted small">(агент сможет их прочитать; не нужно, если репозитории читаются анонимно)</span></label>
-            <p class="muted small">Логин к реестру образов передаётся smolvm на хосте (как <code>docker login</code>) и в машину не попадает. Адреса репозиториев автоматически разрешены фильтру «Доступ в сеть». Для <code>https://</code>-репозиториев машина получает сертификаты, которым доверяет этот компьютер (внутренний CA — тоже). smolvm serve, запущенный smolvm-web (<code>--autostart</code>), подхватывает логин сразу; если вы запускаете его сами, задайте ему <code>DOCKER_CONFIG=&lt;папка настроек smolvm-web&gt;/docker</code>.</p>
+            <p class="muted small">Логин к реестру образов передаётся smolvm на хосте (как <code>docker login</code>) и в машину не попадает. Адреса репозиториев автоматически разрешены фильтру «Сеть». Для <code>https://</code>-репозиториев машина получает сертификаты, которым доверяет этот компьютер (внутренний CA — тоже). smolvm serve, запущенный smolvm-web (<code>--autostart</code>), подхватывает логин сразу; если вы запускаете его сами, задайте ему <code>DOCKER_CONFIG=&lt;папка настроек smolvm-web&gt;/docker</code>.</p>
 
           </section>
           </form>
@@ -356,7 +356,7 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
                   </div>
                   <label data-mode="gateway">URL API (куда шлюз отправляет запросы)<input name="upstream" class="input mono" placeholder="https://api.deepseek.com"></label>
                   <label class="check" data-mode="gateway"><input type="checkbox" name="allowHttp"> Локальная модель / сервер по HTTP <span class="muted small">(Ollama, vLLM, LM Studio, llama.cpp; <code>localhost</code> — это хост; без TLS ключ идёт от хоста до сервера открытым текстом)</span></label>
-                  <label data-mode="gateway">Модель <span class="muted small">(для локального сервера: OpenCode, Pi и Hermes настроятся на неё сами; Claude Code, Codex и DeepSeek Harness локальные модели не используют)</span><input name="model" class="input mono" placeholder="deepseek-r1:14b"></label>
+                  <label data-mode="gateway">Модель <span class="muted small">(для локального сервера: OpenCode, Pi и Hermes настроятся на неё сами; Claude Code, Codex и Harness локальные модели не используют)</span><input name="model" class="input mono" placeholder="deepseek-r1:14b"></label>
                   <label data-mode="substitute">Разрешённые хосты (точные имена, через запятую)<input name="hosts" class="input mono" placeholder="api.deepseek.com"></label>
                   <label data-mode="gateway substitute">Разрешённые HTTP-методы <span class="muted small">(пусто — все)</span><input name="methods" class="input mono" placeholder="GET, POST"></label>
                   <label>Значение

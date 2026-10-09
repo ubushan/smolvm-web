@@ -103,7 +103,7 @@
         h('div', { class: 'grid-siem' }, h('label', {}, 'Хост', f.slHost), h('label', {}, 'Порт', f.slPort), h('label', {}, 'Протокол', f.slProto), h('label', {}, 'Facility', f.slFac)),
         h('label', { class: 'check' }, f.hpOn, 'HTTP: POST пачки событий в JSON (Splunk HEC, Elastic, Graylog, Loki через прокси и т.п.)'),
         h('div', { class: 'grid2' }, h('label', {}, 'URL', f.hpUrl), h('label', {}, 'Заголовок Authorization', f.hpAuth)),
-        h('label', {}, 'Сетевые события фильтра «Доступ в сеть»', f.net),
+        h('label', {}, 'Сетевые события фильтра «Сеть»', f.net),
         h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: save }, 'Сохранить'),
           h('button', { class: 'btn', onclick: async () => { await save(); try { const r = await api('POST', '/ui/audit/test', {}); out.textContent = Object.entries(r).map(([k, v]) => `${k}: ${v}`).join(' · '); } catch (e) { out.textContent = e.message; } } }, 'Отправить тестовое событие'), out)),
       card('Оповещения',

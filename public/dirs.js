@@ -88,10 +88,21 @@
     const names = state.machines.map((m) => m.name);
     if (!selected || !names.includes(selected)) selected = names[0] || null;
     const sel = h('select', { class: 'input small' }, names.map((n) => h('option', { value: n, selected: n === selected }, n)));
-    sel.addEventListener('change', () => { selected = sel.value; verifyResult = null; history.replaceState(null, '', `#/dirs?machine=${enc(selected)}`); renderMachine(); });
+    sel.addEventListener('change', () => { selected = sel.value; verifyResult = null; history.replaceState(null, '', `#/dirs?machine=${enc(selected)}`); renderMachine(); renderReview(); });
     const body = h('div', { id: 'dm-body' });
     const c = card('Доступ в машине', h('div', { class: 'row' }, h('span', { class: 'muted small' }, 'Машина'), sel), body);
     return c;
+  }
+
+  // «Изменения агента»: review copies of the selected machine (former «Изменения» tab).
+  async function renderReview() {
+    const box = root?.querySelector('#dm-review');
+    if (!box) return;
+    const m = state.machines.find((x) => x.name === selected);
+    if (!m) { fill(box, h('p', { class: 'muted' }, 'Машин пока нет.')); return; }
+    const body = h('div', { class: 'col', style: 'display:flex;flex-direction:column;gap:12px' });
+    fill(box, body);
+    await tabReview(body, m, renderReview);
   }
 
   async function renderMachine() {
@@ -212,8 +223,12 @@
           h('p', {}, 'Каждая директория монтируется в машину до двух раз: представление «чтение и запись» и представление только для чтения (read-only обеспечивает хост). Оба лежат в ', h('code', {}, '/.smolvm-dirs/<имя>/'), ' за «шлюзами» — каталогами с правами 0700 и POSIX ACL, которые пропускают только нужных пользователей (пакет acl ставится в машину автоматически). Путь в машине — ссылка на самое широкое представление, у каждого пользователя есть ', h('code', {}, '~/<имя>'), ' на его собственное, для режима «только чтение» при наличии записи — ', h('code', {}, '<путь>-ro'), '.'),
           h('p', {}, 'Изменение прав между «чтением», «записью» и «нет доступа» внутри уже смонтированных представлений применяется сразу. Новое представление или новая директория требуют перезапуска: smolvm меняет монтирования только у остановленной машины.')),
         reg.strict ? h('span', { class: 'tag ok' }, 'строгий режим') : h('span', { class: 'tag' }, 'произвольные монтирования разрешены'))),
-      registryCard(), await machineCard());
+      registryCard(), await machineCard(),
+      h('section', { class: 'card review-host', id: 'dm-review-card' },
+        h('div', { class: 'card-head' }, h('h3', {}, 'Изменения агента'), h('span', { class: 'muted small' }, 'рабочие копии папок выбранной машины: агент правит копию, на хост — только после вашего «Применить»')),
+        h('div', { id: 'dm-review' })));
     renderMachine();
+    renderReview();
   }
 
   pages.dirs = {

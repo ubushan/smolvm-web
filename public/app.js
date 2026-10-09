@@ -201,9 +201,10 @@ function stat(label, value, pct) {
 async function refreshMachines() {
   if (!state.healthy) { renderList(); return; }
   try {
-    const [res, prep] = await Promise.all([api('GET', '/api/v1/machines'), api('GET', '/ui/preparing').catch(() => ({}))]);
+    const [res, prep, marks] = await Promise.all([api('GET', '/api/v1/machines'), api('GET', '/ui/preparing').catch(() => ({})), api('GET', '/ui/machines/marks').catch(() => state.marks || {})]);
     state.machines = (res.machines || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     state.preparing = prep || {};
+    state.marks = marks || {};
   } catch (e) {
     state.machines = [];
   }
@@ -248,11 +249,21 @@ function renderList() {
   }
   const html = list.map((m) => `
     <div class="machine ${m.name === state.selected ? 'active' : ''} ${state.preparing?.[m.name] ? 'preparing' : m.state === 'running' ? 'running' : ''}" data-name="${esc(m.name)}">
+      ${machineMark(m)}
       <div class="name">${esc(m.name)}</div>
       <div>${stateBadge(m)}</div>
-      <div class="meta">${esc(m.image || '—')} · ${m.cpus} vCPU · ${fmtMb(m.memoryMb)}${m.network ? ' · net' : ''}${m.branchable ? ' · branchable' : ''}${m.parentMachine ? ` · ⑂ ${esc(m.parentMachine)}` : ''}</div>
+      <div class="meta">${m.cpus} vCPU · ${fmtMb(m.memoryMb)}${m.network ? ' · net' : ''}${m.branchable ? ' · branchable' : ''}${m.parentMachine ? ` · ⑂ ${esc(m.parentMachine)}` : ''}</div>
     </div>`).join('');
   if (box.dataset.html !== html) { box.innerHTML = html; box.dataset.html = html; }
+}
+
+// Preset icon of a machine in the list: its agent profile, else a plain VM.
+function machineMark(m) {
+  const x = state.marks?.[m.name];
+  const el = mark(x?.mark || 'vm', true);
+  el.title = x?.title ? `Пресет: ${x.title}` : 'Машина без пресета';
+  el.classList.add('m-list');
+  return el.outerHTML;
 }
 
 $('#machines').addEventListener('click', (e) => {
@@ -372,7 +383,7 @@ const actions = {
   pause: (m) => action(m.name, 'пауза…', () => api('POST', `/api/v1/machines/${enc(m.name)}/pause`, {}), `${m.name} на паузе`),
   resume: (m) => action(m.name, 'возобновление…', () => api('POST', `/api/v1/machines/${enc(m.name)}/resume`, {}), `${m.name} возобновлена`),
   async remove(m) {
-    const res = await confirmDialog('Удалить машину?', `Машина «${m.name}», её диски и снимки будут удалены без возможности восстановления.`, true);
+    const res = await confirmDialog('Удалить машину?', `Машина «${m.name}» и её диски будут удалены без возможности восстановления.`, true);
     if (!res.ok) return;
     const q = new URLSearchParams();
     if (res.force) q.set('force', 'true');
@@ -456,17 +467,14 @@ $('#form-branch').addEventListener('submit', async (e) => {
 const TABS = [
   ['overview', 'Обзор'],
   ['agents', 'Агенты'],
-  ['review', 'Изменения'],
-  ['snapshots', 'Снимки'],
   ['console', 'Консоль'],
   ['logs', 'Логи'],
   ['files', 'Файлы'],
-  ['images', 'Образы'],
-  ['egress', 'Блокировки сети'],
 ];
 
 function renderDetail() {
   cleanupTab();
+  if (!TABS.some(([id]) => id === state.tab)) state.tab = 'overview'; // a tab that no longer exists
   const box = $('#detail');
   const m = state.machines.find((x) => x.name === state.selected);
   box.dataset.name = m ? m.name : '';
@@ -534,7 +542,7 @@ function renderTab() {
   const m = current();
   if (!body || !m) return;
   body.innerHTML = '';
-  ({ overview: tabOverview, agents: tabAgents, review: tabReview, snapshots: tabSnapshots, console: tabConsole, logs: tabLogs, files: tabFiles, images: tabImages, egress: tabEgress }[state.tab] || tabOverview)(body, m);
+  ({ overview: tabOverview, agents: tabAgents, console: tabConsole, logs: tabLogs, files: tabFiles }[state.tab] || tabOverview)(body, m);
 }
 
 function needsRunning(body, m, what) {
@@ -560,12 +568,13 @@ const bitem = (main, side) => h('div', { class: 'bitem' }, h('div', { class: 'bm
 const plural = (n, one, few, many) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? few : many}`;
 
 async function tabOverview(body, m) {
-  const [infoR, miR, egR, dvR] = await Promise.allSettled([
+  const [infoR, miR, egR, dvR, , imgR] = await Promise.allSettled([
     api('GET', `/api/v1/machines/${enc(m.name)}`),
     api('GET', `/ui/machines/${enc(m.name)}`),
     api('GET', '/ui/egress'),
     api('GET', `/ui/machines/${enc(m.name)}/dirs`),
     loadVault(),
+    m.state === 'running' ? api('GET', `/api/v1/machines/${enc(m.name)}/images`) : Promise.resolve(null),
   ]);
   if (!$('#tab-body') || current()?.name !== m.name || state.tab !== 'overview') return;
   const info = infoR.value || m;
@@ -625,7 +634,7 @@ async function tabOverview(body, m) {
     const lists = (em?.lists || []).map((id) => eg.lists.find((l) => l.id === id)?.name).filter(Boolean);
     const policy = [...(info.allowedHosts || []), ...(info.allowedCidrs || [])];
     blocks.push(block({
-      icon: 'globe', title: 'Доступ в сеть', sub: 'куда машине можно ходить', on: !!em?.enabled,
+      icon: 'globe', title: 'Сеть', sub: 'куда машине можно ходить', on: !!em?.enabled,
       badge: em?.learn ? 'обучение' : em?.enabled ? (em.strict ? 'allow list · жёстко' : 'allow list') : 'без фильтра',
       items: [
         em?.learn ? bitem('Режим обучения', h('span', { class: 'small warnc' }, `всё разрешено и журналируется, собрано хостов: ${em.learnedCount || 0}`)) : null,
@@ -674,6 +683,35 @@ async function tabOverview(body, m) {
     }));
   }
 
+  // Images in the machine (the former «Образы» tab): list and pull.
+  {
+    const running = m.state === 'running';
+    const images = imgR.value?.images || [];
+    const ref = h('input', { class: 'input mono', placeholder: 'python:3.12-alpine', disabled: !running });
+    const pull = h('button', { class: 'btn', disabled: !running }, ic('download'), 'Скачать');
+    const doPull = async () => {
+      const image = ref.value.trim();
+      if (!image) return;
+      pull.disabled = true; pull.replaceChildren(h('i', { class: 'spin' }), 'Загрузка…');
+      try {
+        await api('POST', `/api/v1/machines/${enc(m.name)}/images/pull`, { image });
+        toast(`Образ ${image} загружен`, 'ok');
+        renderTab();
+      } catch (e) { toast(e.message, 'err'); pull.disabled = false; pull.replaceChildren(ic('download'), 'Скачать'); }
+    };
+    pull.addEventListener('click', doPull);
+    ref.addEventListener('keydown', (e) => { if (e.key === 'Enter') doPull(); });
+    blocks.push(block({
+      icon: 'server', title: 'Образы', sub: 'OCI-образы внутри машины', on: images.length > 0,
+      badge: running ? String(images.length) : 'машина остановлена',
+      items: images.map((i) => bitem(
+        [h('div', { class: 'mono ellipsis', title: `${i.reference}\n${i.digest}` }, i.reference), h('div', { class: 'muted small' }, `${i.os}/${i.architecture} · слоёв: ${i.layerCount}`)],
+        h('span', { class: 'small' }, fmtBytes(i.size)))),
+      empty: running ? (imgR.status === 'rejected' ? `Не удалось получить список: ${imgR.reason?.message || ''}` : 'Образов нет.') : 'Список образов доступен у запущенной машины.',
+      footer: [ref, pull],
+    }));
+  }
+
   // Corporate proxy (only when configured)
   if (state.info?.proxyActive || state.info?.caActive) {
     const toggle = h('input', { type: 'checkbox', checked: mi.useProxy });
@@ -699,7 +737,7 @@ async function tabOverview(body, m) {
 }
 
 // --- review copies: the agent works on a copy, you apply its changes
-async function tabReview(body, m) {
+async function tabReview(body, m, rerender = renderTab) {
   let alive = true;
   tabCleanup = () => { alive = false; };
   const head = h('div');
@@ -721,7 +759,7 @@ async function tabReview(body, m) {
     try {
       await api('POST', `/ui/machines/${enc(m.name)}/review`, { hostPath: hostIn.value.trim(), guestPath: guestIn.value.trim() || undefined, exclude: csv(exIn.value) });
       toast(m.state === 'running' ? 'Рабочая копия создана' : 'Копия создастся при запуске машины', 'ok');
-      renderTab();
+      rerender();
     } catch (e) { toast(e.message, 'err'); addBtn.disabled = false; addBtn.replaceChildren(ic('plus'), 'Создать рабочую копию'); }
   });
   head.append(h('section', { class: 'card' },
@@ -732,17 +770,17 @@ async function tabReview(body, m) {
           h('li', {}, 'Конфликт — файл изменился и в машине, и на хосте с момента копирования. Применение перезапишет версию на хосте; посмотрите diff.'),
           h('li', {}, '«Подтянуть с хоста» обновляет в машине файлы, которые агент не трогал, а на хосте они поменялись.'),
           h('li', {}, 'Исключения (node_modules, .git и т.п.) не копируются и не попадают в ревью — их агент может пересоздать сам.'),
-          h('li', {}, 'Копия не монтируется, а копируется — поэтому машину можно снимать снимками и откатывать.'),
+          h('li', {}, 'Копия не монтируется, а копируется: на хост не попадает ничего без вашего «Применить».'),
           h('li', {}, 'Символические ссылки не применяются на хост автоматически.')))),
     h('p', { class: 'muted small' }, 'Агент работает с копией папки, а на хост попадает только то, что вы одобрите после просмотра diff. Безопаснее, чем подключать папку на запись.'),
     h('div', { class: 'grid2' }, h('label', {}, 'Папка на этом компьютере', hostIn), h('label', {}, 'Путь в машине', guestIn)),
     h('label', {}, 'Исключить (имена папок/файлов через запятую)', exIn),
     h('div', { class: 'row' }, addBtn)));
 
-  for (const d of data.dirs) list.append(await reviewDir(m, d));
+  for (const d of data.dirs) list.append(await reviewDir(m, d, rerender));
 }
 
-async function reviewDir(m, d) {
+async function reviewDir(m, d, rerender = renderTab) {
   const box = h('section', { class: 'card review' });
   const KIND = { added: ['ok', 'A', 'добавлен'], modified: ['warn', 'M', 'изменён'], deleted: ['bad', 'D', 'удалён'] };
   const draw = async () => {
@@ -810,70 +848,13 @@ async function reviewDir(m, d) {
         h('button', { class: 'btn ghost danger', onclick: async () => {
           const c = await confirmDialog('Убрать рабочую копию?', `Копия ${d.guestPath} перестанет отслеживаться. Непримененные изменения останутся в машине, если не удалить копию.`, true, 'Удалить копию и из машины', 'Убрать');
           if (!c.ok) return;
-          try { await api('DELETE', `/ui/machines/${enc(m.name)}/review/${enc(d.id)}${c.force ? '?deleteCopy=1' : ''}`); renderTab(); } catch (e) { toast(e.message, 'err'); }
+          try { await api('DELETE', `/ui/machines/${enc(m.name)}/review/${enc(d.id)}${c.force ? '?deleteCopy=1' : ''}`); rerender(); } catch (e) { toast(e.message, 'err'); }
         } }, ic('trash'))),
     ].filter(Boolean));
   };
   box.append(h('p', { class: 'muted' }, 'Загрузка…'));
   draw();
   return box;
-}
-
-// --- snapshots: checkpoint and one-click rollback
-async function tabSnapshots(body, m) {
-  let st;
-  try { st = await api('GET', `/ui/machines/${enc(m.name)}/snapshots`); } catch (e) { body.replaceChildren(h('div', { class: 'error' }, e.message)); return; }
-  const label = h('input', { class: 'input', placeholder: 'метка, например «до рефакторинга»' });
-  const take = h('button', { class: 'btn primary', disabled: !!st.blocker || !!st.busy }, ic('plus'), 'Сделать снимок');
-  take.addEventListener('click', async () => {
-    take.disabled = true; take.textContent = 'Снимок…';
-    try { await api('POST', `/ui/machines/${enc(m.name)}/snapshots`, { label: label.value.trim() }); toast('Снимок сделан', 'ok'); } catch (e) { toast(e.message, 'err'); }
-    renderTab();
-  });
-  const notice = [];
-  if (st.blocker) {
-    const needRestart = /ветвлением/.test(st.blocker) && st.running;
-    notice.push(h('div', { class: 'notice' }, st.blocker, needRestart ? ' ' : null, needRestart ? h('button', { class: 'btn', onclick: async () => {
-      await api('PUT', `/ui/machines/${enc(m.name)}/snapshots/settings`, { branchable: true });
-      await actions.stop(m); await actions.start({ ...m }, true); renderTab();
-    } }, 'Перезапустить с ветвлением') : null));
-  }
-  if (!st.wantsBranchable && !st.blocker) notice.push(h('p', { class: 'muted small' }, 'Машина будет запускаться с ветвлением, чтобы снимки были доступны всегда.'));
-  const rows = st.items.map((x) => h('div', { class: 'bitem' },
-    h('div', { class: 'bmain' },
-      h('div', {}, h('b', {}, new Date(x.createdAt).toLocaleString()), ' ', x.label ? h('span', {}, `· ${x.label}`) : null),
-      h('div', { class: 'muted small' }, x.reason, ` · ${fmtBytes(x.size)}`, x.safety ? ' · страховочный' : '', x.exists ? '' : ' · файл пропал')),
-    h('div', { class: 'bside row' },
-      h('button', { class: 'btn', disabled: !x.exists || !!st.busy, onclick: async () => {
-        const c = await confirmDialog('Откатить машину?', `Машина ${m.name} будет пересоздана из снимка от ${new Date(x.createdAt).toLocaleString()}: диски, память и процессы вернутся к тому моменту. Текущее состояние сохранится страховочным снимком.`, false, '', 'Откатить');
-        if (!c.ok) return;
-        state.busy.set(m.name, 'откат…'); renderList();
-        try {
-          const r = await api('POST', `/ui/machines/${enc(m.name)}/snapshots/${enc(x.id)}/rollback`, {});
-          toast(`${m.name}: откат выполнен${r.notes?.length ? ` (${r.notes.join('; ')})` : ''}`, 'ok', 10000);
-        } catch (e) { toast(e.message, 'err', 15000); }
-        state.busy.delete(m.name);
-        await refreshMachines(); renderTab();
-      } }, ic('refresh'), 'Откатить'),
-      h('button', { class: 'btn ghost danger icon', title: 'Удалить снимок', onclick: async () => {
-        if (!(await confirmDialog('Удалить снимок?', 'Файл снимка будет удалён.')).ok) return;
-        try { await api('DELETE', `/ui/machines/${enc(m.name)}/snapshots/${enc(x.id)}`); } catch (e) { toast(e.message, 'err'); }
-        renderTab();
-      } }, ic('trash')))));
-  body.replaceChildren(
-    h('section', { class: 'card' },
-      h('div', { class: 'card-head' }, h('h3', {}, 'Снимки машины'),
-        helpButton('Снимки и откат',
-          h('p', {}, 'Снимок — это smolvm checkpoint: память, процессы и диски машины в один момент (машина замирает на доли секунды). Откат пересоздаёт машину из снимка под тем же именем; агенты, секреты, доступ в сеть и рабочие копии сохраняются.'),
-          h('ul', {},
-            h('li', {}, 'Во вкладке «Агенты» включите «Снимок перед запуском» — перед каждым запуском агента будет снимок.'),
-            h('li', {}, 'Перед откатом текущее состояние сохраняется страховочным снимком — откат можно отменить.'),
-            h('li', {}, 'smolvm не снимает машины с подключёнными папками хоста, GPU/CUDA; на macOS машина должна работать с ветвлением.'),
-            h('li', {}, `Хранится последних снимков: ${st.keep} (старые удаляются). Снимки лежат в каталоге настроек smolvm-web.`))),
-        st.busy ? h('span', { class: 'badge prep' }, h('i', { class: 'spin' }), st.busy) : null),
-      ...notice,
-      h('div', { class: 'row' }, label, take),
-      rows.length ? h('div', { class: 'blist' }, rows) : h('p', { class: 'muted small' }, 'Снимков пока нет.')));
 }
 
 // --- console (exec over SSE)
@@ -1114,45 +1095,11 @@ function saveBlob(blob, name) {
 }
 
 // --- images
-function tabImages(body, m) {
-  if (needsRunning(body, m, 'Образы')) return;
-  const ref = h('input', { class: 'input mono', placeholder: 'python:3.12-alpine' });
-  const pull = h('button', { class: 'btn primary' }, '⇩ Pull');
-  const list = h('div');
-  body.append(h('div', { class: 'files-bar' }, ref, pull), list);
-
-  async function load() {
-    list.innerHTML = '<p class="muted">Загрузка…</p>';
-    try {
-      const { images = [] } = await api('GET', `/api/v1/machines/${enc(m.name)}/images`);
-      list.innerHTML = '';
-      if (!images.length) { list.append(h('p', { class: 'muted' }, 'Образов нет')); return; }
-      list.append(h('table', { class: 'tbl' },
-        h('tr', {}, h('th', {}, 'Образ'), h('th', {}, 'Платформа'), h('th', {}, 'Слоёв'), h('th', {}, 'Размер'), h('th', {}, 'Digest')),
-        images.map((i) => h('tr', {}, h('td', { class: 'mono' }, i.reference), h('td', {}, `${i.os}/${i.architecture}`), h('td', {}, i.layerCount), h('td', {}, fmtBytes(i.size)), h('td', { class: 'mono small muted', title: i.digest }, i.digest.slice(0, 19))))));
-    } catch (e) { list.innerHTML = ''; list.append(h('div', { class: 'error' }, e.message)); }
-  }
-  async function doPull() {
-    const image = ref.value.trim();
-    if (!image) return;
-    pull.disabled = true; pull.textContent = 'Загрузка…';
-    try {
-      await api('POST', `/api/v1/machines/${enc(m.name)}/images/pull`, { image });
-      toast(`Образ ${image} загружен`, 'ok');
-      ref.value = '';
-      load();
-    } catch (e) { toast(e.message, 'err'); }
-    finally { pull.disabled = false; pull.textContent = '⇩ Pull'; }
-  }
-  pull.addEventListener('click', doPull);
-  ref.addEventListener('keydown', (e) => { if (e.key === 'Enter') doPull(); });
-  load();
-}
 
 // --- egress
 async function tabEgress(body, m) {
-  body.append(h('p', { class: 'muted small' }, 'Исходящие соединения этой машины, которые заблокировала сама smolvm: из-за списка разрешённых хостов машины или строгого режима smolvm serve (закрыта локальная сеть и хост). Только просмотр. Правила доступа в интернет — на странице ',
-    h('a', { href: '#/egress' }, 'Доступ в сеть'), ', журнал всех запросов через фильтр — на странице ', h('a', { href: `#/log?machine=${enc(m.name)}` }, 'Журнал'), '.'));
+  body.append(h('p', { class: 'muted small' }, 'Соединения, которые заблокировала сама smolvm (список разрешённых хостов машины или строгий режим smolvm serve: закрыта локальная сеть и хост). Только просмотр. Все запросы через фильтр smolvm-web — в ',
+    h('a', { href: `#/log?machine=${enc(m.name)}` }, 'Журнале'), '.'));
   const list = h('div', {}, h('p', { class: 'muted' }, 'Загрузка…'));
   body.append(list);
   try {
@@ -1772,9 +1719,9 @@ async function changeSecrets(m, add, remove) {
 let createProfile = null;
 let profilesCache = null;
 // Profile/agent/provider marks: brand glyphs from the sprite, or a text fallback.
-const MARK_ICON = { claude: 'b-claude', dsh: 'b-deepseek', deepseek: 'b-deepseek', opencode: 'b-opencode', openai: 'b-openai', codex: 'b-openai',
-  gemini: 'b-gemini', openrouter: 'b-openrouter', github: 'b-github', term: 'i-terminal', blank: 'i-plus', all: 'i-bot', key: 'i-key' };
-const MARK_TEXT = { sf: '{ }', pi: 'π', hermes: '☤' };
+const MARK_ICON = { claude: 'b-claude', deepseek: 'b-deepseek', opencode: 'b-opencode', openai: 'b-openai', codex: 'b-openai',
+  gemini: 'b-gemini', openrouter: 'b-openrouter', github: 'b-github', term: 'i-terminal', vm: 'i-server', blank: 'i-plus', all: 'i-bot', key: 'i-key' };
+const MARK_TEXT = { sf: '{ }', dsh: 'H', pi: 'π', hermes: '☤' };
 const SMOLFILE = '__smolfile';
 function mark(m, small) {
   const el = h('span', { class: `mark m-${m}${small ? ' sm' : ''}` });
@@ -1811,7 +1758,7 @@ async function fillCreateProfiles() {
     if (id === SMOLFILE) {
       const hint = $('#create-profile-hint');
       hint.hidden = false;
-      hint.textContent = 'Образ, ресурсы, порты, тома, сеть и init берутся из Smolfile. Ниже можно добавить то, чем управляет smolvm-web: корпоративный прокси, фильтр «Доступ в сеть» и секреты.';
+      hint.textContent = 'Образ, ресурсы, порты, тома, сеть и init берутся из Smolfile. Ниже можно добавить то, чем управляет smolvm-web: корпоративный прокси, фильтр «Сеть» и секреты.';
       if (!f.name.value) f.name.placeholder = `sf-${Math.random().toString(36).slice(2, 6)}`;
       setTimeout(() => f.smolfile.focus(), 0);
       return;
@@ -1823,10 +1770,9 @@ async function fillCreateProfiles() {
     if (p && (!f.name.value || /^vm-/.test(f.name.placeholder))) f.name.placeholder = `${p.id}-${Math.random().toString(36).slice(2, 5)}`;
     const hint = $('#create-profile-hint');
     hint.hidden = !p;
-    const KEY_NAMES = { deepseek: 'DeepSeek', anthropic: 'Anthropic', openai: 'OpenAI', openrouter: 'OpenRouter' };
     if (p) hint.textContent = `Агенты: ${p.agents.map((a) => a.title).join(', ')}. Установка — автоматически после первого запуска (~2–3 мин). `
-      + `Для доступа к моделям отметьте секрет ${p.keys.map((k) => KEY_NAMES[k] || k).join(' / ')} ниже (режим «Шлюз»). `
-      + `Серверы вендора (${p.vendor.map((v) => v.host).join(', ')}) с фильтром «Доступ в сеть» разрешены по умолчанию — отозвать их можно во вкладке «Агенты».`;
+      + 'Для доступа к модели отметьте ниже секрет с ключом провайдера (режим «Шлюз»). '
+      + `Серверы вендора (${p.vendor.map((v) => v.host).join(', ')}) с фильтром «Сеть» разрешены по умолчанию — отозвать их можно во вкладке «Агенты».`;
     // Suggest the matching provider secrets.
     if (p && p.keys.length) {
       const re = new RegExp(p.keys.join('|'), 'i');
@@ -1873,22 +1819,12 @@ function goAgent(w, url) {
 
 async function tabAgents(body, m) {
   const head = h('div', { class: 'col', style: 'display:flex;flex-direction:column;gap:14px' });
-  // Snapshot before an agent run (remembered per browser).
-  const snapBefore = h('input', { type: 'checkbox', checked: localStorage.getItem('smolvm.snapBefore') !== '0' });
-  snapBefore.addEventListener('change', () => localStorage.setItem('smolvm.snapBefore', snapBefore.checked ? '1' : '0'));
-  const bar = h('div', { class: 'row' }, h('span', { class: 'spacer' }),
-    h('label', { class: 'check small', title: 'Снимок машины (smolvm checkpoint) перед запуском агента — откат одной кнопкой во вкладке «Снимки»' }, snapBefore, 'Снимок перед запуском'));
-  body.append(bar, head);
+  body.append(head);
   let alive = true;
   let timer = null;
   let st = null;
   let lastSig = '';
   tabCleanup = () => { alive = false; clearTimeout(timer); };
-  const reportSnap = (sn) => {
-    if (!sn) return;
-    if (sn.ok) toast(`${m.name}: снимок перед запуском сделан — откат во вкладке «Снимки»`, 'ok');
-    else toast(`${m.name}: снимок не сделан — ${sn.error}`, 'err', 12000);
-  };
 
   const refresh = async () => {
     if (!alive) return;
@@ -1953,7 +1889,7 @@ async function tabAgents(body, m) {
         running ? h('button', { class: 'btn', onclick: async () => { await actions.stop(m); await actions.start({ ...m }); refresh(); } }, 'Перезапустить') : null));
     }
     if (!st.providers?.providers?.length) {
-      nodes.push(h('div', { class: 'notice' }, 'К машине не привязан ключ модели. Добавьте ключ DeepSeek, Anthropic или OpenAI в «Секреты» (режим «Шлюз») и привяжите на вкладке «Обзор» — агенты подхватят его при следующем запуске. Без ключа агент может войти напрямую через сервер вендора (подписка, OAuth), если этот сервер не отозван.'));
+      nodes.push(h('div', { class: 'notice' }, 'К машине не привязан ключ модели. Добавьте ключ провайдера модели в «Секреты» (режим «Шлюз») и привяжите на вкладке «Обзор» — агенты подхватят его при следующем запуске. Без ключа агент может войти напрямую через сервер вендора (подписка, OAuth), если этот сервер не отозван.'));
     }
 
     nodes.push(h('div', { class: 'agents' }, st.agents.map((a) => {
@@ -1963,8 +1899,7 @@ async function tabAgents(body, m) {
         const w = agentTab();
         startBtn.disabled = true; startBtn.textContent = 'Запуск…';
         try {
-          const r = await api('POST', `/ui/machines/${enc(m.name)}/agents/${a.id}/start`, { autonomous: !!auto?.checked, snapshot: snapBefore.checked });
-          reportSnap(r._webSnapshot);
+          const r = await api('POST', `/ui/machines/${enc(m.name)}/agents/${a.id}/start`, { autonomous: !!auto?.checked });
           goAgent(w, r.url);
         } catch (e) { if (w) w.close(); toast(`${a.title}: ${e.message}`, 'err'); }
         lastSig = ''; refresh();
@@ -1988,41 +1923,12 @@ async function tabAgents(body, m) {
             : startBtn,
           auto ? h('label', { class: 'check small', title: auto.title }, auto, 'автономно') : null));
     })));
-    if (st.vendor?.length) nodes.push(vendorCard());
+    if (st.vendor?.length) {
+      const revoked = st.vendor.filter((v) => v.revoked).length;
+      nodes.push(h('p', { class: 'muted small' }, `Серверы провайдеров агентов: ${st.vendor.length}${revoked ? `, отозвано: ${revoked}` : ''} — `,
+        h('a', { href: `#/egress?machine=${enc(m.name)}&focus=providers` }, 'настроить в «Доступе в сеть» →')));
+    }
     head.replaceChildren(...nodes);
-  }
-
-  // Vendor servers of the agents: allowed by default, revocable one by one.
-  function vendorCard() {
-    const toggle = async (v, allowed) => {
-      try {
-        const r = await api('PUT', `/ui/machines/${enc(m.name)}/agents/vendor`, { host: v.host, allowed });
-        st.vendor = r.vendor; st.filter = r.filter;
-        toast(`${v.host}: ${allowed ? 'доступ возвращён' : 'доступ отозван'}${r.filter.enabled ? '' : ' (подействует, когда включите фильтр «Доступ в сеть»)'}`, allowed ? 'ok' : '');
-      } catch (e) { toast(e.message, 'err'); }
-      lastSig = ''; refresh();
-    };
-    const enableFilter = async () => {
-      try { await api('PUT', `/ui/egress/machines/${enc(m.name)}`, { enabled: true }); toast(`${m.name}: фильтр «Доступ в сеть» включён`, 'ok'); }
-      catch (e) { toast(e.message, 'err'); }
-      lastSig = ''; refresh();
-    };
-    return h('section', { class: 'card' },
-      h('div', { class: 'card-head' }, h('h3', {}, 'Серверы вендоров'), h('span', { class: 'spacer' }),
-        st.filter.enabled ? h('span', { class: 'tag ok' }, 'фильтр включён') : h('span', { class: 'tag warn' }, 'фильтр выключен')),
-      h('p', { class: 'muted small' }, 'Адреса, к которым агенты обращаются напрямую: API вендора, вход по подписке или OAuth, каталоги моделей. По умолчанию они разрешены. «Отозвать» сразу запрещает адрес в фильтре «Доступ в сеть», «Вернуть» снова разрешает. Запросы к моделям через ключ из «Секретов» идут через шлюз на хосте и от этих адресов не зависят.'),
-      st.filter.enabled ? null : h('div', { class: 'notice' }, 'Без фильтра «Доступ в сеть» машина ходит в интернет без ограничений, и отзыв не действует. ',
-        h('button', { class: 'btn', onclick: enableFilter }, 'Включить фильтр')),
-      h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
-        h('tr', {}, h('th', {}, 'Адрес'), h('th', {}, 'Зачем'), h('th', {}, 'Агенты'), h('th', {}, 'Доступ'), h('th', {}, '')),
-        st.vendor.map((v) => h('tr', { class: v.revoked ? 'revoked' : '' },
-          h('td', { class: 'mono' }, `${v.host}:${v.ports}`),
-          h('td', { class: 'small' }, v.purpose),
-          h('td', { class: 'small muted' }, v.agents.join(', ')),
-          h('td', {}, v.revoked ? h('span', { class: 'tag bad' }, 'отозван') : h('span', { class: `tag ${st.filter.enabled ? 'ok' : ''}` }, 'разрешён')),
-          h('td', {}, v.revoked
-            ? h('button', { class: 'btn', onclick: () => toggle(v, true) }, 'Вернуть')
-            : h('button', { class: 'btn ghost danger', onclick: () => toggle(v, false) }, 'Отозвать')))))));
   }
 
   refresh();

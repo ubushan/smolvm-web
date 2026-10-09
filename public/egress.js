@@ -1,5 +1,5 @@
 'use strict';
-// Page «Доступ в сеть»: allow lists for the egress filter, per-machine policy, live log.
+// Page «Сеть»: allow lists for the egress filter, per-machine policy, live log.
 
 (() => {
   const DECISION = { true: ['ok', 'разрешено'], false: ['bad', 'заблокировано'] };
@@ -13,7 +13,12 @@
   const machineNames = () => [...new Set([...state.machines.map((m) => m.name), ...Object.keys(data?.machines || {})])].sort();
   const stateOf = (name) => state.machines.find((m) => m.name === name)?.state;
 
-  async function load() { data = await api('GET', '/ui/egress'); }
+  let vendors = [];     // GET /ui/agents/vendors: «Провайдеры» per machine
+  let blocksMachine = '';
+  async function load() {
+    const [d, v] = await Promise.all([api('GET', '/ui/egress'), api('GET', '/ui/agents/vendors').catch(() => ({ machines: [] }))]);
+    data = d; vendors = v.machines || [];
+  }
 
   function card(title, ...children) {
     return h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h3', {}, title)), ...children);
@@ -79,7 +84,7 @@
     const statusTag = st.listening ? h('span', { class: 'tag ok' }, `фильтр слушает :${st.port}`)
       : st.error ? h('span', { class: 'tag bad' }, `фильтр не запущен: ${st.error}`) : h('span', { class: 'tag' }, 'фильтр запустится, когда понадобится');
     return h('section', { class: 'card intro' },
-      h('div', { class: 'row' }, h('h2', { class: 'h-ic' }, ic('globe'), 'Доступ машин в сеть'), helpButton('Как работает фильтр «Доступ в сеть»',
+      h('div', { class: 'row' }, h('h2', { class: 'h-ic' }, ic('globe'), 'Доступ машин в сеть'), helpButton('Как работает фильтр «Сеть»',
         h('p', { class: 'small' }, 'Машине с включённым фильтром в HTTP_PROXY/HTTPS_PROXY подставляется прокси smolvm-web на хосте со своим токеном. Каждое соединение (CONNECT для HTTPS, обычные HTTP-запросы) сверяется с allow list машины: подключёнными списками и её собственными правилами. Разрешённое уходит в интернет хоста — через корпоративный прокси, если он настроен. Всё остальное получает 403 и попадает в журнал, откуда его можно разрешить одной кнопкой. Изменения правил действуют сразу, без перезапуска машины.'),
         h('ul', { class: 'small' },
           h('li', {}, h('code', {}, 'api.example.com'), ' — ровно этот хост; ', h('code', {}, '.example.com'), ' — хост и все поддомены; ', h('code', {}, '*.example.com'), ' — только поддомены; ', h('code', {}, '10.0.0.0/8'), ', ', h('code', {}, '192.0.2.10'), ' — IP-адреса; ', h('code', {}, '*'), ' — любой хост.'),
@@ -123,7 +128,7 @@
         h('td', { class: 'center' }, on),
         h('td', { class: 'center' }, strict, pending ? h('div', { class: 'small warnc', title: 'Применится при следующем запуске через smolvm-web' }, 'при запуске') : null),
         h('td', { class: 'center' }, learn, m.learn ? h('div', {}, h('button', { class: 'btn small-btn', title: 'Превратить собранные хосты в список', onclick: () => openLearned(name) }, `Собрать (${m.learnedCount || 0})`)) : null),
-        h('td', {}, lists, m.vendorCount ? h('a', { class: 'small muted', href: '#/', title: 'Серверы вендоров агентов разрешены по умолчанию; отозвать — во вкладке «Агенты» машины', onclick: (e) => { e.preventDefault(); location.hash = '#/'; select(name); switchTab('agents'); } }, `+ серверы вендоров: ${m.vendorCount}`) : null),
+        h('td', {}, lists, m.vendorCount ? h('a', { class: 'small muted', href: '#', title: 'Серверы провайдеров агентов разрешены по умолчанию; отозвать — в карточке «Провайдеры» ниже', onclick: (e) => { e.preventDefault(); root.querySelector('#providers')?.scrollIntoView({ behavior: 'smooth' }); } }, `+ провайдеры: ${m.vendorCount}`) : null),
         h('td', {}, m.enabled ? h('button', { class: 'btn ghost', onclick: () => { editRow.hidden = !editRow.hidden; } }, `Свои правила (${m.rules.length})`) : null),
         h('td', {},
           h('a', { class: 'btn ghost', href: `#/log?machine=${enc(name)}` }, 'Журнал'),
@@ -303,10 +308,64 @@
       } }, 'Сохранить')));
   }
 
+  // «Провайдеры»: servers of the agents' vendors (API, subscription sign-in,
+  // model catalogs) — allowed by default as filter rules, revocable one by one.
+  function providersCard() {
+    const toggle = async (machine, v, allowed) => {
+      try {
+        const r = await api('PUT', `/ui/machines/${enc(machine)}/agents/vendor`, { host: v.host, allowed });
+        toast(`${v.host}: ${allowed ? 'доступ возвращён' : 'доступ отозван'}${r.filter.enabled ? '' : ' (подействует, когда включите фильтр для машины)'}`, allowed ? 'ok' : '');
+      } catch (e) { toast(e.message, 'err'); }
+      await load(); render();
+    };
+    const enableFilter = async (machine) => {
+      try { await api('PUT', `/ui/egress/machines/${enc(machine)}`, { enabled: true }); toast(`${machine}: фильтр включён`, 'ok'); } catch (e) { toast(e.message, 'err'); }
+      await load(); render();
+    };
+    const sec = h('section', { class: 'card', id: 'providers' },
+      h('div', { class: 'card-head' }, h('h3', {}, 'Провайдеры'),
+        helpButton('Провайдеры агентов',
+          h('p', {}, 'Адреса, к которым агенты обращаются напрямую: API вендора, вход по подписке или OAuth, каталоги моделей. По умолчанию они разрешены правилами фильтра машины. «Отозвать» сразу запрещает адрес, «Вернуть» снова разрешает.'),
+          h('p', {}, 'Запросы к моделям через ключ из «Секретов» идут через шлюз на хосте и от этих адресов не зависят. Без включённого фильтра машина ходит в интернет без ограничений, и отзыв не действует.'))));
+    if (!vendors.length) { sec.append(h('p', { class: 'muted small' }, 'Машин с агентами пока нет.')); return sec; }
+    for (const mv of vendors) {
+      sec.append(h('div', { class: `list-card ${params.get('machine') === mv.name ? 'hl' : ''}` },
+        h('div', { class: 'row' }, h('b', { class: 'mono' }, mv.name), h('span', { class: 'spacer' }),
+          mv.filter.enabled ? h('span', { class: 'tag ok' }, 'фильтр включён')
+            : [h('span', { class: 'tag warn' }, 'фильтр выключен — отзыв не действует'), h('button', { class: 'btn', onclick: () => enableFilter(mv.name) }, 'Включить фильтр')]),
+        h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
+          h('tr', {}, h('th', {}, 'Адрес'), h('th', {}, 'Зачем'), h('th', {}, 'Агенты'), h('th', {}, 'Доступ'), h('th', {}, '')),
+          mv.vendor.map((v) => h('tr', { class: v.revoked ? 'revoked' : '' },
+            h('td', { class: 'mono' }, `${v.host}:${v.ports}`),
+            h('td', { class: 'small' }, v.purpose),
+            h('td', { class: 'small muted' }, v.agents.join(', ')),
+            h('td', {}, v.revoked ? h('span', { class: 'tag bad' }, 'отозван') : h('span', { class: `tag ${mv.filter.enabled ? 'ok' : ''}` }, 'разрешён')),
+            h('td', {}, v.revoked
+              ? h('button', { class: 'btn', onclick: () => toggle(mv.name, v, true) }, 'Вернуть')
+              : h('button', { class: 'btn ghost danger', onclick: () => toggle(mv.name, v, false) }, 'Отозвать'))))))));
+    }
+    return sec;
+  }
+
+  // «Блокировки сети»: connections smolvm itself refused for a machine.
+  function blocksCard() {
+    const names = machineNames();
+    if (!blocksMachine || !names.includes(blocksMachine)) blocksMachine = params.get('machine') || state.machines.find((m) => m.state === 'running')?.name || names[0] || '';
+    const sel = h('select', { class: 'input small' }, names.map((n) => h('option', { value: n, selected: n === blocksMachine }, n)));
+    const body = h('div');
+    const draw = () => { body.replaceChildren(); if (blocksMachine) tabEgress(body, { name: blocksMachine }); };
+    sel.addEventListener('change', () => { blocksMachine = sel.value; draw(); });
+    draw();
+    return h('section', { class: 'card', id: 'blocks' },
+      h('div', { class: 'card-head' }, h('h3', {}, 'Блокировки сети'), h('span', { class: 'spacer' }), names.length ? sel : null,
+        h('button', { class: 'btn ghost icon', title: 'Обновить', onclick: draw }, ic('refresh'))),
+      names.length ? body : h('p', { class: 'muted small' }, 'Машин пока нет.'));
+  }
+
   function render() {
     if (!root || !data) return;
     const y = root.scrollTop;
-    fill(root, intro(), machinesCard(), listsCard(), checkCard(), settingsCard());
+    fill(root, intro(), machinesCard(), providersCard(), listsCard(), blocksCard(), checkCard(), settingsCard());
     root.scrollTop = y;
   }
 
@@ -314,7 +373,11 @@
     render(el, p) {
       root = el; params = p;
       fill(el, h('p', { class: 'muted' }, 'Загрузка…'));
-      load().then(render).catch((e) => fill(el, h('div', { class: 'error' }, e.message)));
+      load().then(() => {
+        render();
+        const focus = p.get('focus');
+        if (focus) requestAnimationFrame(() => root?.querySelector(`#${focus}`)?.scrollIntoView({ behavior: 'smooth' }));
+      }).catch((e) => fill(el, h('div', { class: 'error' }, e.message)));
       return () => { root = null; };
     },
   };
@@ -328,7 +391,7 @@
       fill(el,
         h('section', { class: 'card intro' },
           h('div', { class: 'card-head' }, h('h2', {}, 'Журнал соединений'),
-            h('span', { class: 'muted small' }, 'все запросы машин через фильтр «Доступ в сеть»: что разрешено, что заблокировано и почему'),
+            h('span', { class: 'muted small' }, 'все запросы машин через фильтр «Сеть»: что разрешено, что заблокировано и почему'),
             h('span', { class: 'spacer' }), h('a', { class: 'btn ghost', href: '#/egress' }, 'Правила доступа →'))),
         h('section', { class: 'card', id: 'eg-log' }, h('p', { class: 'muted' }, 'Загрузка…')));
       load().then(renderLog).catch((e) => fill(el.querySelector('#eg-log'), h('div', { class: 'error' }, e.message)));

@@ -29,7 +29,6 @@ const agents = require('./lib/agents');
 const agentproxy = require('./lib/agentproxy');
 const smolfile = require('./lib/smolfile');
 const review = require('./lib/review');
-const snapshots = require('./lib/snapshots');
 const audit = require('./lib/audit');
 const egress = require('./lib/egress');
 const winhost = require('./lib/winhost');
@@ -162,16 +161,12 @@ const AUDIT_LABELS = [
   [/^POST \/ui\/machines\/[^/]+\/review\/[\w.-]+\/reject$/, 'ревью: отклонено'],
   [/^POST \/ui\/machines\/[^/]+\/review\/[\w.-]+\/(pull|copy)$/, 'рабочая копия: обновление с хоста'],
   [/^DELETE \/ui\/machines\/[^/]+\/review\//, 'рабочая копия: удаление'],
-  [/^POST \/ui\/machines\/[^/]+\/snapshots$/, 'снимок'],
-  [/^POST \/ui\/machines\/[^/]+\/snapshots\/[\w.-]+\/rollback$/, 'откат к снимку'],
-  [/^DELETE \/ui\/machines\/[^/]+\/snapshots\//, 'удаление снимка'],
-  [/^PUT \/ui\/machines\/[^/]+\/snapshots\/settings$/, 'снимки: настройки'],
   [/^POST \/ui\/egress\/machines\/[^/]+\/learn\/finish$/, 'обучение: список создан'],
   [/^PUT \/ui\/machines\/[^/]+\/agents\/vendor$/, 'сервер вендора: разрешён/отозван'],
   [/^PUT \/ui\/vault\//, 'секрет: сохранён'],
   [/^DELETE \/ui\/vault\//, 'секрет: удалён'],
   [/^PUT \/ui\/machines\/[^/]+\/secrets$/, 'секреты машины'],
-  [/^(PUT|POST|DELETE) \/ui\/egress/, 'доступ в сеть: изменение'],
+  [/^(PUT|POST|DELETE) \/ui\/egress/, 'сеть: изменение'],
   [/^(PUT|POST|DELETE) \/ui\/dirs/, 'директории: изменение'],
   [/^PUT \/ui\/settings$/, 'настройки прокси/сертификатов'],
   [/^POST \/ui\/host\/repair-rootfs$/, 'починка rootfs smolvm (Windows)'],
@@ -216,7 +211,7 @@ function explainPullForbidden(name, message) {
   const filter = egress.pullAllowed(name, host);
   let hint;
   if (filter === false) {
-    hint = `Его заблокировал фильтр «Доступ в сеть» smolvm-web: ${host} нет среди реестров образов. Добавьте его на странице «Доступ в сеть» → «Настройки» → «Реестры образов» (или кнопкой «Разрешить» на странице «Журнал») и запустите машину снова.`;
+    hint = `Его заблокировал фильтр «Сеть» smolvm-web: ${host} нет среди реестров образов. Добавьте его на странице «Сеть» → «Настройки» → «Реестры образов» (или кнопкой «Разрешить» на странице «Журнал») и запустите машину снова.`;
   } else {
     hint = `Его запретил корпоративный прокси (политика доступа к ${host}). Попросите ИТ открыть ${host} (CDN Docker Hub) или возьмите образ из зеркала — в поле «Образ» при создании машины: mirror.gcr.io/library/<образ> или public.ecr.aws/docker/library/<образ>, либо корпоративный Nexus/Artifactory.`;
   }
@@ -269,16 +264,12 @@ async function startMachine(name, opts) {
 function preparing() {
   const out = {};
   for (const n of starting) out[n] = { label: 'запуск', step: 'запуск машины и настройка' };
-  for (const j of snapshots.running()) out[j.name] = { label: j.step === 'откат' ? 'откат' : 'снимок', step: j.step };
   for (const j of review.running()) out[j.name] = { label: 'подготовка', step: j.step };
   return out;
 }
 
 async function startMachineInner(name, { apiPath, body = {}, branchable = false }) {
   const fail = (status, error, code) => Object.assign(new Error(error), { status, code });
-  // Agent machines and machines with snapshots enabled start branchable, so a
-  // snapshot (smolvm checkpoint) can be taken at any time (required on macOS).
-  if (!branchable && (agents.get(name) || snapshots.wantsBranchable(name))) branchable = true;
   if (branchable && !/[?&](branchable|forkable)=/.test(apiPath)) apiPath += `${apiPath.includes('?') ? '&' : '?'}branchable=true`;
   let prepared;
   try { prepared = await mc.prepareStart(name); } catch (e) { throw fail(400, `подготовка к запуску: ${e.message}`, 'PREPARE_FAILED'); }
@@ -304,7 +295,6 @@ async function startMachineInner(name, { apiPath, body = {}, branchable = false 
     if (e.body) throw e;
     throw fail(e.status || 500, `${viaCli ? 'запуск через smolvm CLI' : 'запуск'}: ${e.message}`, 'START_FAILED');
   }
-  if (branchable) snapshots.markBranchableRun(name, info.pid);
   if (plan.warnings.length) info._webWarnings = plan.warnings;
   if (prepared.length) info._webPrepared = prepared;
   try {
@@ -432,7 +422,7 @@ const ROUTES = [
       // it — under the strict egress floor, which walls off the host and the LAN:
       // the egress filter, the corporate proxy and the secret gateway all live there.
       const viaHost = [
-        eg?.enabled && 'фильтр «Доступ в сеть»',
+        eg?.enabled && 'фильтр «Сеть»',
         useProxy && (await mc.effectiveProxy(null).catch(() => null)) && 'корпоративный прокси',
         bound.some((x) => x.mode === 'gateway') && 'секреты в режиме «Шлюз»',
       ].filter(Boolean);
@@ -460,9 +450,8 @@ const ROUTES = [
       body.env = px.mergeEnv(body.env, await mc.secretEnv(body.name));
       if (bound.some((x) => x.mode === 'gateway')) await gateway.start();
     }
-    // Pin the network backend smolvm serve would pick anyway: a checkpoint of a
-    // machine with an implicit backend restores with a different network device
-    // (TSI instead of virtio-net) and fails to boot.
+    // Pin the network backend smolvm serve would pick anyway, so the machine
+    // behaves the same whether it is started through the API or the CLI.
     if (body.network && !body.networkBackend && !body.from && !body.registryRef) body.networkBackend = 'virtio-net';
     url.searchParams.delete('webProxy');
     req.url = url.pathname + (url.search || '');
@@ -537,7 +526,7 @@ const ROUTES = [
   ['DELETE', new RegExp(`^${M}$`), async (req, res, m) => {
     const name = decodeURIComponent(m[1]);
     const r = await up.request('DELETE', req.url);
-    if (r.status === 200) { cfg.forgetMachine(name); await vault.forgetMachine(name); egress.forgetMachine(name); dirs.forgetMachine(name); agents.forget(name); agentproxy.closeFor(`${name}/`); smolfile.forget(name); review.forget(name); snapshots.forget(name); }
+    if (r.status === 200) { cfg.forgetMachine(name); await vault.forgetMachine(name); egress.forgetMachine(name); dirs.forgetMachine(name); agents.forget(name); agentproxy.closeFor(`${name}/`); smolfile.forget(name); review.forget(name); }
     sendJson(res, r.status, r.data);
   }],
 
@@ -564,7 +553,6 @@ function publicSettings() {
 
 const AG = '^/ui/machines/([^/]+)/agents';
 const RV = '^/ui/machines/([^/]+)/review';
-const SN = '^/ui/machines/([^/]+)/snapshots';
 const err = (res, e) => sendJson(res, e.status || 500, { error: e.message });
 const UI = [
   // ---- audit ----
@@ -618,33 +606,13 @@ const UI = [
       sendJson(res, 200, r);
     } catch (e) { err(res, e); }
   }],
-  // ---- snapshots ----
-  ['GET', new RegExp(`${SN}$`), async (req, res, m) => sendJson(res, 200, await snapshots.status(decodeURIComponent(m[1])))],
-  ['POST', new RegExp(`${SN}$`), async (req, res, m) => {
-    const body = await readJson(req);
-    try { sendJson(res, 200, await snapshots.create(decodeURIComponent(m[1]), { label: body.label, reason: 'вручную' })); } catch (e) { err(res, e); }
-  }],
-  ['PUT', new RegExp(`${SN}/settings$`), async (req, res, m) => {
-    const body = await readJson(req);
-    if (typeof body.branchable === 'boolean') snapshots.setWantsBranchable(decodeURIComponent(m[1]), body.branchable);
-    if (body.keep) snapshots.setKeep(body.keep);
-    sendJson(res, 200, await snapshots.status(decodeURIComponent(m[1])));
-  }],
-  ['DELETE', new RegExp(`${SN}/([\\w.-]+)$`), (req, res, m) => {
-    try { snapshots.remove(decodeURIComponent(m[1]), m[2]); sendJson(res, 200, { removed: true }); } catch (e) { err(res, e); }
-  }],
-  ['POST', new RegExp(`${SN}/([\\w.-]+)/rollback$`), async (req, res, m) => {
-    const name = decodeURIComponent(m[1]);
-    try {
-      sendJson(res, 200, await snapshots.rollback(name, m[2], (n) => startMachine(n, { apiPath: `/api/v1/machines/${encodeURIComponent(n)}/start`, branchable: true })));
-    } catch (e) { err(res, e); }
-  }],
   ['GET', /^\/ui\/preparing$/, (req, res) => {
     const out = preparing();
     for (const j of smolfile.runningInits()) out[j.name] = { label: 'подготовка', step: j.step };
     for (const j of agents.runningJobs()) out[j.name] = { label: 'подготовка', step: `установка агентов: ${j.step}` };
     sendJson(res, 200, out);
   }],
+  ['GET', /^\/ui\/machines\/marks$/, (req, res) => sendJson(res, 200, agents.marks())],
   // Smolfile -> API create request (+ init, warnings); see lib/smolfile.js.
   ['POST', /^\/ui\/smolfile\/parse$/, async (req, res) => {
     const body = await readJson(req);
@@ -662,6 +630,13 @@ const UI = [
     await agents.declare(name, ids);
     const st = await machineState(name);
     sendJson(res, 200, { restartNeeded: st === 'running', ...(await agents.status(name)) });
+  }],
+  // Vendor servers ("Провайдеры") of every machine with agents — no guest exec, for the «Сеть» page.
+  ['GET', /^\/ui\/agents\/vendors$/, async (req, res) => {
+    // Only machines that still exist (records can outlive a machine deleted outside smolvm-web).
+    const r = await up.request('GET', '/api/v1/machines').catch(() => null);
+    const exists = new Set((r?.data?.machines || []).map((m) => m.name));
+    sendJson(res, 200, { machines: agents.names().filter((n) => exists.has(n)).map((n) => ({ name: n, vendor: agents.vendorEndpoints(n), filter: { enabled: !!egress.getMachine(n)?.enabled } })).filter((x) => x.vendor.length) });
   }],
   // Allow or revoke a vendor server of the machine's agents (egress filter rule, live).
   ['PUT', new RegExp(`${AG}/vendor$`), async (req, res, m) => {
@@ -683,10 +658,8 @@ const UI = [
   ['POST', new RegExp(`${AG}/([\\w-]+)/start$`), async (req, res, m) => {
     const name = decodeURIComponent(m[1]);
     const body = await readJson(req);
-    let snap = null;
-    if (body.snapshot) { try { snap = { ok: true, ...(await snapshots.create(name, { reason: `перед запуском ${agents.AGENTS[m[2]]?.title || m[2]}` })) }; } catch (e) { snap = { ok: false, error: e.message }; } }
-    try { sendJson(res, 200, { ...(await agents.start(name, m[2], { autonomous: !!body.autonomous })), _webSnapshot: snap }); }
-    catch (e) { sendJson(res, 400, { error: e.message, _webSnapshot: snap }); }
+    try { sendJson(res, 200, await agents.start(name, m[2], { autonomous: !!body.autonomous })); }
+    catch (e) { sendJson(res, 400, { error: e.message }); }
   }],
   ['POST', new RegExp(`${AG}/([\\w-]+)/stop$`), async (req, res, m) => {
     try { await agents.stop(decodeURIComponent(m[1]), m[2]); sendJson(res, 200, { stopped: true }); }
