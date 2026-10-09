@@ -7,61 +7,112 @@
   let root = null;
   let timer = null;
   const filter = { machine: '', type: '', q: '' };
-  const TYPES = [['', 'все'], ['exec', 'команды'], ['api', 'действия с машинами'], ['ui', 'настройки и ревью'], ['fs', 'файлы'], ['alert', 'оповещения']];
-  const TYPE_TAG = { exec: ['', 'команда'], api: ['', 'машина'], ui: ['', 'smolvm-web'], fs: ['warn', 'файл'], alert: ['bad', 'оповещение'], test: ['', 'тест'] };
 
   function card(title, ...children) {
     return h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h3', {}, title)), ...children);
   }
 
+  let paused = false;
+
+  // A segmented control (the same look as on «Сеть»).
+  const segmented = (options, value, onChange) => h('div', { class: 'seg' }, options.map(([v, label]) =>
+    h('button', { type: 'button', class: v === value ? 'active' : '', onclick: () => { if (v !== value) onChange(v); } }, label)));
+
+  const KIND = {
+    exec: { icon: 'terminal', label: 'Команда', cls: '' },
+    api: { icon: 'server', label: 'Машина', cls: '' },
+    ui: { icon: 'sliders', label: 'smolvm-web', cls: '' },
+    fs: { icon: 'file', label: 'Файл', cls: 'warn' },
+    alert: { icon: 'shield', label: 'Оповещение', cls: 'bad' },
+    sandbox: { icon: 'box', label: 'Песочница', cls: '' },
+    test: { icon: 'send', label: 'Тест', cls: '' },
+  };
+
+  function dayLabel(ts) {
+    const d = new Date(ts); const today = new Date(); const y = new Date(Date.now() - 864e5);
+    const same = (a, b) => a.toDateString() === b.toDateString();
+    return same(d, today) ? 'Сегодня' : same(d, y) ? 'Вчера' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+  }
+
   async function renderLog() {
     const wrap = root?.querySelector('#audit-log');
     if (!wrap) return;
-    let data;
+    let data; let day;
     try {
       const q = new URLSearchParams({ machine: filter.machine, type: filter.type, q: filter.q, limit: '500' });
-      data = await api('GET', `/ui/audit?${q}`);
+      // The counters ignore the type filter: they are the way to set it.
+      [data, day] = await Promise.all([api('GET', `/ui/audit?${q}`), api('GET', `/ui/audit?${new URLSearchParams({ machine: filter.machine, limit: '5000' })}`)]);
     } catch (e) { fill(wrap, h('div', { class: 'error' }, e.message)); return; }
     if (!root?.contains(wrap)) return;
     const focused = document.activeElement && wrap.contains(document.activeElement) ? document.activeElement.name : null;
-    const names = [...new Set([...state.machines.map((m) => m.name), ...data.entries.map((e) => e.machine).filter(Boolean)])].sort();
-    const mSel = h('select', { class: 'input small', name: 'm' }, h('option', { value: '' }, 'все машины'), names.map((n) => h('option', { value: n, selected: n === filter.machine }, n)));
-    const tSel = h('select', { class: 'input small', name: 't' }, TYPES.map(([v, t]) => h('option', { value: v, selected: v === filter.type }, t)));
-    const qIn = h('input', { class: 'input small', name: 'q', placeholder: 'поиск', value: filter.q });
-    mSel.addEventListener('change', () => { filter.machine = mSel.value; renderLog(); });
-    tSel.addEventListener('change', () => { filter.type = tSel.value; renderLog(); });
-    qIn.addEventListener('input', () => { filter.q = qIn.value; clearTimeout(qIn._t); qIn._t = setTimeout(renderLog, 300); });
 
+    // Counters for the last 24 hours.
+    const since = Date.now() - 864e5;
+    const recent = day.entries.filter((e) => new Date(e.ts).getTime() >= since);
+    const count = (t) => recent.filter((e) => e.type === t).length;
+    const failed = recent.filter((e) => (e.exitCode != null && e.exitCode !== 0) || e.status >= 400).length;
+    const tile = (type, icon, title, n, tone) => h('button', { type: 'button', class: `aud-tile${filter.type === type ? ' active' : ''}${tone && n ? ` ${tone}` : ''}`, onclick: () => { filter.type = filter.type === type ? '' : type; renderLog(); } },
+      h('div', { class: 'set-tile-head' }, ic(icon), h('span', {}, title)), h('div', { class: 'aud-num' }, String(n)));
+    const tiles = h('div', { class: 'aud-tiles' },
+      tile('exec', 'terminal', 'Команды', count('exec')),
+      tile('api', 'server', 'Действия с машинами', count('api')),
+      tile('ui', 'sliders', 'Настройки и ревью', count('ui')),
+      tile('fs', 'file', 'Изменения файлов', count('fs'), 'warn'),
+      tile('alert', 'shield', 'Оповещения', count('alert'), 'bad'),
+      h('div', { class: `aud-tile static${failed ? ' bad' : ''}` }, h('div', { class: 'set-tile-head' }, ic('x'), h('span', {}, 'С ошибкой')), h('div', { class: 'aud-num' }, String(failed))));
+
+    // Filters
+    const names = [...new Set([...state.machines.map((m) => m.name), ...data.entries.map((e) => e.machine).filter(Boolean)])].sort();
+    const typeSeg = segmented([['', 'Все'], ['exec', 'Команды'], ['api', 'Машины'], ['ui', 'Настройки'], ['fs', 'Файлы'], ['alert', 'Оповещения'], ['sandbox', 'Песочницы']], filter.type, (v) => { filter.type = v; renderLog(); });
+    const mSel = h('select', { class: 'input small', name: 'm' }, h('option', { value: '' }, 'Все машины'), names.map((n) => h('option', { value: n, selected: n === filter.machine }, n)));
+    mSel.addEventListener('change', () => { filter.machine = mSel.value; renderLog(); });
+    const qIn = h('input', { class: 'input small', name: 'q', placeholder: 'Поиск', value: filter.q });
+    qIn.addEventListener('input', () => { filter.q = qIn.value; clearTimeout(qIn._t); qIn._t = setTimeout(renderLog, 300); });
+    const live = h('button', { class: `btn small-btn log-live${paused ? '' : ' on'}`, title: paused ? 'Обновление остановлено' : 'Журнал обновляется каждые 4 секунды', onclick: () => { paused = !paused; renderLog(); } },
+      h('span', { class: 'live-dot' }), paused ? 'Пауза' : 'Вживую');
+    const toolbar = h('div', { class: 'log-toolbar' }, typeSeg, mSel, h('div', { class: 'log-search' }, ic('search'), qIn), h('span', { class: 'spacer' }), live,
+      h('a', { class: 'btn small-btn', href: '/ui/audit/export', download: '', title: 'Весь журнал в формате JSON Lines' }, ic('download'), 'Экспорт'));
+
+    // The feed, by day.
     const what = (e) => {
       const d = e.detail || {};
-      if (e.type === 'exec') return [h('div', {}, e.action === 'exec' ? '' : `${e.action}: `, h('code', {}, d.command || d.prompt || (d.commands != null ? `${d.commands} команд` : '') || '')),
-        d.user ? h('div', { class: 'muted small' }, `пользователь: ${d.user}${d.workdir ? `, ${d.workdir}` : ''}`) : null];
-      if (e.type === 'fs') return [h('div', {}, e.action, ': ', h('code', {}, d.path)), h('div', { class: 'muted small mono ellipsis', title: d.root }, d.root)];
-      if (e.type === 'alert') return [h('div', { class: 'badc' }, e.action), d.hosts?.length ? h('div', { class: 'muted small mono' }, d.hosts.join(', ')) : null];
-      return [h('div', {}, e.action), d.files?.length ? h('div', { class: 'muted small mono' }, d.files.join(', ')) : null];
+      if (e.type === 'exec') return [h('div', { class: 'ellipsis' }, e.action === 'exec' ? '' : `${e.action}: `, h('code', {}, d.command || d.prompt || (d.commands != null ? `${d.commands} команд` : '') || '')),
+        d.user ? h('div', { class: 'muted small' }, `от ${d.user}${d.workdir ? ` · ${d.workdir}` : ''}`) : null];
+      if (e.type === 'fs') return [h('div', { class: 'ellipsis' }, e.action, ': ', h('code', {}, d.path)), h('div', { class: 'muted small mono ellipsis', title: d.root }, d.root)];
+      if (e.type === 'alert') return [h('div', { class: 'badc' }, e.action), d.hosts?.length ? h('div', { class: 'muted small mono ellipsis' }, d.hosts.join(', ')) : null];
+      const extra = d.files?.length ? d.files.join(', ') : d.hostPath ? `${d.hostPath}${d.mode ? ` · ${d.mode}` : ''}`  : '';
+      return [h('div', { class: 'ellipsis' }, e.action), extra ? h('div', { class: 'muted small mono ellipsis', title: extra }, extra) : null];
     };
     const result = (e) => {
-      if (e.exitCode != null) return h('span', { class: `tag ${e.exitCode === 0 ? 'ok' : 'bad'}` }, `код ${e.exitCode}`);
-      if (e.status) return h('span', { class: `tag ${e.status < 400 ? 'ok' : 'bad'}` }, String(e.status));
-      return '';
+      if (e.exitCode != null) return h('span', { class: `tag ${e.exitCode === 0 ? 'ok' : 'bad'}` }, e.exitCode === 0 ? 'успешно' : `код ${e.exitCode}`);
+      if (e.status) return h('span', { class: `tag ${e.status < 400 ? 'ok' : 'bad'}`, title: `HTTP ${e.status}` }, e.status < 400 ? 'успешно' : `ошибка ${e.status}`);
+      return null;
     };
-    const table = data.entries.length ? h('div', { class: 'tbl-wrap log-wrap' }, h('table', { class: 'tbl log' },
-      h('tr', {}, h('th', {}, 'Время'), h('th', {}, 'Кто'), h('th', {}, 'Машина'), h('th', {}, ''), h('th', {}, 'Что'), h('th', {}, 'Результат')),
-      data.entries.map((e) => {
-        const [cls, label] = TYPE_TAG[e.type] || ['', e.type];
-        return h('tr', { class: e.type === 'alert' ? 'denied-row' : '' },
-          h('td', { class: 'mono small nowrap' }, new Date(e.ts).toLocaleString()),
-          h('td', { class: 'small' }, e.actor || '—'),
-          h('td', { class: 'mono small' }, e.machine || (e.detail?.machines?.join(', ') || '—')),
-          h('td', {}, h('span', { class: `tag ${cls}` }, label)),
-          h('td', { class: 'small' }, what(e)),
-          h('td', {}, result(e)));
-      }))) : h('p', { class: 'muted' }, 'Записей нет.');
-    fill(wrap,
-      h('div', { class: 'card-head' }, h('h3', {}, 'Журнал действий'), h('span', { class: 'spacer' }), mSel, tSel, qIn,
-        h('a', { class: 'btn', href: '/ui/audit/export', download: '' }, ic('download'), 'Экспорт JSONL')),
-      table,
-      h('p', { class: 'muted small' }, `Файл: ${data.file}. Под наблюдением (rw-папки работающих машин): ${data.watched.length ? data.watched.map((w) => `${w.path} → ${w.machines.join(', ')}`).join('; ') : 'нет'}.`));
+    const rows = [];
+    let lastDay = '';
+    for (const e of data.entries) {
+      const dl = dayLabel(e.ts);
+      if (dl !== lastDay) { rows.push(h('div', { class: 'aud-day' }, dl)); lastDay = dl; }
+      const k = KIND[e.type] || { icon: 'list', label: e.type, cls: '' };
+      rows.push(h('div', { class: `aud-row ${e.type === 'alert' ? 'bad' : ''}` },
+        h('span', { class: 'mono small muted' }, new Date(e.ts).toLocaleTimeString()),
+        h('span', { class: `aud-kind ${k.cls}`, title: k.label }, ic(k.icon)),
+        h('div', { class: 'aud-what small' }, ...what(e)),
+        h('span', { class: 'mono small ellipsis', title: e.machine || '' }, e.machine || (e.detail?.machines?.join(', ') || h('span', { class: 'muted' }, '—'))),
+        h('span', { class: 'small muted ellipsis', title: e.actor || '' }, e.actor || '—'),
+        h('span', { class: 'right' }, result(e))));
+    }
+    const feed = data.entries.length ? h('div', { class: 'aud-feed' },
+      h('div', { class: 'aud-row aud-head' }, h('span', {}, 'Время'), h('span', {}, ''), h('span', {}, 'Что произошло'), h('span', {}, 'Машина'), h('span', {}, 'Кто'), h('span', { class: 'right' }, 'Итог')),
+      ...rows)
+      : h('div', { class: 'log-empty' }, ic('shield'), h('div', {}, filter.type || filter.machine || filter.q ? 'Под фильтр ничего не попало.' : 'Записей пока нет.'));
+
+    fill(wrap, tiles, toolbar, feed,
+      h('div', { class: 'aud-foot small muted' },
+        h('div', {}, 'Файл журнала: ', h('code', {}, data.file)),
+        h('div', {}, 'Под наблюдением (папки на запись у работающих машин): ', data.watched.length
+          ? data.watched.map((w) => h('span', { class: 'lst-host mono', title: w.machines.join(', ') }, w.path.replace(state.info?.home || '\u0000', '~'))) : 'нет'),
+        h('div', {}, 'Экспорт в SIEM и оповещения — ', h('a', { href: '#', onclick: (ev) => { ev.preventDefault(); openSettings('audit'); } }, '«Настройки» → «Аудит и SIEM»'))));
     if (focused) wrap.querySelector(`[name=${focused}]`)?.focus();
   }
 
@@ -126,10 +177,9 @@
             h('li', {}, 'Ревью (какие файлы применены на хост или отклонены), снимки и откаты, изменения секретов (без значений), доступа в сеть, директорий и настроек.'),
             h('li', {}, 'Изменения файлов в папках хоста, подключённых к работающим машинам на запись. Источник изменения (машина или человек на хосте) по файловой системе не различить — в записи перечислены машины с доступом на запись.'),
             h('li', {}, 'Команды, которые агент выполняет внутри машины сам (без exec через smolvm-web), сюда не попадают: smolvm их не сообщает. Их след — сетевой журнал и изменения файлов.'))),
-        h('span', { class: 'spacer' }), h('a', { class: 'btn ghost', href: '#/log' }, 'Сетевой журнал →'))),
-      h('section', { class: 'card', id: 'audit-log' }, h('p', { class: 'muted' }, 'Загрузка…')),
-      h('p', { class: 'muted small' }, 'Экспорт в SIEM и оповещения о всплесках блокировок — в ',
-        h('a', { href: '#', onclick: (e) => { e.preventDefault(); openSettings('audit'); } }, '«Настройки» → «Аудит и SIEM»'), '.'));
+        h('span', { class: 'spacer' }), h('a', { class: 'btn small-btn ghost', href: '#/egress?tab=log' }, ic('globe'), 'Сетевой журнал →')),
+        h('p', { class: 'muted small' }, 'Кто что делал с машинами: команды, запуски и остановки, ревью, изменения настроек и файлов. За последние сутки:')),
+      h('section', { class: 'card', id: 'audit-log' }, h('p', { class: 'muted' }, 'Загрузка…')));
     renderLog();
   }
 
@@ -140,7 +190,7 @@
       root = el;
       filter.machine = p.get('machine') || filter.machine;
       render();
-      timer = setInterval(() => { if (!document.hidden && !el.querySelector('#audit-log :focus')) renderLog(); }, 4000);
+      timer = setInterval(() => { if (!paused && !document.hidden && !el.querySelector('#audit-log :focus')) renderLog(); }, 4000);
       return () => { clearInterval(timer); root = null; };
     },
   };

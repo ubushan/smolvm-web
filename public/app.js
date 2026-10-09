@@ -171,12 +171,16 @@ async function refreshHealth() {
     state.healthy = true;
     el.className = 'health ok';
     const m = hres.machines;
-    el.innerHTML = `<span class="dot"></span><span>smolvm ${esc(hres.version)}${m ? ` · ${m.running}/${m.total} запущено` : ''}${hres.uptime_seconds != null ? ` · uptime ${fmtDuration(hres.uptime_seconds)}` : ''}</span>`;
+    el.innerHTML = '<span class="dot"></span>';
+    el.title = `smolvm ${hres.version}: smolvm serve подключён`;
+    $('#list-status').textContent = `${m ? `${m.running}/${m.total} запущено` : ''}${hres.uptime_seconds != null ? ` · uptime ${fmtDuration(hres.uptime_seconds)}` : ''}`;
   } catch (e) {
     state.healthy = false;
     el.className = 'health bad';
     el.innerHTML = `<span class="dot"></span><span>API недоступен</span>`;
+    el.title = 'smolvm serve не отвечает';
     $('#capacity').innerHTML = '';
+    $('#list-status').textContent = '';
     return false;
   }
   try {
@@ -185,10 +189,9 @@ async function refreshHealth() {
     const used = c.used_memory_pss_mb ?? c.used_memory_mb;
     const cpuPct = navigator.hardwareConcurrency ? Math.min(100, (c.used_cpus / navigator.hardwareConcurrency) * 100) : null;
     $('#capacity').innerHTML = [
-      stat('CPU нагрузка', `${c.used_cpus.toFixed(2)} <small>/ выделено ${c.allocated_cpus}</small>`, cpuPct),
-      stat('Память (факт.)', `${fmtMb(used)} <small>/ выделено ${fmtMb(c.allocated_memory_mb)}</small>`, memTotal ? (used / memTotal) * 100 : null),
-      memTotal ? stat('Память хоста', `${fmtMb(c.host_memory_available_mb)} <small>свободно из ${fmtMb(memTotal)}</small>`, ((memTotal - c.host_memory_available_mb) / memTotal) * 100) : '',
-      stat('Диск машин', `${c.used_disk_gb} <small>GiB</small>`, null),
+      stat('CPU', `${c.used_cpus.toFixed(2)}<small>/${c.allocated_cpus}</small>`, cpuPct),
+      stat('Память', `${fmtMb(used)}<small>/${fmtMb(c.allocated_memory_mb)}</small>`, memTotal ? (used / memTotal) * 100 : null),
+      stat('Диск', `${c.used_disk_gb}<small> GiB</small>`, null),
     ].join('');
   } catch { /* capacity is optional */ }
   return true;
@@ -252,7 +255,7 @@ function renderList() {
       ${machineMark(m)}
       <div class="name">${esc(m.name)}</div>
       <div>${stateBadge(m)}</div>
-      <div class="meta">${m.cpus} vCPU · ${fmtMb(m.memoryMb)}${m.network ? ' · net' : ''}${m.branchable ? ' · branchable' : ''}${m.parentMachine ? ` · ⑂ ${esc(m.parentMachine)}` : ''}</div>
+      <div class="meta">${state.marks?.[m.name]?.sandbox ? '<span class="tag sbx">песочница</span> ' : ''}${m.cpus} vCPU · ${fmtMb(m.memoryMb)}${m.network ? ' · net' : ''}${m.branchable ? ' · branchable' : ''}${m.parentMachine ? ` · ⑂ ${esc(m.parentMachine)}` : ''}</div>
     </div>`).join('');
   if (box.dataset.html !== html) { box.innerHTML = html; box.dataset.html = html; }
 }
@@ -420,6 +423,7 @@ function reportDirs(name, d) {
   for (const w of d.warnings || []) toast(`${name}: ${w}`);
   if (d.users?.length) toast(`${name}: созданы пользователи ${d.users.join(', ')}`, 'ok');
   if (d.aclInstalled) toast(`${name}: установлен пакет acl`, 'ok');
+  if (d.uid) toast(`${name}: пользователь агента получил uid владельца папки (${d.uid.replace(/^\S+ /, '')}) — теперь он может в неё писать`, 'ok', 8000);
 }
 
 function reportProvision(name, p, explicit) {
@@ -468,6 +472,7 @@ const TABS = [
   ['overview', 'Обзор'],
   ['agents', 'Агенты'],
   ['console', 'Консоль'],
+  ['details', 'Детали'],
   ['logs', 'Логи'],
   ['files', 'Файлы'],
 ];
@@ -517,7 +522,7 @@ function updateDetailHead(m) {
     m.parentMachine ? h('span', { class: 'tag' }, `⑂ от ${m.parentMachine}`) : null,
     h('div', { class: 'actions' },
       stopped ? btn([ic('play'), 'Старт'], () => actions.start(m), { cls: 'primary' }) : null,
-
+      running ? btn([ic('refresh'), 'Перезапуск'], () => actions.restart(m), { title: 'Остановить и снова запустить через smolvm-web: подключатся новые папки, применятся фильтр «Сеть», прокси и uid агента. Запущенные агенты остановятся' }) : null,
       running ? btn([ic('pause'), 'Пауза'], () => actions.pause(m), { title: 'Сохранить RAM, CPU и диски и остановить' }) : null,
       paused ? btn([ic('play'), 'Возобновить'], () => actions.resume(m), { cls: 'primary' }) : null,
       running ? btn([ic('branch'), 'Ветка'], () => actions.branch(m), { disabled: !m.branchable, title: m.branchable ? 'Copy-on-write клон работающей машины' : 'Машина должна быть запущена как branchable' }) : null,
@@ -542,7 +547,7 @@ function renderTab() {
   const m = current();
   if (!body || !m) return;
   body.innerHTML = '';
-  ({ overview: tabOverview, agents: tabAgents, console: tabConsole, logs: tabLogs, files: tabFiles }[state.tab] || tabOverview)(body, m);
+  ({ overview: tabOverview, agents: tabAgents, console: tabConsole, logs: tabLogs, files: tabFiles, details: tabDetails }[state.tab] || tabOverview)(body, m);
 }
 
 function needsRunning(body, m, what) {
@@ -584,17 +589,14 @@ async function tabOverview(body, m) {
 
   const kv = [
     ['Состояние', stateLabel(info.state)],
-    ['Образ', info.image || '—'],
     ['vCPU', info.cpus],
     ['Память', fmtMb(info.memoryMb)],
-    ['RSS / PSS', info.rssMb != null ? `${fmtMb(info.rssMb)} / ${fmtMb(info.pssMb)}` : '—'],
     ['CPU время', info.cpuMillis != null ? `${(info.cpuMillis / 1000).toFixed(1)} c` : '—'],
     ['Диск (факт.)', info.diskUsedMb != null ? fmtMb(info.diskUsedMb) : '—'],
     ['Storage / Overlay', `${info.storageGb ?? 20} / ${info.overlayGb ?? 10} GiB`],
     ['Сеть', info.network ? `вкл${info.networkBackend ? ` (${info.networkBackend})` : ''}` : 'выкл'],
     ['Исходящий трафик', info.egressBytes != null ? fmtBytes(info.egressBytes) : '—'],
     ['Создана', fmtAgo(info.createdAt)],
-    ['GPU / CUDA', `${info.gpu ? 'GPU' : '—'} / ${info.cuda ? 'CUDA' : '—'}`],
   ];
   body.innerHTML = '';
   body.append(h('div', { class: 'kv' }, kv.map(([k, v]) => h('div', {}, h('div', { class: 'k' }, k), h('div', { class: 'v' }, String(v))))));
@@ -616,18 +618,6 @@ async function tabOverview(body, m) {
     empty: 'Нет опубликованных портов. Добавляются при создании машины (поле «Порты») или профилем с агентами.',
   }));
 
-  // Mounts
-  const mounts = info.mounts || [];
-  blocks.push(block({
-    icon: 'folder', title: 'Монтирования', sub: 'папки компьютера внутри машины', on: mounts.length > 0,
-    badge: mounts.length ? String(mounts.length) : 'нет',
-    items: mounts.map((x) => bitem(
-      [h('span', { class: 'mono' }, x.target), h('div', { class: 'muted small mono ellipsis', title: x.source }, x.source)],
-      h('span', { class: `tag ${x.readonly ? 'ok' : 'warn'}` }, x.readonly ? 'только чтение' : 'чтение и запись'))),
-    empty: 'Папки компьютера не подключены.',
-    footer: h('a', { href: `#/dirs?machine=${enc(m.name)}`, class: 'small' }, 'Подключить директории →'),
-  }));
-
   // Internet (egress filter + smolvm policy)
   if (eg) {
     const em = eg.machines[m.name];
@@ -644,23 +634,22 @@ async function tabOverview(body, m) {
         !info.network ? bitem('Сеть машины', h('span', { class: 'tag bad' }, 'выключена')) : null,
       ].filter(Boolean),
       empty: 'Машина ходит в интернет без ограничений smolvm-web.',
-      footer: [h('a', { href: `#/egress?machine=${enc(m.name)}`, class: 'small' }, 'Настроить allow list →'), h('a', { href: `#/log?machine=${enc(m.name)}`, class: 'small' }, 'Журнал →')],
+      footer: [h('a', { href: `#/egress?machine=${enc(m.name)}`, class: 'small' }, 'Что разрешено →'), h('a', { href: `#/egress?tab=log&machine=${enc(m.name)}`, class: 'small' }, 'Журнал →')],
     }));
   }
 
-  // Directories & users
-  if (dv) {
-    blocks.push(block({
-      icon: 'users', title: 'Директории', sub: 'права пользователей машины', on: dv.dirs.length > 0,
-      badge: dv.dirs.length ? plural(dv.dirs.length, 'папка', 'папки', 'папок') : 'нет',
-      items: [
-        ...dv.dirs.map((d) => bitem(h('span', { class: 'mono' }, d.guestPath), null)),
-        dv.users.length ? bitem('Пользователи', h('span', { class: 'small' }, dv.users.map((u) => u.name).join(', '))) : null,
-        dv.pending.add.length || dv.pending.remove.length ? h('div', { class: 'small warnc' }, 'Монтирования изменятся при следующем запуске') : null,
-      ].filter(Boolean),
-      empty: 'Разрешённые директории не подключены.',
-      footer: h('a', { href: `#/dirs?machine=${enc(m.name)}`, class: 'small' }, 'Права пользователей →'),
-    }));
+  // Folders the agent gets (mounted or review copies), with a plain status.
+  {
+    const n = (dv?.dirs.length || 0);
+    const b = block({
+      icon: 'users', title: 'Папки агента', sub: 'что агент видит с этого компьютера', on: true,
+      badge: null, items: [],
+      footer: [h('button', { class: 'btn', onclick: () => openFolderDialog({ machine: m.name, onDone: () => renderTab() }) }, ic('plus'), 'Дать доступ к папке'),
+        h('a', { href: `#/dirs?machine=${enc(m.name)}`, class: 'small' }, 'Подробнее →')],
+    });
+    b.classList.toggle('on', n > 0);
+    b.insertBefore(folderList(m, { compact: true }), b.querySelector('.block-foot'));
+    blocks.push(b);
   }
 
   // Secrets
@@ -683,24 +672,10 @@ async function tabOverview(body, m) {
     }));
   }
 
-  // Images in the machine (the former «Образы» tab): list and pull.
+  // Images in the machine (the former «Образы» tab).
   {
     const running = m.state === 'running';
     const images = imgR.value?.images || [];
-    const ref = h('input', { class: 'input mono', placeholder: 'python:3.12-alpine', disabled: !running });
-    const pull = h('button', { class: 'btn', disabled: !running }, ic('download'), 'Скачать');
-    const doPull = async () => {
-      const image = ref.value.trim();
-      if (!image) return;
-      pull.disabled = true; pull.replaceChildren(h('i', { class: 'spin' }), 'Загрузка…');
-      try {
-        await api('POST', `/api/v1/machines/${enc(m.name)}/images/pull`, { image });
-        toast(`Образ ${image} загружен`, 'ok');
-        renderTab();
-      } catch (e) { toast(e.message, 'err'); pull.disabled = false; pull.replaceChildren(ic('download'), 'Скачать'); }
-    };
-    pull.addEventListener('click', doPull);
-    ref.addEventListener('keydown', (e) => { if (e.key === 'Enter') doPull(); });
     blocks.push(block({
       icon: 'server', title: 'Образы', sub: 'OCI-образы внутри машины', on: images.length > 0,
       badge: running ? String(images.length) : 'машина остановлена',
@@ -708,7 +683,6 @@ async function tabOverview(body, m) {
         [h('div', { class: 'mono ellipsis', title: `${i.reference}\n${i.digest}` }, i.reference), h('div', { class: 'muted small' }, `${i.os}/${i.architecture} · слоёв: ${i.layerCount}`)],
         h('span', { class: 'small' }, fmtBytes(i.size)))),
       empty: running ? (imgR.status === 'rejected' ? `Не удалось получить список: ${imgR.reason?.message || ''}` : 'Образов нет.') : 'Список образов доступен у запущенной машины.',
-      footer: [ref, pull],
     }));
   }
 
@@ -730,10 +704,16 @@ async function tabOverview(body, m) {
   }
 
   body.append(h('div', { class: 'blocks' }, blocks));
-  body.append(h('details', { class: 'tech' },
-    h('summary', {}, 'Технические детали'),
-    h('p', { class: 'muted small' }, 'Полный ответ smolvm об этой машине (GET /api/v1/machines/…): PID, статистика памяти, сетевой режим, политики. Нужен для диагностики.'),
-    h('pre', { class: 'json' }, JSON.stringify(info, null, 2))));
+}
+
+// --- details: smolvm's full record of the machine, for diagnostics
+async function tabDetails(body, m) {
+  let info;
+  try { info = await api('GET', `/api/v1/machines/${enc(m.name)}`); } catch (e) { info = m; }
+  if (!$('#tab-body') || current()?.name !== m.name || state.tab !== 'details') return;
+  body.replaceChildren(
+    h('p', { class: 'muted small' }, 'Полный ответ smolvm об этой машине (GET /api/v1/machines/…): PID, образ, статистика памяти (RSS/PSS), сетевой режим, GPU/CUDA, политики. Нужен для диагностики.'),
+    h('pre', { class: 'json details-json' }, JSON.stringify(info, null, 2)));
 }
 
 // --- review copies: the agent works on a copy, you apply its changes
@@ -1099,7 +1079,7 @@ function saveBlob(blob, name) {
 // --- egress
 async function tabEgress(body, m) {
   body.append(h('p', { class: 'muted small' }, 'Соединения, которые заблокировала сама smolvm (список разрешённых хостов машины или строгий режим smolvm serve: закрыта локальная сеть и хост). Только просмотр. Все запросы через фильтр smolvm-web — в ',
-    h('a', { href: `#/log?machine=${enc(m.name)}` }, 'Журнале'), '.'));
+    h('a', { href: `#/egress?tab=log&machine=${enc(m.name)}` }, 'Журнале'), '.'));
   const list = h('div', {}, h('p', { class: 'muted' }, 'Загрузка…'));
   body.append(list);
   try {
@@ -1215,8 +1195,7 @@ function buildCreateBody(f) {
   if (f.egressOn.checked) {
     body._webEgress = { enabled: true, strict: f.egressStrict.checked, lists: [...document.querySelectorAll('#create-egress-lists input:checked')].map((i) => i.value) };
   }
-  const dirsPicked = [...document.querySelectorAll('#create-dirs input:checked')].map((i) => i.value);
-  if (dirsPicked.length) body._webDirs = dirsPicked;
+  if (createFolders.length) body._webFolders = createFolders;
   return body;
 }
 
@@ -1266,6 +1245,7 @@ async function createFromSmolfile(f, errBox) {
     const picked = [...document.querySelectorAll('#create-secrets input:checked')].map((i) => i.value);
     if (picked.length) body._webSecrets = picked;
     if (f.egressOn.checked) body._webEgress = { enabled: true, strict: f.egressStrict.checked, lists: [...document.querySelectorAll('#create-egress-lists input:checked')].map((i) => i.value) };
+    if (createFolders.length) body._webFolders = createFolders;
     const optOut = state.info?.proxyActive && !f.useProxy.checked;
     const created = await api('POST', `/api/v1/machines${optOut ? '?webProxy=0' : ''}`, body);
     $('#dlg-create').close();
@@ -1338,10 +1318,10 @@ async function refreshInfo() {
   } else if (i.caActive) {
     chip.className = 'chip on'; chip.textContent = 'корп. сертификаты'; chip.title = '';
   } else {
-    chip.className = 'chip'; chip.textContent = 'прямое подключение'; chip.title = 'Прокси не используется — нажмите, чтобы настроить';
+    chip.hidden = true; // direct connection: nothing to show
   }
   const mounts = $('#mounts-input');
-  if (mounts) mounts.placeholder = i.platform === 'win32' ? 'C:\\Users\\me\\project:/work' : '/Users/me/project:/work';
+  if (mounts) mounts.placeholder = i.platform === 'win32' ? 'C:\\Users\\me\\data:/data:ro' : '/Users/me/data:/data:ro';
 }
 
 // One settings window with a sidebar: proxy, certificates, repositories, secrets, smolvm.
@@ -1676,17 +1656,29 @@ $('#form-secret').addEventListener('submit', async (e) => {
 
 async function fillCreateIsolation() {
   const f = $('#form-create');
-  let eg = { lists: [], defaults: {} }; let dd = { dirs: [] };
-  try { [eg, dd] = await Promise.all([api('GET', '/ui/egress'), api('GET', '/ui/dirs')]); } catch {}
+  let eg = { lists: [], defaults: {} };
+  try { eg = await api('GET', '/ui/egress'); } catch {}
+  createFolders = [];
+  drawCreateFolders();
   f.egressOn.checked = !!eg.defaults?.enabled;
   f.egressStrict.checked = !!eg.defaults?.strict;
   syncCreateEgress();
   $('#create-egress-lists').replaceChildren(...eg.lists.map((l) => h('label', { class: 'check' },
     h('input', { type: 'checkbox', value: l.id, checked: l.default }), ` ${l.name} `, h('span', { class: 'muted small' }, `(${l.rules.length})`))));
-  $('#create-dirs-wrap').hidden = !dd.dirs.length;
-  $('#create-dirs').replaceChildren(...dd.dirs.map((d) => h('label', { class: 'check', title: d.hostPath },
-    h('input', { type: 'checkbox', value: d.id }), ` ${d.id} → ${d.guestPath} `, h('span', { class: `tag ${d.ceiling === 'rw' ? 'warn' : 'ok'}` }, d.ceiling))));
 }
+
+// Folders picked in the create dialog; mounted or copied when the machine is created.
+let createFolders = [];
+function drawCreateFolders() {
+  $('#create-folders').replaceChildren(...createFolders.map((x, i) => h('div', { class: 'folder-row' },
+    h('div', { class: 'folder-main' }, h('div', { class: 'mono ellipsis path-tail', title: x.hostPath }, `\u200e${x.hostPath}\u200e`), h('div', { class: 'small muted mono' }, `→ ${x.guestPath || guestDefault(x.hostPath)}`)),
+    h('span', { class: `tag ${FOLDER_MODES[x.mode].tag}` }, FOLDER_MODES[x.mode].short),
+    h('button', { type: 'button', class: 'btn ghost icon', title: 'Убрать', onclick: () => { createFolders.splice(i, 1); drawCreateFolders(); } }, ic('x')))));
+}
+$('#btn-create-folder').addEventListener('click', () => openFolderDialog({ fixedMachine: '__new', onDone: (x) => {
+  createFolders = createFolders.filter((y) => y.hostPath !== x.hostPath).concat([x]);
+  drawCreateFolders();
+} }));
 function syncCreateEgress() {
   const on = $('#form-create').egressOn.checked;
   $('#create-egress').hidden = !on;
@@ -1719,9 +1711,9 @@ async function changeSecrets(m, add, remove) {
 let createProfile = null;
 let profilesCache = null;
 // Profile/agent/provider marks: brand glyphs from the sprite, or a text fallback.
-const MARK_ICON = { claude: 'b-claude', deepseek: 'b-deepseek', opencode: 'b-opencode', openai: 'b-openai', codex: 'b-openai',
+const MARK_ICON = { claude: 'b-claude', dsh: 'b-deepseek', deepseek: 'b-deepseek', opencode: 'b-opencode', openai: 'b-openai', codex: 'b-codex', hermes: 'b-nous',
   gemini: 'b-gemini', openrouter: 'b-openrouter', github: 'b-github', term: 'i-terminal', vm: 'i-server', blank: 'i-plus', all: 'i-bot', key: 'i-key' };
-const MARK_TEXT = { sf: '{ }', dsh: 'H', pi: 'π', hermes: '☤' };
+const MARK_TEXT = { sf: '{ }',  pi: 'π', hermes: '☤' };
 const SMOLFILE = '__smolfile';
 function mark(m, small) {
   const el = h('span', { class: `mark m-${m}${small ? ' sm' : ''}` });
@@ -1819,7 +1811,12 @@ function goAgent(w, url) {
 
 async function tabAgents(body, m) {
   const head = h('div', { class: 'col', style: 'display:flex;flex-direction:column;gap:14px' });
-  body.append(head);
+  // What the agents see from this computer — outside `head`, which re-renders on every poll.
+  const folders = folderList(m, { compact: true });
+  body.append(head, h('section', { class: 'card agent-folders' },
+    h('div', { class: 'card-head' }, h('h3', { class: 'h-ic' }, ic('folder'), 'Агенту доступны папки'), h('span', { class: 'spacer' }),
+      h('button', { class: 'btn', onclick: () => openFolderDialog({ machine: m.name, onDone: () => folders.refresh() }) }, ic('plus'), 'Дать доступ к папке')),
+    folders));
   let alive = true;
   let timer = null;
   let st = null;
@@ -1926,7 +1923,7 @@ async function tabAgents(body, m) {
     if (st.vendor?.length) {
       const revoked = st.vendor.filter((v) => v.revoked).length;
       nodes.push(h('p', { class: 'muted small' }, `Серверы провайдеров агентов: ${st.vendor.length}${revoked ? `, отозвано: ${revoked}` : ''} — `,
-        h('a', { href: `#/egress?machine=${enc(m.name)}&focus=providers` }, 'настроить в «Доступе в сеть» →')));
+        h('a', { href: `#/egress?machine=${enc(m.name)}&tab=providers` }, 'настроить в «Сети» →')));
     }
     head.replaceChildren(...nodes);
   }
@@ -1959,7 +1956,6 @@ function route() {
   if (pageCleanup) { try { pageCleanup(); } catch {} pageCleanup = null; }
   state.page = id;
   $('#page-machines').hidden = id !== 'machines';
-  $('#capacity').hidden = id !== 'machines';
   for (const k of Object.keys(pages)) $(`#page-${k}`).hidden = k !== id;
   document.querySelectorAll('#pagenav a').forEach((a) => a.classList.toggle('active', a.dataset.page === id));
   if (id !== 'machines') pageCleanup = pages[id].render($(`#page-${id}`), params) || null;
@@ -1976,7 +1972,7 @@ async function pollAlerts() {
   for (const a of list) {
     lastAlertId = Math.max(lastAlertId, a.id);
     toast(h('span', {}, h('b', {}, 'Оповещение: '), a.text, a.hosts?.length ? h('div', { class: 'small mono' }, a.hosts.slice(0, 5).join(', ')) : null,
-      h('a', { href: `#/log?machine=${enc(a.machine)}` }, ' Журнал →')), 'err', 30000);
+      h('a', { href: `#/egress?tab=log&machine=${enc(a.machine)}` }, ' Журнал →')), 'err', 30000);
   }
 }
 
