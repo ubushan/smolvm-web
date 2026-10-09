@@ -521,3 +521,32 @@ pre.diff .d-c { color: #a1a1aa; }
   .settings-nav button { width: auto; white-space: nowrap; }
   #settings-footer .footer-note { display: none; }
 }
+.virt-info { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); }
+.virt-info dt { color: var(--muted); }
+.virt-info dd { margin: 0; overflow-wrap: anywhere; }
+.virt-info dd.notice { grid-column: 1 / -1; }
+
+/* ---------- adaptive layout ---------- */
+/* Header: the page nav moves to its own row before the header runs out of width. */
+.chip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; }
+@media (max-width: 1240px) {
+  .topbar { flex-wrap: wrap; height: auto; min-height: 56px; padding: 8px 16px; row-gap: 8px; }
+  .pagenav { order: 10; width: 100%; overflow-x: auto; }
+}
+/* Machine tabs wrap instead of running off the panel. */
+.tabs { flex-wrap: wrap; row-gap: 2px; }
+.detail-head { flex-wrap: wrap; row-gap: 8px; }
+@media (max-width: 560px) {
+  .health span:last-child { display: none; }
+  .chip { max-width: 160px; }
+  .app-footer { justify-content: center; text-align: center; }
+}
+/* Wide tables scroll sideways inside their card instead of losing columns. */
+@media (max-width: 900px) {
+  .page table, .tab-body table, .settings-main table, .dialog table { display: block; max-width: 100%; overflow-x: auto; }
+}
+/* Phones: the header keeps one row (status dot only, no proxy chip — it is in the settings). */
+@media (max-width: 480px) {
+  #proxy-chip { display: none; }
+  .topbar { gap: 8px; padding: 8px 12px; }
+}

@@ -1362,7 +1362,9 @@ function renderVersion() {
   if (!b) return;
   const short = (c) => (c ? c.slice(0, 7) : '');
   const v = $('#app-version');
-  v.replaceChildren(`smolvm-web ${b.version}`, ...(b.commit ? [' · коммит ', h('code', { title: b.commit }, short(b.commit))] : []), ...(b.branch ? [` (${b.branch})`] : []));
+  v.replaceChildren(`smolvm-web ${b.version}`,
+    ...(b.commit ? [' · коммит ', h('code', { title: b.commit }, short(b.commit))] : [h('span', { title: 'smolvm-web запущен не из git-клона (архив или копия без папки .git) — номер коммита неизвестен' }, ' · коммит неизвестен (копия без .git)')]),
+    ...(b.branch ? [` (${b.branch})`] : []));
   const r = $('#app-restart');
   // The code on disk changed (git pull) but the server still runs the old one.
   r.hidden = !(b.commit && b.disk?.commit && b.disk.commit !== b.commit);
@@ -1396,9 +1398,9 @@ async function refreshInfo() {
 }
 
 // One settings window with a sidebar: proxy, certificates, repositories, secrets, smolvm.
-const SETTINGS_PANES = ['proxy', 'ca', 'repos', 'secrets', 'smolvm'];
+const SETTINGS_PANES = ['smolvm', 'proxy', 'ca', 'repos', 'secrets'];
 function showSettingsPane(pane) {
-  if (!SETTINGS_PANES.includes(pane)) pane = 'proxy';
+  if (!SETTINGS_PANES.includes(pane)) pane = 'smolvm';
   document.querySelectorAll('#dlg-settings .settings-pane').forEach((el) => { el.hidden = el.dataset.pane !== pane; });
   document.querySelectorAll('#settings-nav button').forEach((b) => b.classList.toggle('active', b.dataset.pane === pane));
   // Secrets are saved one by one in their own form; the footer saves the rest.
@@ -1407,6 +1409,7 @@ function showSettingsPane(pane) {
   footer.querySelector('.footer-note').hidden = pane === 'secrets';
   try { localStorage.setItem('smolvm.settingsPane', pane); } catch {}
   if (pane === 'secrets') { $('#form-secret').hidden = true; renderVault(); }
+  if (pane === 'smolvm') renderVirtInfo();
   $('.settings-main').scrollTop = 0;
 }
 $('#settings-nav').addEventListener('click', (e) => { const b = e.target.closest('button[data-pane]'); if (b) showSettingsPane(b.dataset.pane); });
@@ -1444,7 +1447,7 @@ async function openSettings(pane) {
   $('#ca-system-hint').textContent = state.info?.platform === 'win32' ? '(хранилище Windows)' : state.info?.platform === 'darwin' ? '(связка ключей macOS)' : '(системный bundle)';
   syncSettingsForm();
   previewCa();
-  showSettingsPane(pane || 'proxy');
+  showSettingsPane(pane || 'smolvm');
   if (!$('#dlg-settings').open) $('#dlg-settings').showModal();
 }
 
@@ -1500,6 +1503,22 @@ function syncRepoHint() {
   $('#repo-rewrite-hint').textContent = p ? `(node:22-bookworm-slim → ${p}/library/node:22-bookworm-slim)` : '';
 }
 $('#form-settings').repoRegistry.addEventListener('input', syncRepoHint);
+// «Виртуализация»: installed smolvm (CLI) and the running smolvm serve (API).
+async function renderVirtInfo() {
+  const box = $('#virt-info');
+  let r;
+  try { r = await api('GET', '/ui/smolvm/info'); } catch (e) { box.replaceChildren(h('dt', {}, 'smolvm'), h('dd', { class: 'error' }, e.message)); return; }
+  const row = (k, v, cls) => [h('dt', {}, k), h('dd', cls ? { class: cls } : {}, v)];
+  box.replaceChildren(
+    ...row('Установлен', r.cli.ok ? r.cli.version : `не найден: ${r.cli.error}`, r.cli.ok ? '' : 'error'),
+    ...row('Бинарник', h('code', {}, r.bin)),
+    ...row('smolvm serve', r.api.ok ? `работает${r.api.version ? `, версия ${r.api.version}` : ''} — ${r.api.upstream}` : `не отвечает — ${r.api.upstream}`, r.api.ok ? '' : 'error'),
+    ...(r.api.ok && r.cli.ok && r.api.version && !r.cli.version.includes(r.api.version)
+      ? row('', 'Версии CLI и запущенного smolvm serve различаются — перезапустите smolvm-web (или smolvm serve).', 'notice') : []),
+    ...row('Гипервизор', r.hypervisor),
+  );
+}
+
 $('#btn-smolvm-check').addEventListener('click', async () => {
   const f = $('#form-settings');
   const out = $('#smolvm-check-out');

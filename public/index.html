@@ -232,14 +232,23 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
       <header><h3 class="h-ic"><svg class="ic"><use href="#i-gear"/></svg>Настройки</h3><button type="button" class="btn ghost icon" data-close title="Закрыть"><svg class="ic"><use href="#i-x"/></svg></button></header>
       <div class="settings-layout">
         <nav class="settings-nav" id="settings-nav">
+          <button type="button" data-pane="smolvm"><svg class="ic"><use href="#i-server"/></svg>Виртуализация</button>
           <button type="button" data-pane="proxy"><svg class="ic"><use href="#i-globe"/></svg>Прокси</button>
           <button type="button" data-pane="ca"><svg class="ic"><use href="#i-shield"/></svg>Сертификаты</button>
           <button type="button" data-pane="repos"><svg class="ic"><use href="#i-box"/></svg>Репозитории</button>
           <button type="button" data-pane="secrets"><svg class="ic"><use href="#i-key"/></svg>Секреты</button>
-          <button type="button" data-pane="smolvm"><svg class="ic"><use href="#i-terminal"/></svg>smolvm</button>
         </nav>
         <div class="settings-main">
           <form id="form-settings" method="dialog">
+          <section class="settings-pane" data-pane="smolvm" hidden>
+            <div class="pane-head"><h4>Виртуализация</h4><p class="muted small">smolvm — гипервизор microVM, которым пользуется smolvm-web: установленная версия, API и путь к бинарнику.</p></div>
+            <dl class="virt-info" id="virt-info"><dt>smolvm</dt><dd class="muted">…</dd></dl>
+            <div class="grid-proxy">
+              <label>Путь к бинарнику smolvm<input name="smolvmBin" class="input mono" spellcheck="false" placeholder="smolvm"></label>
+              <div class="row"><button type="button" class="btn" id="btn-smolvm-check">Проверить</button></div>
+            </div>
+            <div id="smolvm-check-out" class="small" hidden></div>
+          </section>
           <section class="settings-pane" data-pane="proxy" hidden>
             <div class="pane-head"><h4>Прокси</h4><p class="muted small">Для работы за корпоративным прокси без прямого доступа в интернет: образы, <code>pip</code>, <code>npm</code>, <code>apt</code>, <code>git</code>, <code>curl</code> внутри машин ходят через прокси.</p></div>
             <label class="check"><input type="checkbox" name="proxyEnabled"> <b>Использовать прокси</b></label>
@@ -297,14 +306,6 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
             <label class="check"><input type="checkbox" name="repoGuestAuth"> Передавать пользователя и токен в машину для pip/npm/apt/Go <span class="muted small">(агент сможет их прочитать; не нужно, если репозитории читаются анонимно)</span></label>
             <p class="muted small">Логин к реестру образов передаётся smolvm на хосте (как <code>docker login</code>) и в машину не попадает. Адреса репозиториев автоматически разрешены фильтру «Доступ в сеть». Для <code>https://</code>-репозиториев машина получает сертификаты, которым доверяет этот компьютер (внутренний CA — тоже). smolvm serve, запущенный smolvm-web (<code>--autostart</code>), подхватывает логин сразу; если вы запускаете его сами, задайте ему <code>DOCKER_CONFIG=&lt;папка настроек smolvm-web&gt;/docker</code>.</p>
 
-          </section>
-          <section class="settings-pane" data-pane="smolvm" hidden>
-            <div class="pane-head"><h4>smolvm</h4><p class="muted small">Бинарник smolvm, которым пользуется smolvm-web.</p></div>
-            <div class="grid-proxy">
-              <label>Путь к бинарнику smolvm<input name="smolvmBin" class="input mono" spellcheck="false" placeholder="smolvm"></label>
-              <div class="row"><button type="button" class="btn" id="btn-smolvm-check">Проверить</button></div>
-            </div>
-            <div id="smolvm-check-out" class="small" hidden></div>
           </section>
           </form>
           <section class="settings-pane" data-pane="secrets" hidden>

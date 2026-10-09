@@ -782,6 +782,20 @@ const UI = [
     if (upproxy.systemMode()) await relay.start();
     sendJson(res, 200, publicSettings());
   }],
+  // «Виртуализация» in the settings: the installed CLI and the running API.
+  ['GET', /^\/ui\/smolvm\/info$/, async (req, res) => {
+    const bin = mc.smolvmBin();
+    const cli = await new Promise((resolve) => execFile(bin, ['--version'], { timeout: 15000, windowsHide: true }, (err, stdout, stderr) => resolve(err
+      ? { ok: false, error: err.code === 'ENOENT' ? 'файл не найден — укажите путь ниже' : (stderr || err.message).trim().slice(0, 200) }
+      : { ok: true, version: String(stdout || stderr).trim().split('\n')[0] })));
+    let api = { ok: false, upstream: up.UPSTREAM };
+    try {
+      const r = await up.request('GET', '/health', undefined, { timeoutMs: 2000 });
+      api = { ok: r.status === 200, version: r.data?.version || '', upstream: up.UPSTREAM };
+    } catch {}
+    const hypervisor = { win32: 'Windows Hypervisor Platform', darwin: 'Hypervisor.framework (macOS)', linux: 'KVM (/dev/kvm)' }[process.platform] || process.platform;
+    sendJson(res, 200, { bin, cli, api, hypervisor });
+  }],
   // Does this smolvm binary run? (`smolvm --version`)
   ['POST', /^\/ui\/smolvm\/check$/, async (req, res) => {
     const { bin } = await readJson(req);
@@ -1078,10 +1092,11 @@ async function maybeAutostart() {
     // Windows system proxy: smolvm serve goes through the relay (it cannot do Kerberos/NTLM itself).
     let url = s.proxy.url;
     if (upproxy.systemMode()) { try { url = await relay.urlFor({ loopback: true }); } catch (e) { console.error(e.message); } }
-    for (const k of ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']) env[k] = env[k] || url;
+    // The settings win over whatever proxy the environment carries.
+    for (const k of ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']) env[k] = url;
     const np = px.noProxyList(s.proxy.noProxy);
-    env.NO_PROXY = env.NO_PROXY || np;
-    env.no_proxy = env.no_proxy || np;
+    env.NO_PROXY = np;
+    env.no_proxy = np;
   }
   console.log(`Запуск: ${mc.smolvmBin()} serve start --listen ${listen}`);
   // Log to a file, not a pipe: on Windows smolvm's children inherit pipe handles.
