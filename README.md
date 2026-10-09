@@ -31,7 +31,7 @@
 |---|---|
 | macOS | Apple Silicon (M1 и новее), macOS 11+. На Intel-Mac smolvm не работает. |
 | Linux | x86_64 или aarch64, аппаратная виртуализация (KVM, `/dev/kvm`); в виртуалке или облаке — вложенная виртуализация. |
-| Windows | Windows 10/11 x64 с Windows Hypervisor Platform, PowerShell от администратора. ARM-Windows не поддерживается. |
+| Windows | Windows 10/11 x64 с Windows Hypervisor Platform (включается администратором). Работает от обычного пользователя, если есть право на символические ссылки или rootfs smolvm уже распакован — см. [documentation.md](documentation.md#особенности-windows). ARM-Windows не поддерживается. |
 
 Плюс Node.js ≥ 18 (для сертификатов из хранилища ОС — ≥ 22.15). По умолчанию машине выделяется 8 ГиБ памяти (память эластичная, хост отдаёт только то, что гость использует); на слабом хосте задавайте меньше.
 
@@ -133,7 +133,7 @@ smolvm machine run --mem 2048 --net --image alpine -- uname -srm   # должн�
 | `KVM_DENIED` (Linux) | пользователь не в группе `kvm` |
 | `krun_start_enter returned: -22` (macOS) | слишком длинный путь к домашней директории (ограничение сокета ~100 байт) |
 | `agent did not become ready within 30 seconds` | нехватка памяти или нагрузка на хост; попробуйте `--mem 2048` |
-| `boot process exited (code 127)` (Windows) | не включён «Режим разработчика» или PowerShell не от администратора |
+| `boot process exited (code 127)` (Windows) | rootfs smolvm распакован без символических ссылок: нет «Режима разработчика»/права на symlink — см. [documentation.md](documentation.md#особенности-windows) |
 
 Обновление: `brew upgrade smolvm`, `apt-get upgrade` / `dnf upgrade` / `pacman -Syu`, или повторный запуск установщика. Подробная документация smolvm — [docs/install](https://github.com/smol-machines/smolvm/tree/main/docs/install).
 
@@ -159,7 +159,7 @@ mkdir smolvm-web && tar -xzf smolvm-web-*.tgz -C smolvm-web --strip-components=1
 ./start.sh                                 # = node server.js --autostart
 ```
 
-**Windows** (cmd или PowerShell от администратора)
+**Windows** (cmd или PowerShell; права администратора не нужны, см. [особенности Windows](documentation.md#особенности-windows))
 
 ```bat
 start.cmd

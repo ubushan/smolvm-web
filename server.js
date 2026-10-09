@@ -1129,7 +1129,7 @@ server.listen(PORT, HOST, () => {
   console.log(`настройки: ${cfg.DIR}`);
   if (winhost.IS_WIN) {
     const wh = winhost.status();
-    if (wh.symlinks === false) console.log('ВНИМАНИЕ: нет права создавать символические ссылки. smolvm распакует свой rootfs без них, и машины не загрузятся (/sbin/init: ENOENT). Включите «Режим разработчика» или запускайте от администратора.');
+    if (wh.symlinks === false && !wh.ready) console.log(`ВНИМАНИЕ: нет права создавать символические ссылки, а rootfs smolvm ещё не распакован. smolvm распакует его без ссылок, и машины не загрузятся (/sbin/init: ENOENT). Что сделать: ${winhost.SYMLINK_FIX}.`);
     if (wh.broken.length) console.log(`ВНИМАНИЕ: rootfs smolvm распакован без символических ссылок: ${wh.broken.join(', ')}. Машины не загрузятся — нажмите «Починить» в интерфейсе.`);
   }
   if (upproxy.systemMode()) {

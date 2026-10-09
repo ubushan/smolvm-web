@@ -338,14 +338,15 @@ function renderHostWarning() {
   const box = $('#host-warning');
   const w = state.info?.winHost;
   if (!box) return;
-  if (!w?.windows || (w.symlinks !== false && !w.broken?.length)) { box.hidden = true; box.replaceChildren(); return; }
+  // No symlink right is fine once smolvm's rootfs is extracted correctly (e.g. by one elevated run).
+  if (!w?.windows || ((w.symlinks !== false || w.ready) && !w.broken?.length)) { box.hidden = true; box.replaceChildren(); return; }
   box.hidden = false;
   box.replaceChildren(
     h('div', {}, h('b', {}, 'smolvm не сможет загрузить машины. '),
       w.broken?.length
         ? `Его агентский rootfs распакован без символических ссылок (нет /sbin/init) — ошибка «boot process exited (code 127)». `
         : 'У smolvm-web нет права создавать символические ссылки, поэтому smolvm распакует свой rootfs без них и машины не загрузятся. ',
-      w.symlinks === false ? 'Включите «Режим разработчика» (Параметры → Система → Для разработчиков) или запустите smolvm-web от администратора' : '',
+      w.symlinks === false ? 'Включите «Режим разработчика» (Параметры → Система → Для разработчиков), или пусть администратор выдаст вашей учётной записи право «Создание символических ссылок», или один раз запустите smolvm от администратора — дальше smolvm-web работает от обычного пользователя' : '',
       w.symlinks === false && w.broken?.length ? ', затем нажмите «Починить».' : w.broken?.length ? 'Нажмите «Починить» — распаковка будет удалена, smolvm сделает её заново.' : '.'),
     w.broken?.length ? h('button', { class: 'btn primary', onclick: repairRootfs }, 'Починить') : null);
 }

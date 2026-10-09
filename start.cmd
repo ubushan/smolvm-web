@@ -9,7 +9,9 @@ where node >nul 2>nul || (echo [smolvm-web] Node.js 18+ is required: winget inst
 if not defined SMOLVM_BIN (
   where smolvm >nul 2>nul || (echo [smolvm-web] smolvm.exe not found in PATH. Set SMOLVM_BIN=C:\path\to\smolvm.exe & exit /b 1)
 )
-net session >nul 2>nul || echo [smolvm-web] Warning: not elevated. smolvm on Windows is verified only as Administrator.
+rem Administrator rights are not required: only the symlink right for smolvm's first rootfs
+rem extraction (Developer Mode, the "Create symbolic links" right, or one elevated first run).
+rem smolvm-web checks it at startup and in the UI.
 
 rem Open the browser a few seconds later, once the server is listening.
 start "" /b powershell -NoProfile -WindowStyle Hidden -Command "Start-Sleep 3; Start-Process 'http://127.0.0.1:%PORT%'"

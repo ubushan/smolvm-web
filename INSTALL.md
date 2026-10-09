@@ -63,7 +63,7 @@ git clone <ваш-репозиторий> C:\smolvm-web
 ### 3.1. Требования
 
 - Windows 11 (или 10) **x64**. ARM-Windows smolvm не поддерживает.
-- PowerShell **от имени администратора** для всех шагов: smolvm на Windows проверен только в такой сессии.
+- PowerShell **от имени администратора** нужен для установки (Windows Hypervisor Platform, PATH для всех пользователей). Работать дальше можно от обычного пользователя — см. «Без прав администратора» в [documentation.md](documentation.md#особенности-windows).
 
 ### 3.2. Windows Hypervisor Platform (один раз, нужна перезагрузка)
 
