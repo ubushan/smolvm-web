@@ -307,7 +307,8 @@ async function action(name, label, fn, okMsg) {
     else if (e.code === 'PULL_CERT') {
       toast(h('div', {}, h('div', { style: 'white-space:pre-wrap' }, `${name}: ${e.message}`),
         h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn primary', onclick: () => openSettings() }, 'Открыть настройки сертификатов'))), 'err', 60000);
-    } else toast(`${name}: ${e.message}`, 'err');
+    } else if (e.code === 'PULL_FORBIDDEN') toast(h('div', { style: 'white-space:pre-wrap' }, `${name}: ${e.message}`), 'err', 60000);
+    else toast(`${name}: ${e.message}`, 'err');
     throw e;
   } finally {
     state.busy.delete(name);

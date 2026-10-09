@@ -199,6 +199,21 @@ async function syncFsWatches() {
 setInterval(() => syncFsWatches().catch(() => {}), 30000).unref();
 setTimeout(() => syncFsWatches().catch(() => {}), 3000).unref();
 
+// The in-guest image pull got "Forbidden": Go's wording for a proxy that refused the CONNECT.
+function explainPullForbidden(name, message) {
+  const m = String(message || '').match(/pull image:[\s\S]*?Get "https?:\/\/([^/:"]+)[^"]*":\s*Forbidden/i);
+  if (!m) return null;
+  const host = m[1].toLowerCase();
+  const filter = egress.pullAllowed(name, host);
+  let hint;
+  if (filter === false) {
+    hint = `Его заблокировал фильтр «Доступ в сеть» smolvm-web: ${host} нет среди реестров образов. Добавьте его на странице «Доступ в сеть» → «Настройки» → «Реестры образов» (или кнопкой «Разрешить» на странице «Журнал») и запустите машину снова.`;
+  } else {
+    hint = `Его запретил корпоративный прокси (политика доступа к ${host}). Попросите ИТ открыть ${host} (CDN Docker Hub) или возьмите образ из зеркала — в поле «Образ» при создании машины: mirror.gcr.io/library/<образ> или public.ecr.aws/docker/library/<образ>, либо корпоративный Nexus/Artifactory.`;
+  }
+  return { code: 'PULL_FORBIDDEN', hint: `Скачивание образа остановил прокси: доступ к ${host} запрещён. ${hint}`, repairable: false };
+}
+
 // The in-guest image pull met a TLS-inspecting proxy whose root it does not trust.
 function explainPullCert(name, message) {
   if (!/x509: certificate signed by unknown authority|tls: failed to verify certificate/i.test(String(message || ''))) return null;
@@ -253,7 +268,7 @@ async function startMachineInner(name, { apiPath, body = {}, branchable = false 
     }
   } catch (e) {
     // Windows: a rootfs extracted without symlinks fails every boot; say what to do.
-    const why = winhost.explainBootError(e.body?.error || e.message) || explainPullCert(name, e.body?.error || e.message);
+    const why = winhost.explainBootError(e.body?.error || e.message) || explainPullCert(name, e.body?.error || e.message) || explainPullForbidden(name, e.body?.error || e.message);
     if (why) throw Object.assign(fail(e.status || 500, `${viaCli ? 'запуск через smolvm CLI' : 'запуск'}: ${e.body?.error || e.message}\n\n${why.hint}`, why.code), { body: null, repairable: why.repairable });
     if (e.body) throw e;
     throw fail(e.status || 500, `${viaCli ? 'запуск через smolvm CLI' : 'запуск'}: ${e.message}`, 'START_FAILED');
@@ -715,7 +730,7 @@ const UI = [
     const body = await readJson(req);
     const url = body.url || cfg.getSettings().proxy.url;
     if (!url) return sendJson(res, 400, { error: 'Не указан адрес прокси' });
-    const targets = ['registry-1.docker.io:443', 'pypi.org:443', 'registry.npmjs.org:443'];
+    const targets = ['registry-1.docker.io:443', 'production.cloudfront.docker.com:443', 'pypi.org:443', 'registry.npmjs.org:443'];
     const results = await Promise.all(targets.map((t) => px.testConnect(url, t)));
     const guest = await px.guestUrl(url);
     let guestReach = null;
