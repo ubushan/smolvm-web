@@ -256,6 +256,7 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
           <textarea name="caPem" class="input mono" rows="4" placeholder="-----BEGIN CERTIFICATE-----&#10;…&#10;-----END CERTIFICATE-----"></textarea>
         </label>
         <label class="check"><input type="checkbox" name="caReplace"> Заменить системный bundle в машине <span class="muted small">(чтобы доверяли apk, apt, curl, wget)</span></label>
+        <label class="check"><input type="checkbox" name="caPullTrust"> Доверять им при скачивании образа <span class="muted small">(bundle подключается к машине томом <code>/etc/smolvm-host-trust</code>, как <code>--trust-host-certs</code>; снимки для таких машин недоступны)</span></label>
         <div id="ca-out" class="small muted"></div>
         <div id="settings-error" class="error" hidden></div>
         <p class="muted small">Новые настройки применяются к следующим запускам. Для уже запущенной машины нажмите «Применить прокси» в её карточке.</p>

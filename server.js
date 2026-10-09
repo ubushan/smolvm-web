@@ -199,6 +199,18 @@ async function syncFsWatches() {
 setInterval(() => syncFsWatches().catch(() => {}), 30000).unref();
 setTimeout(() => syncFsWatches().catch(() => {}), 3000).unref();
 
+// The in-guest image pull met a TLS-inspecting proxy whose root it does not trust.
+function explainPullCert(name, message) {
+  if (!/x509: certificate signed by unknown authority|tls: failed to verify certificate/i.test(String(message || ''))) return null;
+  const s = cfg.getSettings();
+  let hint;
+  if (!s.ca.enabled) hint = 'Включите в настройках («Сеть, прокси и сертификаты») «Доверять корпоративным сертификатам» — с «Добавить сертификаты, которым доверяет этот компьютер» и/или PEM корневого сертификата — и «Доверять им при скачивании образа», затем запустите машину снова.';
+  else if (!s.ca.pullTrust) hint = 'Включите в настройках «Доверять им при скачивании образа» и запустите машину снова.';
+  else if (!cfg.machineUsesProxy(name)) hint = 'Для этой машины прокси и корпоративные сертификаты выключены (вкладка «Обзор») — включите их.';
+  else hint = 'Сертификаты уже передаются, но нужного корня в bundle нет: в настройках вставьте PEM корневого сертификата вашей TLS-инспекции (или путь к .cer/.crt) — его выдаёт ИТ или можно экспортировать из браузера (замок → сертификат → корневой) — и запустите снова.';
+  return { code: 'PULL_CERT', hint: `Скачивание образа упёрлось в TLS-инспекцию: машина не доверяет корневому сертификату корпоративного прокси. ${hint}`, repairable: false };
+}
+
 // ---------- start ----------
 const starting = new Set(); // machines inside startMachine (any client)
 
@@ -241,7 +253,7 @@ async function startMachineInner(name, { apiPath, body = {}, branchable = false 
     }
   } catch (e) {
     // Windows: a rootfs extracted without symlinks fails every boot; say what to do.
-    const why = winhost.explainBootError(e.body?.error || e.message);
+    const why = winhost.explainBootError(e.body?.error || e.message) || explainPullCert(name, e.body?.error || e.message);
     if (why) throw Object.assign(fail(e.status || 500, `${viaCli ? 'запуск через smolvm CLI' : 'запуск'}: ${e.body?.error || e.message}\n\n${why.hint}`, why.code), { body: null, repairable: why.repairable });
     if (e.body) throw e;
     throw fail(e.status || 500, `${viaCli ? 'запуск через smolvm CLI' : 'запуск'}: ${e.message}`, 'START_FAILED');
@@ -355,6 +367,11 @@ const ROUTES = [
         body.env = px.mergeEnv(body.env, px.proxyEnv(p.url, p.noProxy));
         body.network = true;
       }
+    }
+    // Corporate CA for smolvm's in-guest image pull (see machines.stagePullTrust).
+    if (body.name && useProxy && mc.wantsPullTrust(body.name)) {
+      try { body.mounts = [...(Array.isArray(body.mounts) ? body.mounts : []), mc.stagePullTrust()]; }
+      catch (e) { await cleanup(); return sendJson(res, 400, { error: `сертификаты для скачивания образа: ${e.message}`, code: 'BAD_CA' }); }
     }
     let dirMounts = [];
     if (dirIds.length) {

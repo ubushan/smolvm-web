@@ -304,7 +304,10 @@ async function action(name, label, fn, okMsg) {
     return r;
   } catch (e) {
     if (e.code === 'ROOTFS_BROKEN') rootfsToast(name, e);
-    else toast(`${name}: ${e.message}`, 'err');
+    else if (e.code === 'PULL_CERT') {
+      toast(h('div', {}, h('div', { style: 'white-space:pre-wrap' }, `${name}: ${e.message}`),
+        h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn primary', onclick: () => openSettings() }, 'Открыть настройки сертификатов'))), 'err', 60000);
+    } else toast(`${name}: ${e.message}`, 'err');
     throw e;
   } finally {
     state.busy.delete(name);
@@ -1357,6 +1360,7 @@ async function openSettings() {
   f.caSystem.checked = s.ca.system;
   f.caPem.value = s.ca.pem;
   f.caReplace.checked = s.ca.replaceSystemBundle;
+  f.caPullTrust.checked = s.ca.pullTrust !== false;
   $('#ca-system-hint').textContent = state.info?.platform === 'win32' ? '(хранилище Windows)' : state.info?.platform === 'darwin' ? '(связка ключей macOS)' : '(системный bundle)';
   syncSettingsForm();
   previewCa();
@@ -1369,7 +1373,7 @@ function syncSettingsForm() {
   for (const n of ['proxyUrl', 'noProxy', 'proxyPull', 'proxyExec', 'proxyProvision']) f[n].disabled = !p;
   $('#btn-proxy-test').disabled = !f.proxyUrl.value.trim();
   const c = f.caEnabled.checked;
-  for (const n of ['caSystem', 'caPem', 'caReplace']) f[n].disabled = !c;
+  for (const n of ['caSystem', 'caPem', 'caReplace', 'caPullTrust']) f[n].disabled = !c;
 }
 
 let caTimer = null;
@@ -1394,7 +1398,7 @@ function settingsFromForm() {
       enabled: f.proxyEnabled.checked, url: f.proxyUrl.value.trim(), noProxy: f.noProxy.value.trim(),
       pull: f.proxyPull.checked, exec: f.proxyExec.checked, provision: f.proxyProvision.checked,
     },
-    ca: { enabled: f.caEnabled.checked, system: f.caSystem.checked, pem: f.caPem.value.trim(), replaceSystemBundle: f.caReplace.checked },
+    ca: { enabled: f.caEnabled.checked, system: f.caSystem.checked, pem: f.caPem.value.trim(), replaceSystemBundle: f.caReplace.checked, pullTrust: f.caPullTrust.checked },
   };
 }
 
