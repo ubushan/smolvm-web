@@ -54,6 +54,7 @@
       <a href="#/" data-page="machines"><svg class="ic"><use href="#i-server"/></svg>Машины</a>
       <a href="#/egress" data-page="egress" title="Allow list ресурсов интернета для машин"><svg class="ic"><use href="#i-globe"/></svg>Доступ в сеть</a>
       <a href="#/log" data-page="log" title="Журнал соединений машин через фильтр «Доступ в сеть»"><svg class="ic"><use href="#i-list"/></svg>Журнал</a>
+      <a href="#/audit" data-page="audit" title="Журнал действий: команды, изменения файлов, экспорт в SIEM, оповещения"><svg class="ic"><use href="#i-shield"/></svg>Аудит</a>
       <a href="#/dirs" data-page="dirs" title="Разрешённые директории хоста и права пользователей"><svg class="ic"><use href="#i-folder"/></svg>Директории</a>
     </nav>
     <div id="health" class="health"><span class="dot"></span><span>подключение…</span></div>
@@ -91,6 +92,7 @@
   <main class="page" id="page-egress" hidden></main>
   <main class="page" id="page-log" hidden></main>
   <main class="page" id="page-dirs" hidden></main>
+  <main class="page" id="page-audit" hidden></main>
 
   <!-- Create machine -->
   <dialog id="dlg-create" class="dialog">
@@ -338,5 +340,6 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
   <script src="/app.js"></script>
   <script src="/egress.js"></script>
   <script src="/dirs.js"></script>
+  <script src="/audit.js"></script>
 </body>
 </html>

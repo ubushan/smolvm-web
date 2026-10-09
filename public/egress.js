@@ -109,17 +109,20 @@
           await load(); render();
         } catch (e) { toast(`${name}: ${e.message}`, 'err'); await load(); render(); }
       };
+      const learn = h('input', { type: 'checkbox', checked: !!m.learn, title: 'Временно разрешить всё и только журналировать' });
+      learn.addEventListener('change', () => save({ learn: learn.checked }));
       on.addEventListener('change', () => save({ enabled: on.checked }));
       strict.addEventListener('change', () => save({ strict: strict.checked }));
       lists.addEventListener('change', () => save({ lists: [...lists.querySelectorAll('input:checked')].map((i) => i.value) }));
       const editRow = h('tr', { class: 'expand', hidden: !(params.get('machine') === name && m.enabled) },
-        h('td', { colspan: 6 }, h('div', { class: 'small muted' }, `Собственные правила машины ${name} (в дополнение к спискам):`),
+        h('td', { colspan: 7 }, h('div', { class: 'small muted' }, `Собственные правила машины ${name} (в дополнение к спискам):`),
           rulesEditor(m.rules, { onSave: async (rules) => { await api('PUT', `/ui/egress/machines/${enc(name)}`, { rules }); toast(`${name}: правила сохранены`, 'ok'); await load(); render(); } })));
       const pending = m.enabled && m.strict !== !!m.strictApplied;
       const tr = h('tr', { class: params.get('machine') === name ? 'hl' : '' },
         h('td', { class: 'mono' }, name, st ? h('div', {}, h('span', { class: `badge ${st}` }, st)) : h('div', { class: 'muted small' }, 'нет в smolvm')),
         h('td', { class: 'center' }, on),
         h('td', { class: 'center' }, strict, pending ? h('div', { class: 'small warnc', title: 'Применится при следующем запуске через smolvm-web' }, 'при запуске') : null),
+        h('td', { class: 'center' }, learn, m.learn ? h('div', {}, h('button', { class: 'btn small-btn', title: 'Превратить собранные хосты в список', onclick: () => openLearned(name) }, `Собрать (${m.learnedCount || 0})`)) : null),
         h('td', {}, lists),
         h('td', {}, m.enabled ? h('button', { class: 'btn ghost', onclick: () => { editRow.hidden = !editRow.hidden; } }, `Свои правила (${m.rules.length})`) : null),
         h('td', {},
@@ -129,9 +132,43 @@
     });
     return card('Машины',
       names.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
-        h('thead', {}, h('tr', {}, h('th', {}, 'Машина'), h('th', { class: 'center' }, 'Фильтр'), h('th', { class: 'center', title: 'Только хост в egress-политике smolvm' }, 'Жёстко'), h('th', {}, 'Списки'), h('th', {}, ''), h('th', {}, ''))),
+        h('thead', {}, h('tr', {}, h('th', {}, 'Машина'), h('th', { class: 'center' }, 'Фильтр'), h('th', { class: 'center', title: 'Только хост в egress-политике smolvm' }, 'Жёстко'), h('th', { class: 'center', title: 'Режим обучения: всё разрешено и журналируется' }, 'Обучение'), h('th', {}, 'Списки'), h('th', {}, ''), h('th', {}, ''))),
         h('tbody', {}, rows.flat()))) : h('p', { class: 'muted' }, 'Машин пока нет.'),
       h('p', { class: 'muted small' }, 'Включение фильтра действует сразу для консоли, exec и профиля гостя (profile.d, pip, npm, apt, git); основной процесс машины и жёсткая изоляция переключаются при следующем запуске через smolvm-web.'));
+  }
+
+  // Learning mode: review collected hosts and turn them into a list.
+  async function openLearned(name) {
+    let items = [];
+    try { items = (await api('GET', `/ui/egress/machines/${enc(name)}/learned`)).learned; } catch (e) { return toast(e.message, 'err'); }
+    const rows = items.map((x) => {
+      const cb = h('input', { type: 'checkbox', checked: !x.covered });
+      const host = h('input', { class: 'input mono small-in', value: x.host, title: 'Можно заменить на .домен (с поддоменами) или *.домен' });
+      const ports = h('input', { class: 'input mono ports-in', value: x.ports });
+      return { cb, host, ports, tr: h('tr', {}, h('td', { class: 'center' }, cb), h('td', {}, host), h('td', {}, ports),
+        h('td', { class: 'small' }, String(x.count)), h('td', { class: 'small muted' }, x.covered ? 'уже разрешён правилом' : new Date(x.last).toLocaleString())) };
+    });
+    const listName = h('input', { class: 'input', value: `Обучение: ${name}` });
+    const body = [
+      h('p', { class: 'muted small' }, `Хосты, к которым машина ${name} обращалась в режиме обучения. Отмеченные станут списком «${listName.value}», он подключится к машине, а обучение выключится — дальше работает обычный allow list.`),
+      items.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
+        h('tr', {}, h('th', {}, ''), h('th', {}, 'Хост'), h('th', {}, 'Порты'), h('th', {}, 'Запросов'), h('th', {}, 'Последний')),
+        rows.map((r) => r.tr))) : h('p', { class: 'muted' }, 'Пока ничего не собрано — поработайте в машине (установка пакетов, запуск агента), затем вернитесь.'),
+      h('label', {}, 'Название списка', listName),
+    ];
+    const dlg = $('#dlg-help');
+    $('#help-title').replaceChildren(ic('globe'), `Режим обучения — ${name}`);
+    const finish = h('button', { class: 'btn primary', onclick: async () => {
+      const hosts = rows.filter((r) => r.cb.checked).map((r) => ({ host: r.host.value.trim(), ports: r.ports.value.trim() || '443' })).filter((x) => x.host);
+      try {
+        const r = await api('POST', `/ui/egress/machines/${enc(name)}/learn/finish`, { hosts, listName: listName.value.trim() });
+        dlg.close();
+        toast(r.list ? `${name}: создан список «${r.list.name}» (${r.rules} правил), обучение выключено` : `${name}: обучение выключено`, 'ok');
+        await load(); render();
+      } catch (e) { toast(e.message, 'err'); }
+    } }, 'Создать список и выключить обучение');
+    $('#help-body').replaceChildren(...body, h('div', { class: 'row' }, h('span', { class: 'spacer' }), h('button', { class: 'btn ghost', onclick: () => dlg.close() }, 'Продолжить обучение'), finish));
+    dlg.showModal();
   }
 
   function listsCard() {

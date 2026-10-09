@@ -333,7 +333,7 @@ const actions = {
   pause: (m) => action(m.name, 'пауза…', () => api('POST', `/api/v1/machines/${enc(m.name)}/pause`, {}), `${m.name} на паузе`),
   resume: (m) => action(m.name, 'возобновление…', () => api('POST', `/api/v1/machines/${enc(m.name)}/resume`, {}), `${m.name} возобновлена`),
   async remove(m) {
-    const res = await confirmDialog('Удалить машину?', `Машина «${m.name}» и её диски будут удалены без возможности восстановления.`, true);
+    const res = await confirmDialog('Удалить машину?', `Машина «${m.name}», её диски и снимки будут удалены без возможности восстановления.`, true);
     if (!res.ok) return;
     const q = new URLSearchParams();
     if (res.force) q.set('force', 'true');
@@ -379,12 +379,14 @@ function reportProvision(name, p, explicit) {
   else toast(`${name}: настроено (${p.configured || 'ok'})`, 'ok');
 }
 
-function confirmDialog(title, text, withForce = false) {
+function confirmDialog(title, text, withForce = false, forceLabel = 'Принудительно (force)', okLabel = 'Удалить') {
   return new Promise((resolve) => {
     const dlg = $('#dlg-confirm');
     $('#confirm-title').textContent = title;
     $('#confirm-text').textContent = text;
     $('#confirm-force-wrap').hidden = !withForce;
+    $('#confirm-force-wrap').lastChild.textContent = ` ${forceLabel}`;
+    $('#confirm-ok').textContent = okLabel;
     $('#confirm-force').checked = false;
     dlg.returnValue = '';
     dlg.addEventListener('close', () => resolve({ ok: dlg.returnValue === 'ok', force: $('#confirm-force').checked }), { once: true });
@@ -415,6 +417,8 @@ $('#form-branch').addEventListener('submit', async (e) => {
 const TABS = [
   ['overview', 'Обзор'],
   ['agents', 'Агенты'],
+  ['review', 'Изменения'],
+  ['snapshots', 'Снимки'],
   ['console', 'Консоль'],
   ['logs', 'Логи'],
   ['files', 'Файлы'],
@@ -491,7 +495,7 @@ function renderTab() {
   const m = current();
   if (!body || !m) return;
   body.innerHTML = '';
-  ({ overview: tabOverview, agents: tabAgents, console: tabConsole, logs: tabLogs, files: tabFiles, images: tabImages, egress: tabEgress }[state.tab] || tabOverview)(body, m);
+  ({ overview: tabOverview, agents: tabAgents, review: tabReview, snapshots: tabSnapshots, console: tabConsole, logs: tabLogs, files: tabFiles, images: tabImages, egress: tabEgress }[state.tab] || tabOverview)(body, m);
 }
 
 function needsRunning(body, m, what) {
@@ -583,8 +587,9 @@ async function tabOverview(body, m) {
     const policy = [...(info.allowedHosts || []), ...(info.allowedCidrs || [])];
     blocks.push(block({
       icon: 'globe', title: 'Доступ в сеть', sub: 'куда машине можно ходить', on: !!em?.enabled,
-      badge: em?.enabled ? (em.strict ? 'allow list · жёстко' : 'allow list') : 'без фильтра',
+      badge: em?.learn ? 'обучение' : em?.enabled ? (em.strict ? 'allow list · жёстко' : 'allow list') : 'без фильтра',
       items: [
+        em?.learn ? bitem('Режим обучения', h('span', { class: 'small warnc' }, `всё разрешено и журналируется, собрано хостов: ${em.learnedCount || 0}`)) : null,
         em?.enabled ? bitem('Списки', h('span', { class: 'small' }, lists.join(', ') || '—')) : null,
         em?.enabled ? bitem('Свои правила', h('span', { class: 'small' }, String(em.rules.length))) : null,
         policy.length ? bitem('Политика smolvm', h('span', { class: 'mono small ellipsis', title: policy.join(', ') }, policy.join(', '))) : null,
@@ -652,6 +657,184 @@ async function tabOverview(body, m) {
     h('summary', {}, 'Технические детали'),
     h('p', { class: 'muted small' }, 'Полный ответ smolvm об этой машине (GET /api/v1/machines/…): PID, статистика памяти, сетевой режим, политики. Нужен для диагностики.'),
     h('pre', { class: 'json' }, JSON.stringify(info, null, 2))));
+}
+
+// --- review copies: the agent works on a copy, you apply its changes
+async function tabReview(body, m) {
+  let alive = true;
+  tabCleanup = () => { alive = false; };
+  const head = h('div');
+  const list = h('div', { class: 'review-list' });
+  body.append(head, list);
+  let data;
+  try { data = await api('GET', `/ui/machines/${enc(m.name)}/review`); } catch (e) { body.replaceChildren(h('div', { class: 'error' }, e.message)); return; }
+  if (!alive) return;
+
+  // Add form
+  const hostIn = h('input', { class: 'input mono', placeholder: state.info?.platform === 'win32' ? 'C:\\Users\\me\\project' : '/Users/me/project' });
+  const guestIn = h('input', { class: 'input mono', placeholder: '/work/project' });
+  const exIn = h('input', { class: 'input mono', value: data.defaultExclude.join(', ') });
+  hostIn.addEventListener('input', () => { if (!guestIn.dataset.touched) guestIn.value = hostIn.value ? `/work/${hostIn.value.split(/[\\/]/).filter(Boolean).pop() || 'project'}` : ''; });
+  guestIn.addEventListener('input', () => { guestIn.dataset.touched = '1'; });
+  const addBtn = h('button', { class: 'btn primary' }, ic('plus'), 'Создать рабочую копию');
+  addBtn.addEventListener('click', async () => {
+    addBtn.disabled = true; addBtn.textContent = 'Копирование…';
+    try {
+      await api('POST', `/ui/machines/${enc(m.name)}/review`, { hostPath: hostIn.value.trim(), guestPath: guestIn.value.trim() || undefined, exclude: csv(exIn.value) });
+      toast(m.state === 'running' ? 'Рабочая копия создана' : 'Копия создастся при запуске машины', 'ok');
+      renderTab();
+    } catch (e) { toast(e.message, 'err'); addBtn.disabled = false; addBtn.replaceChildren(ic('plus'), 'Создать рабочую копию'); }
+  });
+  head.append(h('section', { class: 'card' },
+    h('div', { class: 'card-head' }, h('h3', {}, 'Рабочие копии'),
+      helpButton('Как работает ревью изменений',
+        h('p', {}, 'Агент получает не саму папку хоста, а её копию внутри машины. Всё, что он меняет, остаётся в машине, пока вы не нажмёте «Применить» — целиком или по файлам. «Отклонить» возвращает в машине версию файла с хоста.'),
+        h('ul', {},
+          h('li', {}, 'Конфликт — файл изменился и в машине, и на хосте с момента копирования. Применение перезапишет версию на хосте; посмотрите diff.'),
+          h('li', {}, '«Подтянуть с хоста» обновляет в машине файлы, которые агент не трогал, а на хосте они поменялись.'),
+          h('li', {}, 'Исключения (node_modules, .git и т.п.) не копируются и не попадают в ревью — их агент может пересоздать сам.'),
+          h('li', {}, 'Копия не монтируется, а копируется — поэтому машину можно снимать снимками и откатывать.'),
+          h('li', {}, 'Символические ссылки не применяются на хост автоматически.')))),
+    h('p', { class: 'muted small' }, 'Агент работает с копией папки, а на хост попадает только то, что вы одобрите после просмотра diff. Безопаснее, чем подключать папку на запись.'),
+    h('div', { class: 'grid2' }, h('label', {}, 'Папка на этом компьютере', hostIn), h('label', {}, 'Путь в машине', guestIn)),
+    h('label', {}, 'Исключить (имена папок/файлов через запятую)', exIn),
+    h('div', { class: 'row' }, addBtn)));
+
+  for (const d of data.dirs) list.append(await reviewDir(m, d));
+}
+
+async function reviewDir(m, d) {
+  const box = h('section', { class: 'card review' });
+  const KIND = { added: ['ok', 'A', 'добавлен'], modified: ['warn', 'M', 'изменён'], deleted: ['bad', 'D', 'удалён'] };
+  const draw = async () => {
+    let r;
+    try { r = await api('GET', `/ui/machines/${enc(m.name)}/review/${enc(d.id)}`); } catch (e) { box.replaceChildren(h('div', { class: 'error' }, e.message)); return; }
+    const sel = new Set();
+    const diffBox = h('div', { class: 'diff-box' });
+    const act = async (op, paths, confirmText) => {
+      const okLabel = { apply: 'Применить', reject: 'Отклонить', copy: 'Пересоздать', pull: 'Подтянуть' }[op];
+      if (confirmText && !(await confirmDialog('Подтверждение', confirmText, false, '', okLabel)).ok) return;
+      try {
+        const x = await api('POST', `/ui/machines/${enc(m.name)}/review/${enc(d.id)}/${op}`, { paths });
+        const n = (x.applied || x.reverted || []).length;
+        if (op === 'apply') toast(`Применено на хост: ${n}${x.skipped?.length ? `, пропущено: ${x.skipped.length} (${x.skipped.map((s) => `${s.path}: ${s.why}`).join('; ')})` : ''}`, x.skipped?.length ? 'err' : 'ok', 10000);
+        else if (op === 'reject') toast(`Отклонено, в машине возвращена версия с хоста: ${n}`, 'ok');
+        else if (op === 'pull') toast(`Подтянуто с хоста: ${n}`, 'ok');
+        else toast('Копия пересоздана', 'ok');
+      } catch (e) { toast(e.message, 'err'); }
+      draw();
+    };
+    const showDiff = async (c) => {
+      diffBox.replaceChildren(h('p', { class: 'muted small' }, 'Загрузка diff…'));
+      let df;
+      try { df = await api('GET', `/ui/machines/${enc(m.name)}/review/${enc(d.id)}/diff?path=${enc(c.path)}`); } catch (e) { diffBox.replaceChildren(h('div', { class: 'error' }, e.message)); return; }
+      const headRow = h('div', { class: 'row' }, h('b', { class: 'mono' }, c.path), h('span', { class: 'muted small' }, `хост ${fmtBytes(df.hostSize)} → машина ${fmtBytes(df.guestSize)}`),
+        h('span', { class: 'spacer' }),
+        h('button', { class: 'btn', onclick: () => act('reject', [c.path]) }, ic('x'), 'Отклонить'),
+        h('button', { class: 'btn primary', onclick: () => act('apply', [c.path], c.conflict ? `Файл ${c.path} изменился и на хосте. Перезаписать версией из машины?` : null) }, ic('download'), 'Применить'));
+      if (df.binary || df.tooBig) { diffBox.replaceChildren(headRow, h('p', { class: 'muted' }, df.binary ? 'Бинарный файл — построчный diff не показывается.' : 'Файл слишком большой для diff.')); return; }
+      const pre = h('pre', { class: 'diff' });
+      for (const hk of df.hunks) {
+        pre.append(h('span', { class: 'd-h' }, `${hk.header}\n`));
+        for (const l of hk.lines) pre.append(h('span', { class: l[0] === '+' ? 'd-a' : l[0] === '-' ? 'd-r' : 'd-c' }, `${l}\n`));
+      }
+      if (!df.hunks.length) pre.append(h('span', { class: 'd-c' }, 'Содержимое совпадает (изменились только права или ссылка).\n'));
+      diffBox.replaceChildren(headRow, pre);
+    };
+    const rows = r.changes.map((c) => {
+      const [cls, letter, word] = KIND[c.kind];
+      const cb = h('input', { type: 'checkbox' });
+      cb.addEventListener('change', () => { if (cb.checked) sel.add(c.path); else sel.delete(c.path); });
+      return h('tr', { class: 'clickable', onclick: (e) => { if (e.target !== cb) showDiff(c); } },
+        h('td', { class: 'center' }, cb),
+        h('td', {}, h('span', { class: `tag ${cls}`, title: word }, letter)),
+        h('td', { class: 'mono small' }, c.path),
+        h('td', {}, c.conflict ? h('span', { class: 'tag bad', title: 'Файл изменился и на хосте с момента копирования' }, 'конфликт') : null, c.link ? h('span', { class: 'tag' }, 'ссылка') : null));
+    });
+    const st = d.state === 'ready' ? (r.missing ? h('span', { class: 'tag bad' }, 'копии нет в машине') : h('span', { class: `badge ${r.changes.length ? 'running' : 'stopped'}` }, r.changes.length ? `${r.changes.length} изм.` : 'без изменений'))
+      : d.state === 'pending' ? h('span', { class: 'tag warn' }, 'скопируется при запуске') : h('span', { class: 'tag bad', title: d.error || '' }, 'ошибка копирования');
+    box.replaceChildren(...[
+      h('div', { class: 'agent-head' }, h('span', { class: 'mark m-icon' }, ic('folder')),
+        h('div', {}, h('div', { class: 'a-title mono' }, `${d.guestPath}`), h('div', { class: 'a-sub mono ellipsis', title: d.hostPath }, `с ${d.hostPath}`)),
+        h('span', { class: 'spacer' }), st),
+      d.error && d.state === 'error' ? h('div', { class: 'error' }, d.error) : null,
+      r.changes.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' }, h('tr', {}, h('th', {}, ''), h('th', {}, ''), h('th', {}, 'Файл'), h('th', {}, '')), rows)) : null,
+      r.changes.length ? h('div', { class: 'row' },
+        h('button', { class: 'btn primary', onclick: () => act('apply', sel.size ? [...sel] : [], `${sel.size ? `Применить выбранные (${sel.size})` : `Применить все изменения (${r.changes.length})`} на хост в ${d.hostPath}?${r.changes.some((c) => c.conflict) ? ' Есть конфликты — версии на хосте будут перезаписаны.' : ''}`) }, ic('download'), 'Применить', h('span', { class: 'muted small' }, ' (выбранные или все)')),
+        h('button', { class: 'btn', onclick: () => act('reject', sel.size ? [...sel] : [], `${sel.size ? `Отклонить выбранные (${sel.size})` : 'Отклонить все изменения'}? В машине вернутся версии с хоста.`) }, ic('x'), 'Отклонить')) : null,
+      diffBox,
+      h('div', { class: 'row block-foot' },
+        r.hostAhead ? h('button', { class: 'btn', onclick: () => act('pull', []) }, ic('refresh'), `Подтянуть с хоста (${r.hostAhead})`) : null,
+        h('button', { class: 'btn ghost', onclick: () => draw() }, ic('refresh'), 'Обновить'),
+        h('span', { class: 'spacer' }),
+        h('button', { class: 'btn ghost', onclick: () => act('copy', [], 'Пересоздать копию с хоста? Все непримененные изменения в машине будут потеряны.') }, 'Пересоздать копию'),
+        h('button', { class: 'btn ghost danger', onclick: async () => {
+          const c = await confirmDialog('Убрать рабочую копию?', `Копия ${d.guestPath} перестанет отслеживаться. Непримененные изменения останутся в машине, если не удалить копию.`, true, 'Удалить копию и из машины', 'Убрать');
+          if (!c.ok) return;
+          try { await api('DELETE', `/ui/machines/${enc(m.name)}/review/${enc(d.id)}${c.force ? '?deleteCopy=1' : ''}`); renderTab(); } catch (e) { toast(e.message, 'err'); }
+        } }, ic('trash'))),
+    ].filter(Boolean));
+  };
+  box.append(h('p', { class: 'muted' }, 'Загрузка…'));
+  draw();
+  return box;
+}
+
+// --- snapshots: checkpoint and one-click rollback
+async function tabSnapshots(body, m) {
+  let st;
+  try { st = await api('GET', `/ui/machines/${enc(m.name)}/snapshots`); } catch (e) { body.replaceChildren(h('div', { class: 'error' }, e.message)); return; }
+  const label = h('input', { class: 'input', placeholder: 'метка, например «до рефакторинга»' });
+  const take = h('button', { class: 'btn primary', disabled: !!st.blocker || !!st.busy }, ic('plus'), 'Сделать снимок');
+  take.addEventListener('click', async () => {
+    take.disabled = true; take.textContent = 'Снимок…';
+    try { await api('POST', `/ui/machines/${enc(m.name)}/snapshots`, { label: label.value.trim() }); toast('Снимок сделан', 'ok'); } catch (e) { toast(e.message, 'err'); }
+    renderTab();
+  });
+  const notice = [];
+  if (st.blocker) {
+    const needRestart = /ветвлением/.test(st.blocker) && st.running;
+    notice.push(h('div', { class: 'notice' }, st.blocker, needRestart ? ' ' : null, needRestart ? h('button', { class: 'btn', onclick: async () => {
+      await api('PUT', `/ui/machines/${enc(m.name)}/snapshots/settings`, { branchable: true });
+      await actions.stop(m); await actions.start({ ...m }, true); renderTab();
+    } }, 'Перезапустить с ветвлением') : null));
+  }
+  if (!st.wantsBranchable && !st.blocker) notice.push(h('p', { class: 'muted small' }, 'Машина будет запускаться с ветвлением, чтобы снимки были доступны всегда.'));
+  const rows = st.items.map((x) => h('div', { class: 'bitem' },
+    h('div', { class: 'bmain' },
+      h('div', {}, h('b', {}, new Date(x.createdAt).toLocaleString()), ' ', x.label ? h('span', {}, `· ${x.label}`) : null),
+      h('div', { class: 'muted small' }, x.reason, ` · ${fmtBytes(x.size)}`, x.safety ? ' · страховочный' : '', x.exists ? '' : ' · файл пропал')),
+    h('div', { class: 'bside row' },
+      h('button', { class: 'btn', disabled: !x.exists || !!st.busy, onclick: async () => {
+        const c = await confirmDialog('Откатить машину?', `Машина ${m.name} будет пересоздана из снимка от ${new Date(x.createdAt).toLocaleString()}: диски, память и процессы вернутся к тому моменту. Текущее состояние сохранится страховочным снимком.`, false, '', 'Откатить');
+        if (!c.ok) return;
+        state.busy.set(m.name, 'откат…'); renderList();
+        try {
+          const r = await api('POST', `/ui/machines/${enc(m.name)}/snapshots/${enc(x.id)}/rollback`, {});
+          toast(`${m.name}: откат выполнен${r.notes?.length ? ` (${r.notes.join('; ')})` : ''}`, 'ok', 10000);
+        } catch (e) { toast(e.message, 'err', 15000); }
+        state.busy.delete(m.name);
+        await refreshMachines(); renderTab();
+      } }, ic('refresh'), 'Откатить'),
+      h('button', { class: 'btn ghost danger icon', title: 'Удалить снимок', onclick: async () => {
+        if (!(await confirmDialog('Удалить снимок?', 'Файл снимка будет удалён.')).ok) return;
+        try { await api('DELETE', `/ui/machines/${enc(m.name)}/snapshots/${enc(x.id)}`); } catch (e) { toast(e.message, 'err'); }
+        renderTab();
+      } }, ic('trash')))));
+  body.replaceChildren(
+    h('section', { class: 'card' },
+      h('div', { class: 'card-head' }, h('h3', {}, 'Снимки машины'),
+        helpButton('Снимки и откат',
+          h('p', {}, 'Снимок — это smolvm checkpoint: память, процессы и диски машины в один момент (машина замирает на доли секунды). Откат пересоздаёт машину из снимка под тем же именем; агенты, секреты, доступ в сеть и рабочие копии сохраняются.'),
+          h('ul', {},
+            h('li', {}, 'Во вкладке «Агенты» включите «Снимок перед запуском» — перед каждым запуском агента или задачей будет снимок.'),
+            h('li', {}, 'Перед откатом текущее состояние сохраняется страховочным снимком — откат можно отменить.'),
+            h('li', {}, 'smolvm не снимает машины с подключёнными папками хоста, GPU/CUDA; на macOS машина должна работать с ветвлением.'),
+            h('li', {}, `Хранится последних снимков: ${st.keep} (старые удаляются). Снимки лежат в каталоге настроек smolvm-web.`))),
+        st.busy ? h('span', { class: 'badge prep' }, h('i', { class: 'spin' }), st.busy) : null),
+      ...notice,
+      h('div', { class: 'row' }, label, take),
+      rows.length ? h('div', { class: 'blist' }, rows) : h('p', { class: 'muted small' }, 'Снимков пока нет.')));
 }
 
 // --- console (exec over SSE)
@@ -1505,7 +1688,9 @@ async function tabAgents(body, m) {
     subnav.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.sub === id));
     head.hidden = id !== 'agents'; taskBox.hidden = id !== 'task';
   } }, ic(icon), label);
-  const subnav = h('nav', { class: 'tabs subtabs' }, subBtn('agents', 'bot', 'Агенты'), subBtn('task', 'send', 'Задача без интерфейса'));
+  const subnav = h('div', { class: 'row' }, h('nav', { class: 'tabs subtabs' }, subBtn('agents', 'bot', 'Агенты'), subBtn('task', 'send', 'Задача без интерфейса')),
+    h('span', { class: 'spacer' }),
+    h('label', { class: 'check small', title: 'Снимок машины (smolvm checkpoint) перед запуском агента или задачей — откат одной кнопкой во вкладке «Снимки»' }, snapBefore, 'Снимок перед запуском'));
   head.hidden = sub !== 'agents'; taskBox.hidden = sub !== 'task';
   body.append(subnav, head, taskBox);
   let alive = true;
@@ -1513,6 +1698,14 @@ async function tabAgents(body, m) {
   let st = null;
   let lastSig = '';
   tabCleanup = () => { alive = false; clearTimeout(timer); };
+  // Snapshot before an agent run (remembered per browser).
+  const snapBefore = h('input', { type: 'checkbox', checked: localStorage.getItem('smolvm.snapBefore') !== '0' });
+  snapBefore.addEventListener('change', () => localStorage.setItem('smolvm.snapBefore', snapBefore.checked ? '1' : '0'));
+  const reportSnap = (sn) => {
+    if (!sn) return;
+    if (sn.ok) toast(`${m.name}: снимок перед запуском сделан — откат во вкладке «Снимки»`, 'ok');
+    else toast(`${m.name}: снимок не сделан — ${sn.error}`, 'err', 12000);
+  };
 
   const refresh = async () => {
     if (!alive) return;
@@ -1588,7 +1781,8 @@ async function tabAgents(body, m) {
         const w = agentTab();
         startBtn.disabled = true; startBtn.textContent = 'Запуск…';
         try {
-          const r = await api('POST', `/ui/machines/${enc(m.name)}/agents/${a.id}/start`, { autonomous: !!auto?.checked });
+          const r = await api('POST', `/ui/machines/${enc(m.name)}/agents/${a.id}/start`, { autonomous: !!auto?.checked, snapshot: snapBefore.checked });
+          reportSnap(r._webSnapshot);
           goAgent(w, r.url);
         } catch (e) { if (w) w.close(); toast(`${a.title}: ${e.message}`, 'err'); }
         lastSig = ''; refresh();
@@ -1638,7 +1832,10 @@ async function tabAgents(body, m) {
       const write = (t, cls) => { out.append(cls ? h('span', { class: cls }, t) : document.createTextNode(t)); out.scrollTop = out.scrollHeight; };
       write(`$ ${sel.selectedOptions[0].textContent}: ${prompt.value.trim()}\n`, 'cmd');
       try {
-        const res = await api('POST', `/ui/machines/${enc(m.name)}/agents/${sel.value}/task`, { prompt: prompt.value, autonomous: auto.checked }, { raw: true, signal: ctrl.signal });
+        const res = await api('POST', `/ui/machines/${enc(m.name)}/agents/${sel.value}/task`, { prompt: prompt.value, autonomous: auto.checked, snapshot: snapBefore.checked }, { raw: true, signal: ctrl.signal });
+        const snOk = res.headers.get('x-smolvm-snapshot'); const snErr = res.headers.get('x-smolvm-snapshot-error');
+        if (snOk) write('[снимок перед задачей сделан — откат во вкладке «Снимки»]\n', 'sys');
+        if (snErr) write(`[снимок не сделан: ${decodeURIComponent(snErr)}]\n`, 'err');
         await readSSE(res, (ev, data) => {
           if (ev === 'stdout') write(data.endsWith('\n') ? data : `${data}\n`);
           else if (ev === 'stderr') write(data.endsWith('\n') ? data : `${data}\n`, 'err');
@@ -1692,6 +1889,20 @@ function route() {
 }
 window.addEventListener('hashchange', route);
 
+// ---------- alerts (bursts of blocked network attempts) ----------
+let lastAlertId = null;
+async function pollAlerts() {
+  let r;
+  try { r = await api('GET', `/ui/alerts?since=${lastAlertId || 0}`); } catch { return; }
+  const list = r.alerts || [];
+  if (lastAlertId === null) { lastAlertId = list.length ? list[list.length - 1].id : 0; return; } // don't replay old ones
+  for (const a of list) {
+    lastAlertId = Math.max(lastAlertId, a.id);
+    toast(h('span', {}, h('b', {}, 'Оповещение: '), a.text, a.hosts?.length ? h('div', { class: 'small mono' }, a.hosts.slice(0, 5).join(', ')) : null,
+      h('a', { href: `#/log?machine=${enc(a.machine)}` }, ' Журнал →')), 'err', 30000);
+  }
+}
+
 // ---------- loop ----------
 let ticking = false;
 async function tick() {
@@ -1701,6 +1912,7 @@ async function tick() {
     const wasHealthy = state.healthy;
     await refreshHealth();
     await refreshMachines();
+    pollAlerts();
     if (state.healthy && (!wasHealthy || $('#detail').dataset.name !== (state.selected || '')) && current()) renderDetail();
   } finally { ticking = false; }
 }

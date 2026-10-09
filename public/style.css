@@ -475,3 +475,16 @@ a.btn { text-decoration: none; }
 @media (prefers-reduced-motion: reduce) { .spin { animation-duration: 2.5s; } }
 .tabs.subtabs { margin: 0; max-width: 100%; }
 .tab .ic { width: 14px; height: 14px; }
+
+/* review diff */
+.review { gap: 12px; }
+.diff-box:empty { display: none; }
+.diff-box { display: flex; flex-direction: column; gap: 8px; }
+pre.diff { margin: 0; background: var(--term-bg); color: var(--term-text); border: 1px solid var(--border); border-radius: 10px; padding: 10px 0; font: 12px/1.55 var(--mono); overflow: auto; max-height: 520px; }
+pre.diff span { display: block; padding: 0 12px; white-space: pre; }
+pre.diff .d-a { background: rgba(74, 222, 128, .12); color: #bbf7d0; }
+pre.diff .d-r { background: rgba(248, 113, 113, .12); color: #fecaca; }
+pre.diff .d-h { color: #a5b4fc; }
+pre.diff .d-c { color: #a1a1aa; }
+.grid-siem { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 12px; }
+@media (max-width: 820px) { .grid-siem { grid-template-columns: 1fr 1fr; } }

@@ -24,7 +24,11 @@ const gateway = require('./lib/gateway');
 const agents = require('./lib/agents');
 const agentproxy = require('./lib/agentproxy');
 const smolfile = require('./lib/smolfile');
+const review = require('./lib/review');
+const snapshots = require('./lib/snapshots');
+const audit = require('./lib/audit');
 const egress = require('./lib/egress');
+egress.onLog((e) => audit.onNet(e));
 const dirs = require('./lib/dirs');
 
 const HOST = process.env.HOST || '127.0.0.1';
@@ -87,7 +91,7 @@ async function readJson(req) {
 }
 
 // ---------- plain proxy ----------
-function forward(req, res, bodyBuf) {
+function forward(req, res, bodyBuf, tap) {
   const headers = { ...req.headers, host: 'localhost' };
   delete headers.origin;
   delete headers.referer;
@@ -105,6 +109,10 @@ function forward(req, res, bodyBuf) {
       h['x-accel-buffering'] = 'no';
     }
     res.writeHead(upRes.statusCode, h);
+    if (tap) {
+      upRes.on('data', (c) => { try { tap.data(c, upRes.statusCode); } catch {} });
+      upRes.on('end', () => { try { tap.end(upRes.statusCode); } catch {} });
+    }
     upRes.pipe(res);
   });
 
@@ -122,6 +130,72 @@ function forward(req, res, bodyBuf) {
   else req.pipe(upReq);
 }
 
+// ---------- audit ----------
+function actorOf(req) { return `ui@${(req.socket.remoteAddress || '').replace(/^::ffff:/, '')}`; }
+
+const AUDIT_LABELS = [
+  [/^POST \/api\/v1\/machines$/, 'создание машины'],
+  [/^POST \/api\/v1\/machines\/[^/]+\/start$/, 'запуск машины'],
+  [/^POST \/api\/v1\/machines\/[^/]+\/stop$/, 'остановка машины'],
+  [/^POST \/api\/v1\/machines\/[^/]+\/pause$/, 'пауза'],
+  [/^POST \/api\/v1\/machines\/[^/]+\/resume$/, 'возобновление'],
+  [/^DELETE \/api\/v1\/machines\/[^/]+$/, 'удаление машины'],
+  [/^POST \/api\/v1\/machines\/[^/]+\/branches$/, 'ветка'],
+  [/^PUT \/api\/v1\/machines\/[^/]+\/files\//, 'загрузка файла в машину'],
+  [/^POST \/api\/v1\/machines\/[^/]+\/images\/pull$/, 'загрузка образа'],
+  [/^POST \/ui\/machines\/[^/]+\/agents\/[\w-]+\/start$/, 'запуск агента'],
+  [/^POST \/ui\/machines\/[^/]+\/agents\/[\w-]+\/stop$/, 'остановка агента'],
+  [/^POST \/ui\/machines\/[^/]+\/agents\/[\w-]+\/task$/, 'задача агенту'],
+  [/^POST \/ui\/machines\/[^/]+\/agents(\/install)?$/, 'агенты: подключение/установка'],
+  [/^POST \/ui\/machines\/[^/]+\/review$/, 'рабочая копия: создание'],
+  [/^POST \/ui\/machines\/[^/]+\/review\/[\w.-]+\/apply$/, 'ревью: применено на хост'],
+  [/^POST \/ui\/machines\/[^/]+\/review\/[\w.-]+\/reject$/, 'ревью: отклонено'],
+  [/^POST \/ui\/machines\/[^/]+\/review\/[\w.-]+\/(pull|copy)$/, 'рабочая копия: обновление с хоста'],
+  [/^DELETE \/ui\/machines\/[^/]+\/review\//, 'рабочая копия: удаление'],
+  [/^POST \/ui\/machines\/[^/]+\/snapshots$/, 'снимок'],
+  [/^POST \/ui\/machines\/[^/]+\/snapshots\/[\w.-]+\/rollback$/, 'откат к снимку'],
+  [/^DELETE \/ui\/machines\/[^/]+\/snapshots\//, 'удаление снимка'],
+  [/^PUT \/ui\/machines\/[^/]+\/snapshots\/settings$/, 'снимки: настройки'],
+  [/^POST \/ui\/egress\/machines\/[^/]+\/learn\/finish$/, 'обучение: список создан'],
+  [/^PUT \/ui\/vault\//, 'секрет: сохранён'],
+  [/^DELETE \/ui\/vault\//, 'секрет: удалён'],
+  [/^PUT \/ui\/machines\/[^/]+\/secrets$/, 'секреты машины'],
+  [/^(PUT|POST|DELETE) \/ui\/egress/, 'доступ в сеть: изменение'],
+  [/^(PUT|POST|DELETE) \/ui\/dirs/, 'директории: изменение'],
+  [/^PUT \/ui\/settings$/, 'настройки прокси/сертификатов'],
+  [/^PUT \/ui\/audit\/settings$/, 'настройки аудита'],
+];
+
+function auditRequest(req, res, url) {
+  const key = `${req.method} ${url.pathname}`;
+  if (/^(GET|HEAD|OPTIONS) /.test(key) || /\/ui\/smolfile\/parse$|\/ui\/audit\/test$|\/ui\/proxy\/test$|\/ui\/ca\/preview$/.test(url.pathname)) return;
+  const label = (AUDIT_LABELS.find(([re]) => re.test(key)) || [null, key])[1];
+  const mm = url.pathname.match(/^\/(?:api\/v1|ui)\/machines\/([^/]+)/);
+  const started = Date.now();
+  res.on('finish', () => {
+    if (res.auditDone) return;
+    audit.record({
+      type: url.pathname.startsWith('/ui/') ? 'ui' : 'api', actor: actorOf(req), machine: mm ? decodeURIComponent(mm[1]) : null,
+      action: label, status: res.statusCode, ms: Date.now() - started,
+      detail: { method: req.method, path: url.pathname, ...(res.auditDetail || {}) },
+      severity: res.statusCode >= 400 ? 'notice' : 'info',
+    });
+  });
+}
+
+// Host folders mounted read-write into running machines are watched for changes.
+async function syncFsWatches() {
+  const r = await up.request('GET', '/api/v1/machines').catch(() => null);
+  const rw = [];
+  for (const m of r?.data?.machines || []) {
+    if (m.state !== 'running') continue;
+    for (const mt of m.mounts || []) if (!mt.readonly) rw.push({ source: mt.source, machine: m.name });
+  }
+  audit.syncWatches(rw);
+}
+setInterval(() => syncFsWatches().catch(() => {}), 30000).unref();
+setTimeout(() => syncFsWatches().catch(() => {}), 3000).unref();
+
 // ---------- start ----------
 const starting = new Set(); // machines inside startMachine (any client)
 
@@ -134,11 +208,17 @@ async function startMachine(name, opts) {
 function preparing() {
   const out = {};
   for (const n of starting) out[n] = { label: 'запуск', step: 'запуск машины и настройка' };
+  for (const j of snapshots.running()) out[j.name] = { label: j.step === 'откат' ? 'откат' : 'снимок', step: j.step };
+  for (const j of review.running()) out[j.name] = { label: 'подготовка', step: j.step };
   return out;
 }
 
 async function startMachineInner(name, { apiPath, body = {}, branchable = false }) {
   const fail = (status, error, code) => Object.assign(new Error(error), { status, code });
+  // Agent machines and machines with snapshots enabled start branchable, so a
+  // snapshot (smolvm checkpoint) can be taken at any time (required on macOS).
+  if (!branchable && (agents.get(name) || snapshots.wantsBranchable(name))) branchable = true;
+  if (branchable && !/[?&](branchable|forkable)=/.test(apiPath)) apiPath += `${apiPath.includes('?') ? '&' : '?'}branchable=true`;
   let prepared;
   try { prepared = await mc.prepareStart(name); } catch (e) { throw fail(400, `подготовка к запуску: ${e.message}`, 'PREPARE_FAILED'); }
   let plan;
@@ -160,6 +240,7 @@ async function startMachineInner(name, { apiPath, body = {}, branchable = false 
     if (e.body) throw e;
     throw fail(e.status || 500, `${viaCli ? 'запуск через smolvm CLI' : 'запуск'}: ${e.message}`, 'START_FAILED');
   }
+  if (branchable) snapshots.markBranchableRun(name, info.pid);
   if (plan.warnings.length) info._webWarnings = plan.warnings;
   if (prepared.length) info._webPrepared = prepared;
   try {
@@ -174,14 +255,18 @@ async function startMachineInner(name, { apiPath, body = {}, branchable = false 
   } catch (e) {
     info._webDirs = { errors: [e.message], warnings: [], users: [] };
   }
+  // Review copies waiting for the machine to run.
+  try { const rv = await review.provision(name); if (rv.length) info._webReview = rv; } catch (e) { info._webReview = [e.message]; }
   // First start of a Smolfile machine: its `init`, once, after proxy/CA/dirs are in place.
   if (smolfile.initPending(name)) {
     try { info._webInit = await smolfile.runInit(name); } catch (e) { info._webInit = { ok: false, error: e.message, log: '' }; }
+    if (info._webInit) audit.record({ type: 'exec', machine: name, actor: 'smolvm-web', action: 'init из Smolfile', exitCode: info._webInit.ok ? 0 : 1, detail: { commands: info._webInit.count, error: info._webInit.error }, severity: info._webInit.ok ? 'info' : 'notice' });
   }
   // First start of a profile machine: install its agents in the background.
   const am = agents.get(name);
   if (am && !am.installed && agents.job(name)?.status !== 'running') {
     agents.startInstall(name);
+    audit.record({ type: 'exec', machine: name, actor: 'smolvm-web', action: 'установка агентов', detail: { agents: am.agents } });
     info._webInstall = true;
   }
   return info;
@@ -306,6 +391,10 @@ const ROUTES = [
       body.env = px.mergeEnv(body.env, await mc.secretEnv(body.name));
       if (bound.some((x) => x.mode === 'gateway')) await gateway.start();
     }
+    // Pin the network backend smolvm serve would pick anyway: a checkpoint of a
+    // machine with an implicit backend restores with a different network device
+    // (TSI instead of virtio-net) and fails to boot.
+    if (body.network && !body.networkBackend && !body.from && !body.registryRef) body.networkBackend = 'virtio-net';
     url.searchParams.delete('webProxy');
     req.url = url.pathname + (url.search || '');
     let r;
@@ -343,7 +432,21 @@ const ROUTES = [
     try { body = JSON.parse(buf.toString('utf8') || '{}'); } catch { return forward(req, res, buf); }
     const extra = await mc.execEnv(name);
     if (extra.length) body.env = px.mergeEnv(body.env, extra);
-    forward(req, res, Buffer.from(JSON.stringify(body)));
+    // Audit: command, user, exit code (from the JSON body or the SSE `exit` event).
+    const stream = !!m[2];
+    const ev = { type: 'exec', machine: name, actor: actorOf(req), action: 'exec',
+      detail: { command: Array.isArray(body.command) ? body.command.join(' ').slice(0, 2000) : String(body.command || ''), user: body.user || null, workdir: body.workdir || null, background: !!body.background, stream } };
+    let acc = '';
+    res.auditDone = true;
+    forward(req, res, Buffer.from(JSON.stringify(body)), {
+      data(c) { if (acc.length < 1e6) acc += c.toString('utf8'); },
+      end(status) {
+        let exitCode = null;
+        if (stream) { const mm = acc.match(/event: exit\ndata: \{"exitCode":(-?\d+)\}/g); if (mm) exitCode = Number(mm.pop().match(/(-?\d+)\}$/)[1]); }
+        else { const mm = acc.match(/"exitCode":(-?\d+)/); if (mm) exitCode = Number(mm[1]); }
+        audit.record({ ...ev, status, exitCode, severity: status >= 400 || (exitCode !== null && exitCode !== 0) ? 'notice' : 'info' });
+      },
+    });
   }],
 
   // In-guest image pull: pass the proxy unless the caller set one.
@@ -361,7 +464,7 @@ const ROUTES = [
   ['DELETE', new RegExp(`^${M}$`), async (req, res, m) => {
     const name = decodeURIComponent(m[1]);
     const r = await up.request('DELETE', req.url);
-    if (r.status === 200) { cfg.forgetMachine(name); await vault.forgetMachine(name); egress.forgetMachine(name); dirs.forgetMachine(name); agents.forget(name); agentproxy.closeFor(`${name}/`); smolfile.forget(name); }
+    if (r.status === 200) { cfg.forgetMachine(name); await vault.forgetMachine(name); egress.forgetMachine(name); dirs.forgetMachine(name); agents.forget(name); agentproxy.closeFor(`${name}/`); smolfile.forget(name); review.forget(name); snapshots.forget(name); }
     sendJson(res, r.status, r.data);
   }],
 
@@ -385,7 +488,82 @@ function publicSettings() {
 }
 
 const AG = '^/ui/machines/([^/]+)/agents';
+const RV = '^/ui/machines/([^/]+)/review';
+const SN = '^/ui/machines/([^/]+)/snapshots';
+const err = (res, e) => sendJson(res, e.status || 500, { error: e.message });
 const UI = [
+  // ---- audit ----
+  ['GET', /^\/ui\/audit$/, (req, res, _m, url) => {
+    const p = url.searchParams;
+    sendJson(res, 200, { entries: audit.list({ machine: p.get('machine') || '', type: p.get('type') || '', q: p.get('q') || '', limit: Math.min(2000, Number(p.get('limit')) || 500) }), file: audit.file, watched: audit.watched() });
+  }],
+  ['GET', /^\/ui\/audit\/export$/, (req, res) => {
+    let data = '';
+    try { data = fs.readFileSync(audit.file); } catch {}
+    res.writeHead(200, { 'content-type': 'application/x-ndjson', 'content-disposition': `attachment; filename="smolvm-web-audit-${new Date().toISOString().slice(0, 10)}.jsonl"` });
+    res.end(data);
+  }],
+  ['GET', /^\/ui\/audit\/settings$/, (req, res) => {
+    const st = JSON.parse(JSON.stringify(audit.settings()));
+    st.siem.http.hasAuthorization = !!st.siem.http.authorization;
+    st.siem.http.authorization = '';
+    sendJson(res, 200, st);
+  }],
+  ['PUT', /^\/ui\/audit\/settings$/, async (req, res) => {
+    const body = await readJson(req);
+    // Empty authorization = keep the stored one (it is never sent back to the UI).
+    if (body.siem?.http && !body.siem.http.authorization) delete body.siem.http.authorization;
+    try { audit.saveSettings(body); sendJson(res, 200, { ok: true }); } catch (e) { sendJson(res, 400, { error: e.message }); }
+  }],
+  ['POST', /^\/ui\/audit\/test$/, async (req, res) => sendJson(res, 200, await audit.test())],
+  ['GET', /^\/ui\/alerts$/, (req, res, _m, url) => sendJson(res, 200, { alerts: audit.alerts(Number(url.searchParams.get('since')) || 0) })],
+  // ---- review copies ----
+  ['GET', new RegExp(`${RV}$`), (req, res, m) => sendJson(res, 200, { dirs: review.list(decodeURIComponent(m[1])), defaultExclude: review.DEFAULT_EXCLUDE, busy: review.busy(decodeURIComponent(m[1])) })],
+  ['POST', new RegExp(`${RV}$`), async (req, res, m) => {
+    try { sendJson(res, 200, await review.add(decodeURIComponent(m[1]), await readJson(req))); } catch (e) { err(res, e); }
+  }],
+  ['GET', new RegExp(`${RV}/([\\w.-]+)$`), async (req, res, m) => {
+    try { sendJson(res, 200, await review.changes(decodeURIComponent(m[1]), m[2])); } catch (e) { err(res, e); }
+  }],
+  ['DELETE', new RegExp(`${RV}/([\\w.-]+)$`), async (req, res, m, url) => {
+    try { await review.remove(decodeURIComponent(m[1]), m[2], { deleteCopy: url.searchParams.get('deleteCopy') === '1' }); sendJson(res, 200, { removed: true }); } catch (e) { err(res, e); }
+  }],
+  ['GET', new RegExp(`${RV}/([\\w.-]+)/diff$`), async (req, res, m, url) => {
+    try { sendJson(res, 200, await review.fileDiff(decodeURIComponent(m[1]), m[2], url.searchParams.get('path') || '')); } catch (e) { err(res, e); }
+  }],
+  ['POST', new RegExp(`${RV}/([\\w.-]+)/(apply|reject|pull|copy)$`), async (req, res, m) => {
+    const name = decodeURIComponent(m[1]); const id = m[2]; const op = m[3];
+    const body = await readJson(req);
+    try {
+      let r;
+      if (op === 'apply') { r = await review.apply(name, id, body.paths); res.auditDetail = { copy: id, files: r.applied, skipped: r.skipped.length }; }
+      else if (op === 'reject') { r = await review.reject(name, id, body.paths); res.auditDetail = { copy: id, files: r.reverted }; }
+      else if (op === 'pull') r = await review.reject(name, id, [], { onlyHostAhead: true });
+      else { await review.copyIn(name, id); r = { copied: true }; }
+      sendJson(res, 200, r);
+    } catch (e) { err(res, e); }
+  }],
+  // ---- snapshots ----
+  ['GET', new RegExp(`${SN}$`), async (req, res, m) => sendJson(res, 200, await snapshots.status(decodeURIComponent(m[1])))],
+  ['POST', new RegExp(`${SN}$`), async (req, res, m) => {
+    const body = await readJson(req);
+    try { sendJson(res, 200, await snapshots.create(decodeURIComponent(m[1]), { label: body.label, reason: 'вручную' })); } catch (e) { err(res, e); }
+  }],
+  ['PUT', new RegExp(`${SN}/settings$`), async (req, res, m) => {
+    const body = await readJson(req);
+    if (typeof body.branchable === 'boolean') snapshots.setWantsBranchable(decodeURIComponent(m[1]), body.branchable);
+    if (body.keep) snapshots.setKeep(body.keep);
+    sendJson(res, 200, await snapshots.status(decodeURIComponent(m[1])));
+  }],
+  ['DELETE', new RegExp(`${SN}/([\\w.-]+)$`), (req, res, m) => {
+    try { snapshots.remove(decodeURIComponent(m[1]), m[2]); sendJson(res, 200, { removed: true }); } catch (e) { err(res, e); }
+  }],
+  ['POST', new RegExp(`${SN}/([\\w.-]+)/rollback$`), async (req, res, m) => {
+    const name = decodeURIComponent(m[1]);
+    try {
+      sendJson(res, 200, await snapshots.rollback(name, m[2], (n) => startMachine(n, { apiPath: `/api/v1/machines/${encodeURIComponent(n)}/start`, branchable: true })));
+    } catch (e) { err(res, e); }
+  }],
   ['GET', /^\/ui\/preparing$/, (req, res) => {
     const out = preparing();
     for (const j of smolfile.runningInits()) out[j.name] = { label: 'подготовка', step: j.step };
@@ -420,8 +598,10 @@ const UI = [
   ['POST', new RegExp(`${AG}/([\\w-]+)/start$`), async (req, res, m) => {
     const name = decodeURIComponent(m[1]);
     const body = await readJson(req);
-    try { sendJson(res, 200, await agents.start(name, m[2], { autonomous: !!body.autonomous })); }
-    catch (e) { sendJson(res, 400, { error: e.message }); }
+    let snap = null;
+    if (body.snapshot) { try { snap = { ok: true, ...(await snapshots.create(name, { reason: `перед запуском ${agents.AGENTS[m[2]]?.title || m[2]}` })) }; } catch (e) { snap = { ok: false, error: e.message }; } }
+    try { sendJson(res, 200, { ...(await agents.start(name, m[2], { autonomous: !!body.autonomous })), _webSnapshot: snap }); }
+    catch (e) { sendJson(res, 400, { error: e.message, _webSnapshot: snap }); }
   }],
   ['POST', new RegExp(`${AG}/([\\w-]+)/stop$`), async (req, res, m) => {
     try { await agents.stop(decodeURIComponent(m[1]), m[2]); sendJson(res, 200, { stopped: true }); }
@@ -438,13 +618,28 @@ const UI = [
   // One-shot headless task, streamed back as the exec/stream SSE.
   ['POST', new RegExp(`${AG}/([\\w-]+)/task$`), async (req, res, m) => {
     const name = decodeURIComponent(m[1]);
-    const { prompt, autonomous } = await readJson(req);
+    const { prompt, autonomous, snapshot } = await readJson(req);
     if (!prompt || !String(prompt).trim()) return sendJson(res, 400, { error: 'пустая задача' });
+    // A snapshot first, so a bad run can be rolled back; its result goes into a response header.
+    if (snapshot) {
+      try { const sn = await snapshots.create(name, { reason: `перед задачей ${agents.AGENTS[m[2]]?.title || m[2]}`, label: String(prompt).slice(0, 80) }); res.setHeader('x-smolvm-snapshot', encodeURIComponent(sn.id)); }
+      catch (e) { res.setHeader('x-smolvm-snapshot-error', encodeURIComponent(e.message.slice(0, 300))); }
+    }
     let body;
     try { body = await agents.taskBody(name, m[2], prompt, { autonomous: !!autonomous }); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+    res.auditDone = true;
+    const tev = { type: 'exec', machine: name, actor: `${actorOf(req)} → ${agents.AGENTS[m[2]]?.title || m[2]}`, action: 'задача агенту', detail: { agent: m[2], prompt: String(prompt).slice(0, 2000), autonomous: !!autonomous } };
+    let tacc = '';
     req.url = `/api/v1/machines/${encodeURIComponent(name)}/exec/stream`;
     req.method = 'POST';
-    forward(req, res, Buffer.from(JSON.stringify(body)));
+    forward(req, res, Buffer.from(JSON.stringify(body)), {
+      data(c) { if (tacc.length < 1e6) tacc += c.toString('utf8'); },
+      end(status) {
+        const mm = tacc.match(/event: exit\ndata: \{"exitCode":(-?\d+)\}/g);
+        const exitCode = mm ? Number(mm.pop().match(/(-?\d+)\}$/)[1]) : null;
+        audit.record({ ...tev, status, exitCode, severity: exitCode ? 'notice' : 'info' });
+      },
+    });
   }],
   ['GET', /^\/ui\/info$/, async (req, res) => {
     const s = cfg.getSettings();
@@ -581,6 +776,12 @@ const UI = [
     }
     sendJson(res, 200, { machine: egress.view().machines[name], notes });
   }],
+  ['GET', /^\/ui\/egress\/machines\/([^/]+)\/learned$/, (req, res, m) => sendJson(res, 200, { learned: egress.learned(decodeURIComponent(m[1])) })],
+  ['POST', /^\/ui\/egress\/machines\/([^/]+)\/learn\/finish$/, async (req, res, m) => {
+    const name = decodeURIComponent(m[1]);
+    const body = await readJson(req);
+    try { sendJson(res, 200, egress.finishLearning(name, body)); } catch (e) { sendJson(res, 400, { error: e.message }); }
+  }],
   ['GET', /^\/ui\/egress\/log$/, (req, res, _m, url) => {
     const p = url.searchParams;
     sendJson(res, 200, { entries: egress.log({ machine: p.get('machine') || '', decision: p.get('decision') || '', q: p.get('q') || '', limit: Math.min(Number(p.get('limit')) || 300, 3000) }) });
@@ -696,6 +897,7 @@ const server = http.createServer(async (req, res) => {
   if ((isApi || isUi) && mutating && req.headers['x-smolvm-ui'] !== '1') {
     return sendJson(res, 403, { error: 'missing X-Smolvm-UI header', code: 'FORBIDDEN' });
   }
+  if ((isApi || isUi) && mutating) auditRequest(req, res, url);
   try {
     if (isUi) {
       if (!(await dispatch(UI, req, res, url))) sendJson(res, 404, { error: 'not found' });
