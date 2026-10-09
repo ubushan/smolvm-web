@@ -123,7 +123,7 @@
         h('td', { class: 'center' }, on),
         h('td', { class: 'center' }, strict, pending ? h('div', { class: 'small warnc', title: 'Применится при следующем запуске через smolvm-web' }, 'при запуске') : null),
         h('td', { class: 'center' }, learn, m.learn ? h('div', {}, h('button', { class: 'btn small-btn', title: 'Превратить собранные хосты в список', onclick: () => openLearned(name) }, `Собрать (${m.learnedCount || 0})`)) : null),
-        h('td', {}, lists),
+        h('td', {}, lists, m.vendorCount ? h('a', { class: 'small muted', href: '#/', title: 'Серверы вендоров агентов разрешены по умолчанию; отозвать — во вкладке «Агенты» машины', onclick: (e) => { e.preventDefault(); location.hash = '#/'; select(name); switchTab('agents'); } }, `+ серверы вендоров: ${m.vendorCount}`) : null),
         h('td', {}, m.enabled ? h('button', { class: 'btn ghost', onclick: () => { editRow.hidden = !editRow.hidden; } }, `Свои правила (${m.rules.length})`) : null),
         h('td', {},
           h('a', { class: 'btn ghost', href: `#/log?machine=${enc(name)}` }, 'Журнал'),

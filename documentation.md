@@ -148,30 +148,69 @@ smolvm-web разбирает Smolfile так же строго, как smolvm (
 
 При создании машины выберите профиль — машина получит образ `node:22-bookworm-slim`, порты агентов и после первого запуска сама установит всё нужное (≈ 3 мин, прогресс — во вкладке «Агенты»):
 
-| Профиль | Агенты |
+| Профиль | Агенты | Установка | Ключ модели из «Секретов» |
+|---|---|---|---|
+| Claude Code | веб-терминал, Claude Code | npm `@anthropic-ai/claude-code` | Anthropic или DeepSeek |
+| OpenCode | веб-терминал, OpenCode (веб-интерфейс и TUI) | npm `opencode-ai` | DeepSeek, Anthropic, OpenAI, OpenRouter |
+| DeepSeek Harness | веб-терминал, `dsh web` | npm `@deepseek-ai/dsh` | DeepSeek |
+| Codex | веб-терминал, Codex CLI | npm `@openai/codex` | OpenAI (или вход через ChatGPT) |
+| Pi | веб-терминал, pi | npm `@earendil-works/pi-coding-agent` | DeepSeek, Anthropic, OpenAI |
+| Hermes | веб-терминал, Hermes Agent (Nous Research) | официальный установщик `hermes-agent.nousresearch.com/install.sh` (Python через uv, в `~/.hermes`) | DeepSeek, Anthropic, OpenRouter, OpenAI |
+| Все агенты | всё вышеперечисленное (8 ГиБ памяти) | | |
+
+К существующей машине агентов можно подключить во вкладке «Агенты» (нужен Debian-образ с Node.js 22.19+; машина перезапустится, чтобы опубликовать порты).
+
+**Вкладка «Агенты»**: «Запустить» поднимает агента и открывает его в новой вкладке браузера (без запроса пароля), «Открыть» — для уже работающего; флажок «автономно» запускает без подтверждений (Claude Code — `--dangerously-skip-permissions`, Codex — `--dangerously-bypass-approvals-and-sandbox`, Hermes — `--yolo`). «Задача без интерфейса» выполняет одну задачу с потоковым выводом:
+
+| Агент | Команда задачи |
 |---|---|
-| Claude Code | веб-терминал, Claude Code |
-| OpenCode | веб-терминал, OpenCode (веб-интерфейс и TUI) |
-| DeepSeek Harness | веб-терминал, `dsh web` |
-| Все агенты | всё вышеперечисленное |
+| Claude Code | `claude -p` (`--permission-mode acceptEdits`, или `--dangerously-skip-permissions` с «без подтверждений») |
+| OpenCode | `opencode run` |
+| DeepSeek Harness | `dsh headless` |
+| Codex | `codex exec --skip-git-repo-check --sandbox workspace-write` (или `--dangerously-bypass-approvals-and-sandbox`) |
+| Pi | `pi -p` |
+| Hermes | `hermes -z` (одноразовый режим, подтверждения пропускаются) |
 
-К существующей машине агентов можно подключить во вкладке «Агенты» (нужен Debian-образ с Node.js; машина перезапустится, чтобы опубликовать порты).
+Агенты работают в машине от пользователя `node` в `/work`.
 
-**Вкладка «Агенты»**: «Запустить» поднимает агента и открывает его в новой вкладке браузера (без запроса пароля), «Открыть» — для уже работающего; плюс «Задача без интерфейса» — `claude -p`, `opencode run`, `dsh headless` с потоковым выводом. Агенты работают в машине от пользователя `node` в `/work`.
+### Модели и ключи
 
-**Модели.** Привяжите к машине секрет DeepSeek (или Anthropic/OpenAI) в режиме «Шлюз» — smolvm-web сам выставит переменные каждому агенту, ключ в машину не попадает:
+Привяжите к машине секрет DeepSeek, Anthropic, OpenAI или OpenRouter в режиме «Шлюз» — smolvm-web сам выставит переменные и конфиги каждому агенту, ключ в машину не попадает (машина видит токен и адрес шлюза на хосте):
 
-| Агент | DeepSeek | Anthropic |
-|---|---|---|
-| Claude Code | `ANTHROPIC_BASE_URL=<шлюз>/anthropic`, `ANTHROPIC_AUTH_TOKEN`, модель `deepseek-flash` | `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY` |
-| OpenCode | провайдер `deepseek`, `baseURL={env:DEEPSEEK_BASE_URL}`, модель `deepseek/deepseek-flash` | провайдер `anthropic` |
-| DeepSeek Harness | `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL=<шлюз>/anthropic` | — |
+| Агент | Как подключается ключ |
+|---|---|
+| Claude Code | Anthropic: `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY`. DeepSeek: `ANTHROPIC_BASE_URL=<шлюз>/anthropic`, `ANTHROPIC_AUTH_TOKEN`, модель `deepseek-flash` |
+| OpenCode | `~/.config/opencode/opencode.json`: провайдеры с `baseURL={env:…_BASE_URL}`, модель по умолчанию `deepseek/deepseek-flash` |
+| DeepSeek Harness | `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL=<шлюз>/anthropic` |
+| Codex | `~/.codex/config.toml`: провайдер `smolvm` (`base_url=<шлюз>`, `env_key=OPENAI_API_KEY`, Responses API), `/work` помечен доверенным. Без ключа OpenAI — `codex login` в терминале (ChatGPT) |
+| Pi | `~/.pi/agent/models.json`: `baseUrl` встроенных провайдеров `deepseek`/`anthropic`/`openai` указывает на шлюз; `settings.json` → `defaultProvider` |
+| Hermes | переменные `DEEPSEEK_*`, `ANTHROPIC_*`, `OPENROUTER_*`, `OPENAI_*` (ключ и `_BASE_URL`), провайдер выбирается один раз: `hermes config set model.provider …` |
 
-Модель можно сменить в самом агенте (`/model` в Claude Code, выбор модели в opencode, настройки dsh).
+Конфиги пишутся при запуске агента, только если файла ещё нет или он создан smolvm-web (по метке): собственные настройки пользователя не перезаписываются. Модель можно сменить в самом агенте (`/model` в Claude Code и Pi, выбор модели в opencode, `hermes model`, `codex -m`).
 
-**Как это устроено.** Терминальные агенты (Claude Code, OpenCode TUI, bash) работают в [ttyd](https://github.com/tsl0922/ttyd) с паролем, OpenCode web — с `OPENCODE_SERVER_PASSWORD`, DeepSeek Harness — со своим одноразовым токеном (dsh слушает только loopback машины, поэтому рядом запускается ретранслятор). Порт машины публикуется на `127.0.0.1` хоста, а браузер ходит через прокси smolvm-web на соседнем порту (`<порт>+10000`): он подставляет пароль, пропускает WebSocket и отклоняет чужие `Host`/`Origin`. Напрямую опубликованный порт без пароля отвечает 401.
+### Серверы вендоров
 
-**За корпоративным прокси / с фильтром «Доступ в сеть»** установке нужны: `deb.debian.org`, `security.debian.org` (apt), `registry.npmjs.org` (npm), `github.com` и `*.githubusercontent.com` (ttyd), для OpenCode — `models.dev`. При создании машины с профилем и фильтром эти правила добавляются автоматически. Доступ к модели идёт через шлюз секретов на хосте, отдельно разрешать `api.deepseek.com` машине не нужно.
+У каждого агента есть адреса вендора, к которым он обращается напрямую — минуя шлюз секретов: вход по подписке или OAuth, API при ключе в режиме «Переменная», каталоги моделей, обновления.
+
+| Агент | Серверы вендора (порт 443) |
+|---|---|
+| Claude Code | `api.anthropic.com` (API), `claude.ai` (вход по подписке), `console.anthropic.com` (вход через Console) |
+| OpenCode | `opencode.ai` (Zen, вход, обновления), `models.dev` (каталог моделей) |
+| DeepSeek Harness | `api.deepseek.com` |
+| Codex | `api.openai.com` (API), `auth.openai.com` (вход), `chatgpt.com` (подписка ChatGPT) |
+| Pi | `pi.dev` (каталог моделей, `/login`, обновления) |
+| Hermes | `inference-api.nousresearch.com` (Nous Portal API), `portal.nousresearch.com` (вход), `hermes-agent.nousresearch.com` (обновления) |
+
+- **По умолчанию разрешены.** Для машины под фильтром «Доступ в сеть» серверы вендоров её агентов разрешены автоматически (в журнале — «сервер вендора: …»), на странице «Доступ в сеть» у машины видно «+ серверы вендоров: N». Подключили агента позже — его серверы добавятся сами.
+- **Отзыв вручную.** Вкладка «Агенты» → блок «Серверы вендоров» → «Отозвать»: фильтр сразу начинает блокировать адрес, без перезапуска машины. «Вернуть» снова разрешает. Каждое изменение записывается в аудит.
+- Отзыв действует только при включённом фильтре «Доступ в сеть» — без него машина ходит в интернет без ограничений (блок подсказывает и включает фильтр одной кнопкой). Для полной гарантии включите и «жёсткую изоляцию».
+- Если адрес вендора нужен, но вы его отозвали, а в списке правил он разрешён явно — действует разрешение из списка: отзыв убирает только правило вендора.
+
+### Устройство
+
+Терминальные агенты (Claude Code, OpenCode TUI, Codex, Pi, Hermes, bash) работают в [ttyd](https://github.com/tsl0922/ttyd) с паролем, OpenCode web — с `OPENCODE_SERVER_PASSWORD`, DeepSeek Harness — со своим одноразовым токеном (dsh слушает только loopback машины, поэтому рядом запускается ретранслятор). Порт машины публикуется на `127.0.0.1` хоста, а браузер ходит через прокси smolvm-web на соседнем порту (`<порт>+10000`): он подставляет пароль, пропускает WebSocket и отклоняет чужие `Host`/`Origin`. Напрямую опубликованный порт без пароля отвечает 401.
+
+**За корпоративным прокси / с фильтром «Доступ в сеть»** установке нужны: `deb.debian.org`, `security.debian.org` (apt), `registry.npmjs.org` (npm), `github.com` и `*.githubusercontent.com` (ttyd), для Hermes — ещё `hermes-agent.nousresearch.com`, `hermes-assets.nousresearch.com`, `pypi.org`, `files.pythonhosted.org`. При создании машины с профилем и фильтром эти правила добавляются автоматически. Доступ к модели по ключу из «Секретов» идёт через шлюз на хосте, отдельно разрешать API провайдера машине не нужно.
 
 ## Страховка для агентов
 

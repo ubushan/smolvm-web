@@ -1586,9 +1586,9 @@ async function changeSecrets(m, add, remove) {
 let createProfile = null;
 let profilesCache = null;
 // Profile/agent/provider marks: brand glyphs from the sprite, or a text fallback.
-const MARK_ICON = { claude: 'b-claude', dsh: 'b-deepseek', deepseek: 'b-deepseek', opencode: 'b-opencode', openai: 'b-openai',
+const MARK_ICON = { claude: 'b-claude', dsh: 'b-deepseek', deepseek: 'b-deepseek', opencode: 'b-opencode', openai: 'b-openai', codex: 'b-openai',
   gemini: 'b-gemini', openrouter: 'b-openrouter', github: 'b-github', term: 'i-terminal', blank: 'i-plus', all: 'i-bot', key: 'i-key' };
-const MARK_TEXT = { sf: '{ }' };
+const MARK_TEXT = { sf: '{ }', pi: 'π', hermes: '☤' };
 const SMOLFILE = '__smolfile';
 function mark(m, small) {
   const el = h('span', { class: `mark m-${m}${small ? ' sm' : ''}` });
@@ -1636,12 +1636,18 @@ async function fillCreateProfiles() {
     if (p && (!f.name.value || /^vm-/.test(f.name.placeholder))) f.name.placeholder = `${p.id}-${Math.random().toString(36).slice(2, 5)}`;
     const hint = $('#create-profile-hint');
     hint.hidden = !p;
-    if (p) hint.textContent = `Агенты: ${p.agents.map((a) => a.title).join(', ')}. Установка — автоматически после первого запуска (~2–3 мин). Для доступа к моделям отметьте секрет DeepSeek или Anthropic ниже (режим «Шлюз»).`;
+    const KEY_NAMES = { deepseek: 'DeepSeek', anthropic: 'Anthropic', openai: 'OpenAI', openrouter: 'OpenRouter' };
+    if (p) hint.textContent = `Агенты: ${p.agents.map((a) => a.title).join(', ')}. Установка — автоматически после первого запуска (~2–3 мин). `
+      + `Для доступа к моделям отметьте секрет ${p.keys.map((k) => KEY_NAMES[k] || k).join(' / ')} ниже (режим «Шлюз»). `
+      + `Серверы вендора (${p.vendor.map((v) => v.host).join(', ')}) с фильтром «Доступ в сеть» разрешены по умолчанию — отозвать их можно во вкладке «Агенты».`;
     // Suggest the matching provider secrets.
-    if (p) document.querySelectorAll('#create-secrets input').forEach((i) => {
-      const x = vaultCache.find((v) => v.name === i.value);
-      if (x && x.mode !== 'substitute' && /deepseek|anthropic/i.test(`${x.upstream} ${x.envVar}`)) i.checked = true;
-    });
+    if (p && p.keys.length) {
+      const re = new RegExp(p.keys.join('|'), 'i');
+      document.querySelectorAll('#create-secrets input').forEach((i) => {
+        const x = vaultCache.find((v) => v.name === i.value);
+        if (x && x.mode !== 'substitute' && re.test(`${x.upstream} ${x.envVar}`)) i.checked = true;
+      });
+    }
   };
   box.replaceChildren(
     h('button', { type: 'button', class: 'profile', onclick: () => pick(null) }, mark('blank'),
@@ -1681,6 +1687,9 @@ function goAgent(w, url) {
 async function tabAgents(body, m) {
   const head = h('div', { class: 'col', style: 'display:flex;flex-direction:column;gap:14px' });
   const taskBox = h('div');
+  // Snapshot before an agent run (remembered per browser).
+  const snapBefore = h('input', { type: 'checkbox', checked: localStorage.getItem('smolvm.snapBefore') !== '0' });
+  snapBefore.addEventListener('change', () => localStorage.setItem('smolvm.snapBefore', snapBefore.checked ? '1' : '0'));
   // Sub-sections: the agents themselves, and one-shot headless tasks.
   let sub = localStorage.getItem('smolvm.agentsSub') === 'task' ? 'task' : 'agents';
   const subBtn = (id, icon, label) => h('button', { class: `tab ${sub === id ? 'active' : ''}`, 'data-sub': id, onclick: () => {
@@ -1698,9 +1707,6 @@ async function tabAgents(body, m) {
   let st = null;
   let lastSig = '';
   tabCleanup = () => { alive = false; clearTimeout(timer); };
-  // Snapshot before an agent run (remembered per browser).
-  const snapBefore = h('input', { type: 'checkbox', checked: localStorage.getItem('smolvm.snapBefore') !== '0' });
-  snapBefore.addEventListener('change', () => localStorage.setItem('smolvm.snapBefore', snapBefore.checked ? '1' : '0'));
   const reportSnap = (sn) => {
     if (!sn) return;
     if (sn.ok) toast(`${m.name}: снимок перед запуском сделан — откат во вкладке «Снимки»`, 'ok');
@@ -1749,7 +1755,7 @@ async function tabAgents(body, m) {
     // Install state
     const job = st.job;
     if (job?.status === 'running' || job?.status === 'error' || !st.installed) {
-      const STEPS = ['Системные пакеты', 'Пользователь', 'Веб-терминал ttyd', 'npm', 'Проверка', 'Готово'];
+      const STEPS = ['Системные пакеты', 'Пользователь', 'Веб-терминал ttyd', 'npm', 'Hermes Agent', 'Проверка', 'Готово'].filter((x) => x !== 'Hermes Agent' || st.agents.some((a) => a.id === 'hermes'));
       const cur = STEPS.findIndex((x) => (job?.step || '').startsWith(x));
       const term = h('div', { class: 'term' });
       term.textContent = job?.log || '';
@@ -1771,12 +1777,12 @@ async function tabAgents(body, m) {
         running ? h('button', { class: 'btn', onclick: async () => { await actions.stop(m); await actions.start({ ...m }); refresh(); } }, 'Перезапустить') : null));
     }
     if (!st.providers?.providers?.length) {
-      nodes.push(h('div', { class: 'notice' }, 'К машине не привязан ключ модели. Добавьте DeepSeek или Anthropic в «Секреты» (режим «Шлюз») и привяжите на вкладке «Обзор» — агенты подхватят его при следующем запуске.'));
+      nodes.push(h('div', { class: 'notice' }, 'К машине не привязан ключ модели. Добавьте ключ DeepSeek, Anthropic или OpenAI в «Секреты» (режим «Шлюз») и привяжите на вкладке «Обзор» — агенты подхватят его при следующем запуске. Без ключа агент может войти напрямую через сервер вендора (подписка, OAuth), если этот сервер не отозван.'));
     }
 
     nodes.push(h('div', { class: 'agents' }, st.agents.map((a) => {
       const can = running && a.installed && a.portReady;
-      const auto = a.id === 'claude' ? h('input', { type: 'checkbox', title: 'Без подтверждений: --dangerously-skip-permissions (машина — песочница)' }) : null;
+      const auto = a.autonomous ? h('input', { type: 'checkbox', title: 'Без подтверждений действий агента (машина — песочница)' }) : null;
       const startBtn = h('button', { class: 'btn primary', disabled: !can, title: 'Запустить и открыть в новой вкладке', onclick: async () => {
         const w = agentTab();
         startBtn.disabled = true; startBtn.textContent = 'Запуск…';
@@ -1806,14 +1812,48 @@ async function tabAgents(body, m) {
             : startBtn,
           auto ? h('label', { class: 'check small', title: auto.title }, auto, 'автономно') : null));
     })));
+    if (st.vendor?.length) nodes.push(vendorCard());
     head.replaceChildren(...nodes);
+  }
+
+  // Vendor servers of the agents: allowed by default, revocable one by one.
+  function vendorCard() {
+    const toggle = async (v, allowed) => {
+      try {
+        const r = await api('PUT', `/ui/machines/${enc(m.name)}/agents/vendor`, { host: v.host, allowed });
+        st.vendor = r.vendor; st.filter = r.filter;
+        toast(`${v.host}: ${allowed ? 'доступ возвращён' : 'доступ отозван'}${r.filter.enabled ? '' : ' (подействует, когда включите фильтр «Доступ в сеть»)'}`, allowed ? 'ok' : '');
+      } catch (e) { toast(e.message, 'err'); }
+      lastSig = ''; refresh();
+    };
+    const enableFilter = async () => {
+      try { await api('PUT', `/ui/egress/machines/${enc(m.name)}`, { enabled: true }); toast(`${m.name}: фильтр «Доступ в сеть» включён`, 'ok'); }
+      catch (e) { toast(e.message, 'err'); }
+      lastSig = ''; refresh();
+    };
+    return h('section', { class: 'card' },
+      h('div', { class: 'card-head' }, h('h3', {}, 'Серверы вендоров'), h('span', { class: 'spacer' }),
+        st.filter.enabled ? h('span', { class: 'tag ok' }, 'фильтр включён') : h('span', { class: 'tag warn' }, 'фильтр выключен')),
+      h('p', { class: 'muted small' }, 'Адреса, к которым агенты обращаются напрямую: API вендора, вход по подписке или OAuth, каталоги моделей. По умолчанию они разрешены. «Отозвать» сразу запрещает адрес в фильтре «Доступ в сеть», «Вернуть» снова разрешает. Запросы к моделям через ключ из «Секретов» идут через шлюз на хосте и от этих адресов не зависят.'),
+      st.filter.enabled ? null : h('div', { class: 'notice' }, 'Без фильтра «Доступ в сеть» машина ходит в интернет без ограничений, и отзыв не действует. ',
+        h('button', { class: 'btn', onclick: enableFilter }, 'Включить фильтр')),
+      h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
+        h('tr', {}, h('th', {}, 'Адрес'), h('th', {}, 'Зачем'), h('th', {}, 'Агенты'), h('th', {}, 'Доступ'), h('th', {}, '')),
+        st.vendor.map((v) => h('tr', { class: v.revoked ? 'revoked' : '' },
+          h('td', { class: 'mono' }, `${v.host}:${v.ports}`),
+          h('td', { class: 'small' }, v.purpose),
+          h('td', { class: 'small muted' }, v.agents.join(', ')),
+          h('td', {}, v.revoked ? h('span', { class: 'tag bad' }, 'отозван') : h('span', { class: `tag ${st.filter.enabled ? 'ok' : ''}` }, 'разрешён')),
+          h('td', {}, v.revoked
+            ? h('button', { class: 'btn', onclick: () => toggle(v, true) }, 'Вернуть')
+            : h('button', { class: 'btn ghost danger', onclick: () => toggle(v, false) }, 'Отозвать')))))));
   }
 
   function renderTask() {
     const withTask = st.agents.filter((a) => a.task && a.installed);
     if (!withTask.length) {
       taskBox.replaceChildren(h('div', { class: 'block' }, h('div', { class: 'muted small' }, st.agents.length
-        ? 'Задачи выполняют Claude Code, OpenCode и DeepSeek Harness — дождитесь их установки (подраздел «Агенты»).'
+        ? 'Задачи выполняют Claude Code, OpenCode, DeepSeek Harness, Codex, Pi и Hermes — дождитесь их установки (подраздел «Агенты»).'
         : 'Подключите агентов в подразделе «Агенты» — после установки здесь можно давать им задачи без интерфейса.')));
       return;
     }
@@ -1850,7 +1890,7 @@ async function tabAgents(body, m) {
     taskBox.replaceChildren(h('section', { class: 'card task' },
       h('div', { class: 'card-head' }, h('h3', {}, 'Задача без интерфейса'), h('span', { class: 'muted small' }, 'агент выполнит её в /work и вернёт результат сюда; окно агента не открывается')),
       prompt,
-      h('div', { class: 'row' }, sel, h('label', { class: 'check small', title: 'Claude Code: --dangerously-skip-permissions; остальные агенты не спрашивают подтверждений' }, auto, 'без подтверждений'), h('span', { class: 'spacer' }), h('span', { class: 'muted small' }, '⌘/Ctrl+Enter'), run),
+      h('div', { class: 'row' }, sel, h('label', { class: 'check small', title: 'Claude Code: --dangerously-skip-permissions; Codex: --dangerously-bypass-approvals-and-sandbox (без флага — --sandbox workspace-write). OpenCode, DeepSeek Harness, Pi и Hermes (-z) в режиме задачи не спрашивают подтверждений' }, auto, 'без подтверждений'), h('span', { class: 'spacer' }), h('span', { class: 'muted small' }, '⌘/Ctrl+Enter'), run),
       out));
   }
 

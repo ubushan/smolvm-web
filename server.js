@@ -157,6 +157,7 @@ const AUDIT_LABELS = [
   [/^DELETE \/ui\/machines\/[^/]+\/snapshots\//, 'удаление снимка'],
   [/^PUT \/ui\/machines\/[^/]+\/snapshots\/settings$/, 'снимки: настройки'],
   [/^POST \/ui\/egress\/machines\/[^/]+\/learn\/finish$/, 'обучение: список создан'],
+  [/^PUT \/ui\/machines\/[^/]+\/agents\/vendor$/, 'сервер вендора: разрешён/отозван'],
   [/^PUT \/ui\/vault\//, 'секрет: сохранён'],
   [/^DELETE \/ui\/vault\//, 'секрет: удалён'],
   [/^PUT \/ui\/machines\/[^/]+\/secrets$/, 'секреты машины'],
@@ -587,6 +588,16 @@ const UI = [
     await agents.declare(name, ids);
     const st = await machineState(name);
     sendJson(res, 200, { restartNeeded: st === 'running', ...(await agents.status(name)) });
+  }],
+  // Allow or revoke a vendor server of the machine's agents (egress filter rule, live).
+  ['PUT', new RegExp(`${AG}/vendor$`), async (req, res, m) => {
+    const name = decodeURIComponent(m[1]);
+    const { host, allowed } = await readJson(req);
+    try {
+      const vendor = agents.setVendor(name, String(host || ''), !!allowed);
+      res.auditDetail = { host, allowed: !!allowed };
+      sendJson(res, 200, { vendor, filter: { enabled: !!egress.getMachine(name)?.enabled } });
+    } catch (e) { sendJson(res, 400, { error: e.message }); }
   }],
   ['POST', new RegExp(`${AG}/install$`), async (req, res, m) => {
     const name = decodeURIComponent(m[1]);
