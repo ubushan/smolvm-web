@@ -19,7 +19,7 @@ cd smolvm-web
 
 ### Что переносить
 
-Только код: `server.js`, `lib\`, `public\`, `package.json`, `start.cmd`, `start.sh`, `README.md`, `INSTALL.md`. Зависимостей нет — `npm install` не нужен.
+Только код: `server.js`, `lib\`, `public\`, `package.json`, `start.cmd`, `start.sh`, `README.md`, `INSTALL.md`, `documentation.md`. Зависимостей нет — `npm install` не нужен.
 
 **Не переносить:**
 

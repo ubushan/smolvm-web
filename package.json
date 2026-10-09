@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "private": true,
   "bin": { "smolvm-web": "server.js" },
-  "files": ["server.js", "lib", "public", "start.cmd", "start.sh", "INSTALL.md"],
+  "files": ["server.js", "lib", "public", "start.cmd", "start.sh", "INSTALL.md", "documentation.md"],
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js --autostart"
