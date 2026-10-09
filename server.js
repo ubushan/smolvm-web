@@ -220,6 +220,28 @@ function explainPullForbidden(name, message) {
   return { code: 'PULL_FORBIDDEN', hint: `Скачивание образа остановил прокси: доступ к ${host} запрещён. ${hint}`, repairable: false };
 }
 
+// The in-guest pull could not reach Docker Hub (no direct internet, blocked, rate limit).
+// An image is fixed when the machine is created, so a machine created before the
+// corporate registry was configured keeps pulling from Docker Hub.
+function explainPullDockerHub(name, message) {
+  const msg = String(message || '');
+  if (!/pull image|crane manifest/i.test(msg)) return null;
+  const m = msg.match(/fetching manifest ((?:docker\.io|index\.docker\.io|registry-1\.docker\.io)\/\S+?):\s/i)
+    || (/(index|registry-1)\.docker\.io/i.test(msg) ? [null, ''] : null);
+  if (!m) return null;
+  const image = m[1];
+  const corp = image ? repos.rewriteImage(image) : '';
+  let hint;
+  if (corp && corp !== image) {
+    hint = `Машина ${name} создана до настройки корпоративного реестра и по-прежнему ссылается на Docker Hub (${image}): образ машины задаётся при создании, а smolvm не умеет менять его у существующей машины. Создайте машину заново (тот же профиль или образ) — образ будет взят из ${corp}. Если ${name} ещё ни разу не запускалась, в ней ничего нет, её можно удалить.`;
+  } else if (cfg.getSettings().repos.registry) {
+    hint = 'Корпоративный реестр настроен, но галочка «Брать образы Docker Hub из этого реестра» выключена — включите её в «Настройки» → «Корпоративные репозитории» и создайте машину заново.';
+  } else {
+    hint = 'Прямого доступа к Docker Hub нет. Включите корпоративный прокси («Настройки» → «Сеть, прокси и сертификаты») или укажите корпоративный реестр (JFrog/Nexus) в «Настройки» → «Корпоративные репозитории» и создайте машину заново.';
+  }
+  return { code: 'PULL_DOCKERHUB', hint: `Не удалось скачать образ с Docker Hub. ${hint}`, repairable: false };
+}
+
 // The in-guest image pull met a TLS-inspecting proxy whose root it does not trust.
 function explainPullCert(name, message) {
   if (!/x509: certificate signed by unknown authority|tls: failed to verify certificate/i.test(String(message || ''))) return null;
@@ -274,7 +296,7 @@ async function startMachineInner(name, { apiPath, body = {}, branchable = false 
     }
   } catch (e) {
     // Windows: a rootfs extracted without symlinks fails every boot; say what to do.
-    const why = winhost.explainBootError(e.body?.error || e.message) || explainPullCert(name, e.body?.error || e.message) || explainPullForbidden(name, e.body?.error || e.message);
+    const why = winhost.explainBootError(e.body?.error || e.message) || explainPullCert(name, e.body?.error || e.message) || explainPullForbidden(name, e.body?.error || e.message) || explainPullDockerHub(name, e.body?.error || e.message);
     if (why) throw Object.assign(fail(e.status || 500, `${viaCli ? 'запуск через smolvm CLI' : 'запуск'}: ${e.body?.error || e.message}\n\n${why.hint}`, why.code), { body: null, repairable: why.repairable });
     if (e.body) throw e;
     throw fail(e.status || 500, `${viaCli ? 'запуск через smolvm CLI' : 'запуск'}: ${e.message}`, 'START_FAILED');
