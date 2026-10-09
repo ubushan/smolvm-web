@@ -1,6 +1,7 @@
 'use strict';
-// Page «Аудит»: who did what to which machine, file changes in rw folders,
-// export to SIEM (syslog / HTTP JSON) and alerts on bursts of blocked attempts.
+// Page «Аудит»: who did what to which machine, file changes in rw folders.
+// Export to SIEM (syslog / HTTP JSON) and alerts on bursts of blocked attempts
+// live in the settings window, section «Аудит и SIEM» (window.auditSettingsCards).
 
 (() => {
   let root = null;
@@ -127,9 +128,12 @@
             h('li', {}, 'Команды, которые агент выполняет внутри машины сам (без exec через smolvm-web), сюда не попадают: smolvm их не сообщает. Их след — сетевой журнал и изменения файлов.'))),
         h('span', { class: 'spacer' }), h('a', { class: 'btn ghost', href: '#/log' }, 'Сетевой журнал →'))),
       h('section', { class: 'card', id: 'audit-log' }, h('p', { class: 'muted' }, 'Загрузка…')),
-      ...(await settingsCards()));
+      h('p', { class: 'muted small' }, 'Экспорт в SIEM и оповещения о всплесках блокировок — в ',
+        h('a', { href: '#', onclick: (e) => { e.preventDefault(); openSettings('audit'); } }, '«Настройки» → «Аудит и SIEM»'), '.'));
     renderLog();
   }
+
+  window.auditSettingsCards = settingsCards;
 
   pages.audit = {
     render(el, p) {

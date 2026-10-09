@@ -237,6 +237,7 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
           <button type="button" data-pane="ca"><svg class="ic"><use href="#i-shield"/></svg>Сертификаты</button>
           <button type="button" data-pane="repos"><svg class="ic"><use href="#i-box"/></svg>Репозитории</button>
           <button type="button" data-pane="secrets"><svg class="ic"><use href="#i-key"/></svg>Секреты</button>
+          <button type="button" data-pane="audit"><svg class="ic"><use href="#i-list"/></svg>Аудит и SIEM</button>
         </nav>
         <div class="settings-main">
           <form id="form-settings" method="dialog">
@@ -308,6 +309,10 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
 
           </section>
           </form>
+          <section class="settings-pane" data-pane="audit" hidden>
+            <div class="pane-head"><h4>Аудит и SIEM</h4><p class="muted small">Отправка журнала действий и сетевых событий в SIEM, оповещения о всплесках заблокированных соединений (попытки вывести данные). Сохраняются кнопками в карточках. Сам журнал — на странице «Аудит».</p></div>
+            <div id="audit-settings"></div>
+          </section>
           <section class="settings-pane" data-pane="secrets" hidden>
             <div class="pane-head"><h4>Секреты</h4><p class="muted small">Зашифрованное хранилище API-ключей и токенов. Сохраняются сразу, кнопкой «Сохранить секрет».</p></div>
                 <div id="vault-status" class="small muted"></div>

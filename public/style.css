@@ -550,3 +550,7 @@ pre.diff .d-c { color: #a1a1aa; }
   #proxy-chip { display: none; }
   .topbar { gap: 8px; padding: 8px 12px; }
 }
+#audit-settings { display: flex; flex-direction: column; gap: 14px; }
+#audit-settings .card { margin: 0; box-shadow: none; }
+/* Tab content never squeezes its blocks (the parameters grid got clipped under the cards): the tab scrolls instead. */
+.tab-body > *, .settings-main > *, .settings-pane > *, .page > * { flex-shrink: 0; }

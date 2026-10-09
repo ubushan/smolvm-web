@@ -1398,18 +1398,21 @@ async function refreshInfo() {
 }
 
 // One settings window with a sidebar: proxy, certificates, repositories, secrets, smolvm.
-const SETTINGS_PANES = ['smolvm', 'proxy', 'ca', 'repos', 'secrets'];
+const SETTINGS_PANES = ['smolvm', 'proxy', 'ca', 'repos', 'secrets', 'audit'];
 function showSettingsPane(pane) {
   if (!SETTINGS_PANES.includes(pane)) pane = 'smolvm';
   document.querySelectorAll('#dlg-settings .settings-pane').forEach((el) => { el.hidden = el.dataset.pane !== pane; });
   document.querySelectorAll('#settings-nav button').forEach((b) => b.classList.toggle('active', b.dataset.pane === pane));
   // Secrets are saved one by one in their own form; the footer saves the rest.
   const footer = $('#settings-footer');
-  footer.querySelector('[type=submit]').hidden = pane === 'secrets';
-  footer.querySelector('.footer-note').hidden = pane === 'secrets';
+  // Secrets and audit/SIEM are saved by their own buttons.
+  const own = pane === 'secrets' || pane === 'audit';
+  footer.querySelector('[type=submit]').hidden = own;
+  footer.querySelector('.footer-note').hidden = own;
   try { localStorage.setItem('smolvm.settingsPane', pane); } catch {}
   if (pane === 'secrets') { $('#form-secret').hidden = true; renderVault(); }
   if (pane === 'smolvm') renderVirtInfo();
+  if (pane === 'audit' && window.auditSettingsCards) window.auditSettingsCards().then((cards) => fill($('#audit-settings'), ...cards));
   $('.settings-main').scrollTop = 0;
 }
 $('#settings-nav').addEventListener('click', (e) => { const b = e.target.closest('button[data-pane]'); if (b) showSettingsPane(b.dataset.pane); });
