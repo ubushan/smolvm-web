@@ -96,7 +96,7 @@ function toast(msg, kind = '', ms) {
 class ApiError extends Error {
   constructor(status, body) {
     super(body?.error || `HTTP ${status}`);
-    this.status = status; this.code = body?.code;
+    this.status = status; this.code = body?.code; this.repairable = body?.repairable;
   }
 }
 
@@ -303,13 +303,44 @@ async function action(name, label, fn, okMsg) {
     if (okMsg) toast(okMsg, 'ok');
     return r;
   } catch (e) {
-    toast(`${name}: ${e.message}`, 'err');
+    if (e.code === 'ROOTFS_BROKEN') rootfsToast(name, e);
+    else toast(`${name}: ${e.message}`, 'err');
     throw e;
   } finally {
     state.busy.delete(name);
     await refreshMachines();
     if ($('#detail').dataset.name === name && state.tab === 'overview') renderTab();
   }
+}
+
+// Windows: smolvm's agent rootfs was extracted without symlinks. Offer the repair.
+async function repairRootfs() {
+  try {
+    const r = await api('POST', '/ui/host/repair-rootfs', {});
+    toast(r.removed.length ? `Испорченная распаковка rootfs удалена (${r.removed.length}). Запустите машину снова — smolvm распакует rootfs заново.` : 'Испорченных распаковок rootfs не найдено.', 'ok', 10000);
+  } catch (e) { toast(e.message, 'err', 15000); }
+  await refreshInfo();
+  renderHostWarning();
+}
+function rootfsToast(name, e) {
+  toast(h('div', {}, h('div', { style: 'white-space:pre-wrap' }, `${name}: ${e.message}`),
+    h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn primary', onclick: repairRootfs }, 'Починить'))), 'err', 60000);
+}
+// A banner above the machines while the host cannot boot machines.
+function renderHostWarning() {
+  const box = $('#host-warning');
+  const w = state.info?.winHost;
+  if (!box) return;
+  if (!w?.windows || (w.symlinks !== false && !w.broken?.length)) { box.hidden = true; box.replaceChildren(); return; }
+  box.hidden = false;
+  box.replaceChildren(
+    h('div', {}, h('b', {}, 'smolvm не сможет загрузить машины. '),
+      w.broken?.length
+        ? `Его агентский rootfs распакован без символических ссылок (нет /sbin/init) — ошибка «boot process exited (code 127)». `
+        : 'У smolvm-web нет права создавать символические ссылки, поэтому smolvm распакует свой rootfs без них и машины не загрузятся. ',
+      w.symlinks === false ? 'Включите «Режим разработчика» (Параметры → Система → Для разработчиков) или запустите smolvm-web от администратора' : '',
+      w.symlinks === false && w.broken?.length ? ', затем нажмите «Починить».' : w.broken?.length ? 'Нажмите «Починить» — распаковка будет удалена, smolvm сделает её заново.' : '.'),
+    w.broken?.length ? h('button', { class: 'btn primary', onclick: repairRootfs }, 'Починить') : null);
 }
 
 const actions = {
@@ -1291,6 +1322,7 @@ function showText(title, text) {
 // ---------- platform & proxy settings ----------
 async function refreshInfo() {
   try { state.info = await api('GET', '/ui/info'); } catch { return; }
+  renderHostWarning();
   const chip = $('#proxy-chip');
   const i = state.info;
   chip.hidden = false;

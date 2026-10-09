@@ -28,6 +28,7 @@ const review = require('./lib/review');
 const snapshots = require('./lib/snapshots');
 const audit = require('./lib/audit');
 const egress = require('./lib/egress');
+const winhost = require('./lib/winhost');
 egress.onLog((e) => audit.onNet(e));
 const dirs = require('./lib/dirs');
 
@@ -164,6 +165,7 @@ const AUDIT_LABELS = [
   [/^(PUT|POST|DELETE) \/ui\/egress/, 'доступ в сеть: изменение'],
   [/^(PUT|POST|DELETE) \/ui\/dirs/, 'директории: изменение'],
   [/^PUT \/ui\/settings$/, 'настройки прокси/сертификатов'],
+  [/^POST \/ui\/host\/repair-rootfs$/, 'починка rootfs smolvm (Windows)'],
   [/^PUT \/ui\/audit\/settings$/, 'настройки аудита'],
 ];
 
@@ -238,6 +240,9 @@ async function startMachineInner(name, { apiPath, body = {}, branchable = false 
       info = r.data;
     }
   } catch (e) {
+    // Windows: a rootfs extracted without symlinks fails every boot; say what to do.
+    const why = winhost.explainBootError(e.body?.error || e.message);
+    if (why) throw Object.assign(fail(e.status || 500, `${viaCli ? 'запуск через smolvm CLI' : 'запуск'}: ${e.body?.error || e.message}\n\n${why.hint}`, why.code), { body: null, repairable: why.repairable });
     if (e.body) throw e;
     throw fail(e.status || 500, `${viaCli ? 'запуск через smolvm CLI' : 'запуск'}: ${e.message}`, 'START_FAILED');
   }
@@ -422,7 +427,7 @@ const ROUTES = [
     const body = raw.length ? JSON.parse(raw.toString('utf8') || '{}') || {} : {};
     const branchable = url.searchParams.get('branchable') === 'true' || url.searchParams.get('forkable') === 'true';
     try { sendJson(res, 200, await startMachine(name, { apiPath: req.url, body, branchable })); }
-    catch (e) { sendJson(res, e.status || 500, e.body || { error: e.message, code: e.code || 'START_FAILED' }); }
+    catch (e) { sendJson(res, e.status || 500, e.body || { error: e.message, code: e.code || 'START_FAILED', ...(e.repairable != null ? { repairable: e.repairable } : {}) }); }
   }],
 
   // Exec: inject proxy (and CA, once provisioned) env; explicit env wins.
@@ -666,8 +671,14 @@ const UI = [
       caActive: !!s.ca.enabled,
       guestProxy: g,
       egress: { ...egress.status(), defaults: egress.defaults() },
+      winHost: winhost.status(),
       dirsStrict: dirs.strict(),
     });
+  }],
+  // Windows: delete agent rootfs extractions smolvm left without symlinks (no /sbin/init).
+  ['POST', /^\/ui\/host\/repair-rootfs$/, (req, res) => {
+    try { const r = winhost.repair(); res.auditDetail = { removed: r.removed }; sendJson(res, 200, { ...r, status: winhost.status() }); }
+    catch (e) { sendJson(res, e.status || 500, { error: e.message }); }
   }],
   ['GET', /^\/ui\/settings$/, (req, res) => sendJson(res, 200, publicSettings())],
   ['PUT', /^\/ui\/settings$/, async (req, res) => {
@@ -860,7 +871,7 @@ const UI = [
       if (r.status !== 200) return sendJson(res, r.status, r.data);
     }
     try { sendJson(res, 200, await startMachine(name, { apiPath: `/api/v1/machines/${encodeURIComponent(name)}/start` })); }
-    catch (e) { sendJson(res, e.status || 500, e.body || { error: e.message, code: e.code || 'START_FAILED' }); }
+    catch (e) { sendJson(res, e.status || 500, e.body || { error: e.message, code: e.code || 'START_FAILED', ...(e.repairable != null ? { repairable: e.repairable } : {}) }); }
   }],
 ];
 
@@ -993,6 +1004,11 @@ function portBusy(why) {
 server.listen(PORT, HOST, () => {
   console.log(`smolvm-web: http://${HOST === '0.0.0.0' ? '127.0.0.1' : HOST}:${PORT}`);
   console.log(`настройки: ${cfg.DIR}`);
+  if (winhost.IS_WIN) {
+    const wh = winhost.status();
+    if (wh.symlinks === false) console.log('ВНИМАНИЕ: нет права создавать символические ссылки. smolvm распакует свой rootfs без них, и машины не загрузятся (/sbin/init: ENOENT). Включите «Режим разработчика» или запускайте от администратора.');
+    if (wh.broken.length) console.log(`ВНИМАНИЕ: rootfs smolvm распакован без символических ссылок: ${wh.broken.join(', ')}. Машины не загрузятся — нажмите «Починить» в интерфейсе.`);
+  }
   maybeAutostart();
   vault.list().then(async (list) => {
     if (list.some((x) => x.mode === 'gateway')) {

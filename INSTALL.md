@@ -129,7 +129,7 @@ schtasks /Create /TN "smolvm-web" /SC ONLOGON /RL HIGHEST /TR "C:\smolvm-web\sta
 | Симптом | Решение |
 |---|---|
 | `smolvm.exe not found in PATH` | Новое окно PowerShell после изменения PATH, или `set SMOLVM_BIN=C:\smolvm\smolvm-<v>-windows-x86_64\smolvm.exe` перед `start.cmd` |
-| `boot process exited (code 127)` | Режим разработчика / запуск от администратора (symlink) |
+| `boot process exited (code 127)`, в консоли гостя `Couldn't execute '/sbin/init': ENOENT` | smolvm распаковал свой rootfs (`%LOCALAPPDATA%\smolvm\rootfs\<ключ>`) без символических ссылок: у процесса не было права на symlink. smolvm запоминает распаковку как готовую, поэтому ошибка остаётся и после выдачи прав. Включите «Режим разработчика» (или запускайте от администратора), перезапустите smolvm-web и нажмите **«Починить»** в баннере/уведомлении — испорченная распаковка удалится, smolvm распакует rootfs заново. Вручную: удалите папку `%LOCALAPPDATA%\smolvm\rootfs`. С галочкой «Через корпоративный прокси» ошибка просто заметнее — машина стартует через `smolvm machine start`. |
 | Машина не скачивает образ | Включите прокси в ⚙; машины за прокси стартуют через `smolvm machine start --proxy` |
 | «Хранилище существует, но ключ не найден» | Хранилище перенесли с другого компьютера или запустили под другим пользователем — удалите `%APPDATA%\smolvm-web\vault.enc.json` и введите секреты заново |
 | Место на диске | Данные smolvm — `%LOCALAPPDATA%\smolvm` (переместить нельзя), могут занимать десятки ГБ; удаляйте ненужные машины |
