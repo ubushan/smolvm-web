@@ -1165,6 +1165,32 @@ async function tabEgress(body, m) {
 }
 
 // ---------- create ----------
+// Same rule as the server (lib/repos.js): Docker Hub images through the corporate registry.
+function effectiveImage(image) {
+  const prefix = state.info?.imagePrefix;
+  let ref = String(image || '').trim();
+  if (!prefix || !ref) return ref;
+  const first = ref.includes('/') ? ref.split('/')[0] : '';
+  if (first && (first.includes('.') || first.includes(':') || first === 'localhost')) {
+    if (!/^(docker\.io|index\.docker\.io|registry-1\.docker\.io)$/i.test(first)) return ref;
+    ref = ref.slice(first.length + 1);
+  }
+  if (!ref.includes('/')) ref = `library/${ref}`;
+  return `${prefix}/${ref}`;
+}
+
+function syncImageHint() {
+  const f = $('#form-create');
+  const el = $('#create-image-hint');
+  const img = f.image.value.trim();
+  const eff = effectiveImage(img);
+  // Quiet unless corporate repositories are in use.
+  el.hidden = !img || !(state.info?.imagePrefix || state.info?.reposActive);
+  if (eff !== img) el.textContent = `Образ будет скачан из корпоративного реестра: ${eff}`;
+  else if (state.info?.imagePrefix) el.textContent = 'Образ не из Docker Hub — скачивается как указан.';
+  else el.textContent = 'Реестр образов не задан (или выключено «Брать образы Docker Hub из этого реестра»): образ скачивается с Docker Hub напрямую. «Настройки» → «Корпоративные репозитории».';
+}
+
 function openCreate() {
   const f = $('#form-create');
   $('#create-error').hidden = true;
@@ -1173,9 +1199,12 @@ function openCreate() {
   fillCreateProfiles();
   fillCreateSecrets();
   fillCreateIsolation();
+  syncImageHint();
+  refreshInfo().then(syncImageHint);
   $('#dlg-create').showModal();
   f.name.focus();
 }
+$('#form-create').image.addEventListener('input', syncImageHint);
 window.openCreate = openCreate;
 $('#btn-create').addEventListener('click', openCreate);
 document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => b.closest('dialog').close()));
@@ -1724,6 +1753,7 @@ async function fillCreateProfiles() {
       return;
     }
     f.image.value = p ? p.image : 'alpine';
+    syncImageHint();
     f.memoryMb.placeholder = p ? String(p.memoryMb) : '8192';
     f.cpus.placeholder = p ? String(p.cpus) : '4';
     if (p && (!f.name.value || /^vm-/.test(f.name.placeholder))) f.name.placeholder = `${p.id}-${Math.random().toString(36).slice(2, 5)}`;

@@ -110,6 +110,7 @@
           <label>Имя<input name="name" class="input" placeholder="dev" pattern="[A-Za-z0-9][A-Za-z0-9_.\-]*"></label>
           <label class="std-only">Образ (OCI)<input name="image" class="input" placeholder="alpine" value="alpine" list="image-suggest"></label>
         </div>
+        <div id="create-image-hint" class="muted small std-only" hidden></div>
         <datalist id="image-suggest">
           <option value="alpine"><option value="ubuntu:24.04"><option value="debian:bookworm-slim">
           <option value="python:3.12-alpine"><option value="node:22-alpine"><option value="golang:1.23-alpine">

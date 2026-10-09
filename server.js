@@ -734,6 +734,8 @@ const UI = [
       listen: up.listenArg(),
       configDir: cfg.DIR,
       smolvmBin: mc.smolvmBin(),
+      imagePrefix: repos.imagePrefix(),
+      reposActive: repos.active() || !!cfg.getSettings().repos.registry,
       proxyActive: !!(s.proxy.enabled && s.proxy.url),
       caActive: !!s.ca.enabled,
       guestProxy: g,
