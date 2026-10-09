@@ -26,22 +26,117 @@
 
 ## Требования
 
-- `smolvm` в `PATH` ([установка](https://github.com/smol-machines/smolvm#install)).
-- Node.js ≥ 18; для сертификатов из хранилища ОС — ≥ 22.15.
-- Windows: x64, включённая Windows Hypervisor Platform, PowerShell от администратора (подробно — в [INSTALL.md](INSTALL.md)).
+| Платформа | Что нужно |
+|---|---|
+| macOS | Apple Silicon (M1 и новее), macOS 11+. На Intel-Mac smolvm не работает. |
+| Linux | x86_64 или aarch64, аппаратная виртуализация (KVM, `/dev/kvm`); в виртуалке или облаке — вложенная виртуализация. |
+| Windows | Windows 10/11 x64 с Windows Hypervisor Platform, PowerShell от администратора. ARM-Windows не поддерживается. |
 
-## Развёртывание
+Плюс Node.js ≥ 18 (для сертификатов из хранилища ОС — ≥ 22.15). По умолчанию машине выделяется 8 ГиБ памяти (память эластичная, хост отдаёт только то, что гость использует); на слабом хосте задавайте меньше.
 
-Установка smolvm:
+## Установка smolvm
+
+### macOS
 
 ```bash
-brew install smol-machines/tap/smolvm                  # macOS (Homebrew)
-curl -sSL https://smolmachines.com/install.sh | bash   # macOS + Linux
+brew install smol-machines/tap/smolvm
+# или официальный установщик (ставит в ~/.smolvm, запуск — из ~/.local/bin):
+curl -sSL https://smolmachines.com/install.sh | bash
 ```
 
-Windows — архив `windows-x86_64` со [страницы релизов](https://github.com/smol-machines/smolvm/releases), пошагово в [INSTALL.md](INSTALL.md).
+Два предупреждения установщика про notarization — норма.
 
-Получение smolvm-web:
+### Linux
+
+Официальный установщик (без root, всё в `$HOME`):
+
+```bash
+curl -sSL https://smolmachines.com/install.sh | bash
+export PATH="$HOME/.local/bin:$PATH"     # установщик добавит это в профиль shell сам
+```
+
+Или пакетом (обновляется вместе с системой):
+
+```bash
+# Debian / Ubuntu (Debian 12+, Ubuntu 22.04+)
+echo 'deb [trusted=yes] https://smol-machines.github.io/smolvm/apt ./' | sudo tee /etc/apt/sources.list.d/smolvm.list
+sudo apt-get update && sudo apt-get install smolvm
+
+# Fedora / RHEL
+sudo tee /etc/yum.repos.d/smolvm.repo >/dev/null <<'EOF2'
+[smolvm]
+name=smolvm
+baseurl=https://smol-machines.github.io/smolvm/yum
+enabled=1
+gpgcheck=0
+EOF2
+sudo dnf install smolvm
+
+# Arch Linux: добавьте в /etc/pacman.conf
+#   [smol-machines]
+#   SigLevel = Optional TrustAll
+#   Server = https://smol-machines.github.io/smolvm/pacman/$arch
+sudo pacman -Sy smolvm
+
+# Nix / NixOS
+nix profile install github:smol-machines/smolvm
+```
+
+Доступ к KVM (один раз). Без него установка проходит, но ни одна машина не запустится (`KVM_DENIED`):
+
+```bash
+ls -l /dev/kvm                       # устройство должно существовать
+sudo usermod -aG kvm "$USER"         # затем перелогиньтесь или используйте: sg kvm -c '<команда>'
+```
+
+### Windows
+
+PowerShell от администратора:
+
+```powershell
+# Windows Hypervisor Platform (нужна перезагрузка)
+Enable-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform
+Restart-Computer
+
+# smolvm: актуальная версия — https://github.com/smol-machines/smolvm/releases
+$v = '1.23.7'
+Invoke-WebRequest "https://github.com/smol-machines/smolvm/releases/download/v$v/smolvm-$v-windows-x86_64.zip" -OutFile $env:TEMP\smolvm.zip
+Expand-Archive $env:TEMP\smolvm.zip C:\smolvm
+[Environment]::SetEnvironmentVariable('Path', $env:Path + ";C:\smolvm\smolvm-$v-windows-x86_64", 'Machine')
+```
+
+Также включите «Режим разработчика» (Параметры → Система → Для разработчиков). Подробности и частые ошибки — в [INSTALL.md](INSTALL.md).
+
+### За корпоративным прокси
+
+Установщику и пакетным менеджерам нужен прокси в окружении:
+
+```bash
+export HTTPS_PROXY=http://proxy.corp.local:3128 HTTP_PROXY=http://proxy.corp.local:3128
+curl -sSL https://smolmachines.com/install.sh | bash
+```
+
+Для `sudo apt-get`/`dnf` настройте прокси самого пакетного менеджера (`Acquire::https::Proxy` / `proxy=` в `dnf.conf`). Прокси для машин настраивается позже в интерфейсе smolvm-web.
+
+### Проверка
+
+```bash
+smolvm --version
+smolvm machine run --mem 2048 --net --image alpine -- uname -srm   # должно напечатать Linux …
+```
+
+Если Docker Hub отвечает `TOOMANYREQUESTS`, возьмите образ из зеркала: `--image mirror.gcr.io/library/alpine`. За корпоративным прокси эта проверка может не скачать образ — тогда достаточно `smolvm --version`, а прокси для машин включается в интерфейсе.
+
+| Ошибка | Причина |
+|---|---|
+| `KVM_DENIED` (Linux) | пользователь не в группе `kvm` |
+| `krun_start_enter returned: -22` (macOS) | слишком длинный путь к домашней директории (ограничение сокета ~100 байт) |
+| `agent did not become ready within 30 seconds` | нехватка памяти или нагрузка на хост; попробуйте `--mem 2048` |
+| `boot process exited (code 127)` (Windows) | не включён «Режим разработчика» или PowerShell не от администратора |
+
+Обновление: `brew upgrade smolvm`, `apt-get upgrade` / `dnf upgrade` / `pacman -Syu`, или повторный запуск установщика. Подробная документация smolvm — [docs/install](https://github.com/smol-machines/smolvm/tree/main/docs/install).
+
+## Развёртывание smolvm-web
 
 ```bash
 git clone https://github.com/ubushan/smolvm-web.git
