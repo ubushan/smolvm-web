@@ -17,6 +17,10 @@ const path = require('path');
 const { spawn } = require('child_process');
 const cfg = require('./lib/config');
 const px = require('./lib/proxy');
+const upproxy = require('./lib/upproxy');
+const sysproxy = require('./lib/sysproxy');
+const sspi = require('./lib/sspi');
+const relay = require('./lib/relay');
 const up = require('./lib/upstream');
 const mc = require('./lib/machines');
 const vault = require('./lib/vault');
@@ -725,7 +729,8 @@ const UI = [
   }],
   ['GET', /^\/ui\/info$/, async (req, res) => {
     const s = cfg.getSettings();
-    const g = s.proxy.url ? await px.guestUrl(s.proxy.url) : null;
+    const sys = upproxy.systemMode();
+    const g = sys ? null : s.proxy.url ? await px.guestUrl(s.proxy.url) : null;
     sendJson(res, 200, {
       version: VERSION,
       build: { ...buildInfo.RUNNING, disk: buildInfo.current() },
@@ -736,7 +741,9 @@ const UI = [
       smolvmBin: mc.smolvmBin(),
       imagePrefix: repos.imagePrefix(),
       reposActive: repos.active() || !!cfg.getSettings().repos.registry,
-      proxyActive: !!(s.proxy.enabled && s.proxy.url),
+      proxyActive: upproxy.active(),
+      proxySystem: sys,
+      relay: sys ? relay.status() : null,
       caActive: !!s.ca.enabled,
       guestProxy: g,
       egress: { ...egress.status(), defaults: egress.defaults() },
@@ -753,7 +760,7 @@ const UI = [
   ['PUT', /^\/ui\/settings$/, async (req, res) => {
     const body = await readJson(req);
     if (body.proxy?.url) body.proxy.url = px.normalizeUrl(body.proxy.url);
-    if (body.proxy?.enabled && body.proxy.url) {
+    if (body.proxy?.enabled && body.proxy.url && !body.proxy.system) {
       try { new URL(body.proxy.url); } catch { return sendJson(res, 400, { error: 'Некорректный URL прокси' }); }
     }
     if (body.ca?.enabled) {
@@ -768,8 +775,11 @@ const UI = [
     delete next.repos.clearPassword; delete next.repos.hasPassword;
     next.smolvm.bin = String(next.smolvm.bin || '').trim().replace(/^"(.*)"$/, '$1');
     try { repos.validate(next.repos); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+    if (next.proxy.system && process.platform !== 'win32') next.proxy.system = false;
     cfg.saveSettings(next);
     try { repos.dockerConfigDir(); } catch {}
+    sysproxy.reset();
+    if (upproxy.systemMode()) await relay.start();
     sendJson(res, 200, publicSettings());
   }],
   // Does this smolvm binary run? (`smolvm --version`)
@@ -781,12 +791,34 @@ const UI = [
       sendJson(res, 200, { ok: true, bin: exe, version: String(stdout || stderr).trim().split('\n')[0] });
     });
   }],
-  ['GET', /^\/ui\/proxy\/detect$/, async (req, res) => sendJson(res, 200, await px.detect())],
+  ['GET', /^\/ui\/proxy\/detect$/, async (req, res) => {
+    const d = await px.detect();
+    if (process.platform === 'win32') {
+      sysproxy.reset();
+      d.system = await sysproxy.describe().catch((e) => ({ available: false, error: e.message }));
+      d.sspi = await sspi.status();
+    }
+    sendJson(res, 200, d);
+  }],
   ['POST', /^\/ui\/proxy\/test$/, async (req, res) => {
     const body = await readJson(req);
+    const targets = ['registry-1.docker.io:443', 'production.cloudfront.docker.com:443', 'pypi.org:443', 'registry.npmjs.org:443'];
+    if (body.system) {
+      // Windows system proxy: the route per destination (PAC) and the sign-in used, then the relay as machines see it.
+      if (process.platform !== 'win32') return sendJson(res, 400, { error: 'Системный прокси Windows доступен только на Windows' });
+      sysproxy.reset();
+      const prev = cfg.getSettings().proxy;
+      const results = (await upproxy.test(targets, { ...prev, enabled: true, system: true, noProxy: body.noProxy ?? prev.noProxy }))
+        .map((x) => ({ ...x, status: x.ok ? `${x.route}${x.auth ? `, вход: ${x.auth === 'Negotiate' ? 'Kerberos/Negotiate' : x.auth}` : ''}` : x.error }));
+      // The relay works with the saved settings: checked once they are saved.
+      let relayReach = null;
+      if (upproxy.systemMode()) {
+        try { relayReach = await px.testConnect(await relay.urlFor(), targets[0], 30000); } catch (e) { relayReach = { ok: false, target: targets[0], error: e.message }; }
+      }
+      return sendJson(res, 200, { results, relay: relayReach, sspi: await sspi.status() });
+    }
     const url = body.url || cfg.getSettings().proxy.url;
     if (!url) return sendJson(res, 400, { error: 'Не указан адрес прокси' });
-    const targets = ['registry-1.docker.io:443', 'production.cloudfront.docker.com:443', 'pypi.org:443', 'registry.npmjs.org:443'];
     const results = await Promise.all(targets.map((t) => px.testConnect(url, t)));
     const guest = await px.guestUrl(url);
     let guestReach = null;
@@ -854,7 +886,7 @@ const UI = [
   }],
   // ---------- egress filter (allow lists) ----------
   ['GET', /^\/ui\/egress$/, async (req, res) => {
-    sendJson(res, 200, { ...egress.view(), hostIp: await px.hostIp(), corporateProxy: !!(cfg.getSettings().proxy.enabled && cfg.getSettings().proxy.url) });
+    sendJson(res, 200, { ...egress.view(), hostIp: await px.hostIp(), corporateProxy: upproxy.active() });
   }],
   ['PUT', /^\/ui\/egress\/settings$/, async (req, res) => {
     try { sendJson(res, 200, egress.saveSettings(await readJson(req))); } catch (e) { sendJson(res, 400, { error: e.message }); }
@@ -1042,8 +1074,11 @@ async function maybeAutostart() {
   const env = { ...process.env };
   // Host-side registry requests made by the server honour the standard proxy env.
   const s = cfg.getSettings();
-  if (s.proxy.enabled && s.proxy.url) {
-    for (const k of ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']) env[k] = env[k] || s.proxy.url;
+  if (upproxy.active()) {
+    // Windows system proxy: smolvm serve goes through the relay (it cannot do Kerberos/NTLM itself).
+    let url = s.proxy.url;
+    if (upproxy.systemMode()) { try { url = await relay.urlFor({ loopback: true }); } catch (e) { console.error(e.message); } }
+    for (const k of ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']) env[k] = env[k] || url;
     const np = px.noProxyList(s.proxy.noProxy);
     env.NO_PROXY = env.NO_PROXY || np;
     env.no_proxy = env.no_proxy || np;
@@ -1096,6 +1131,9 @@ server.listen(PORT, HOST, () => {
     const wh = winhost.status();
     if (wh.symlinks === false) console.log('ВНИМАНИЕ: нет права создавать символические ссылки. smolvm распакует свой rootfs без них, и машины не загрузятся (/sbin/init: ENOENT). Включите «Режим разработчика» или запускайте от администратора.');
     if (wh.broken.length) console.log(`ВНИМАНИЕ: rootfs smolvm распакован без символических ссылок: ${wh.broken.join(', ')}. Машины не загрузятся — нажмите «Починить» в интерфейсе.`);
+  }
+  if (upproxy.systemMode()) {
+    relay.start().then((st) => console.log(st.listening ? `системный прокси Windows: ретранслятор для машин на порту ${relay.PORT}` : `ретранслятор прокси не запущен: ${st.error}`));
   }
   maybeAutostart();
   vault.list().then(async (list) => {

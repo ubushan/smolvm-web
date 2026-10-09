@@ -233,9 +233,10 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
       <div class="dialog-body">
         <p class="muted small">Для работы за корпоративным прокси без прямого доступа в интернет: образы, <code>pip</code>, <code>npm</code>, <code>apk</code>/<code>apt</code>, <code>git</code>, <code>curl</code> внутри машин будут ходить через прокси.</p>
         <label class="check"><input type="checkbox" name="proxyEnabled"> <b>Использовать прокси</b></label>
+        <label class="check win-only" id="proxy-system-wrap" hidden><input type="checkbox" name="proxySystem"> <b>Системный прокси Windows</b> <span class="muted small">— как в браузере: адрес и PAC-файл из настроек Windows, вход под вашей учётной записью (Kerberos / NTLM) без пароля. Машины ходят через ретранслятор smolvm-web на этом компьютере (порт 7792), отдельный px/proxydetox не нужен.</span></label>
         <div class="grid-proxy">
           <label>Адрес прокси<input name="proxyUrl" class="input mono" placeholder="http://proxy.corp.local:3128" autocomplete="off" spellcheck="false">
-            <small class="muted">Можно с логином: <code>http://user:pass@proxy:8080</code>. Для NTLM/Kerberos используйте локальный cntlm или px.</small>
+            <small class="muted">Можно с логином: <code>http://user:pass@proxy:8080</code>. Если прокси просит Kerberos/NTLM, на Windows smolvm-web войдёт сам под вашей учётной записью; на macOS/Linux используйте локальный cntlm или px.</small>
           </label>
           <div class="row">
             <button type="button" class="btn" id="btn-proxy-detect">Определить автоматически</button>

@@ -1376,7 +1376,11 @@ async function refreshInfo() {
   const chip = $('#proxy-chip');
   const i = state.info;
   chip.hidden = false;
-  if (i.proxyActive) {
+  if (i.proxyActive && i.proxySystem) {
+    chip.className = `chip ${i.relay?.listening === false ? 'warn' : 'on'}`;
+    chip.textContent = `прокси: системный Windows${i.caActive ? ' + CA' : ''}`;
+    chip.title = i.relay?.listening === false ? `Ретранслятор не запущен: ${i.relay.error}` : 'PAC / Internet Settings, вход под учётной записью Windows; машины — через ретранслятор smolvm-web';
+  } else if (i.proxyActive) {
     const g = i.guestProxy;
     chip.className = `chip ${g?.error ? 'warn' : 'on'}`;
     chip.textContent = `прокси: ${(g?.url || '').replace(/\/\/[^@/]*@/, '//***@').replace(/^https?:\/\//, '')}${i.caActive ? ' + CA' : ''}`;
@@ -1398,6 +1402,8 @@ async function openSettings() {
   let s;
   try { s = await api('GET', '/ui/settings'); } catch (e) { toast(e.message, 'err'); return; }
   f.proxyEnabled.checked = s.proxy.enabled;
+  f.proxySystem.checked = !!s.proxy.system;
+  $('#proxy-system-wrap').hidden = state.info?.platform !== 'win32';
   f.proxyUrl.value = s.proxy.url;
   f.noProxy.value = s.proxy.noProxy;
   f.proxyPull.checked = s.proxy.pull;
@@ -1426,8 +1432,11 @@ async function openSettings() {
 function syncSettingsForm() {
   const f = $('#form-settings');
   const p = f.proxyEnabled.checked;
-  for (const n of ['proxyUrl', 'noProxy', 'proxyPull', 'proxyExec', 'proxyProvision']) f[n].disabled = !p;
-  $('#btn-proxy-test').disabled = !f.proxyUrl.value.trim();
+  const sys = p && f.proxySystem.checked && state.info?.platform === 'win32';
+  for (const n of ['proxySystem', 'noProxy', 'proxyPull', 'proxyExec', 'proxyProvision']) f[n].disabled = !p;
+  f.proxyUrl.disabled = !p || sys;
+  f.proxyUrl.placeholder = sys ? 'из настроек Windows (PAC / Internet Settings)' : 'http://proxy.corp.local:3128';
+  $('#btn-proxy-test').disabled = !(sys || f.proxyUrl.value.trim());
   const c = f.caEnabled.checked;
   for (const n of ['caSystem', 'caPem', 'caReplace', 'caPullTrust']) f[n].disabled = !c;
 }
@@ -1451,7 +1460,7 @@ function settingsFromForm() {
   const f = $('#form-settings');
   return {
     proxy: {
-      enabled: f.proxyEnabled.checked, url: f.proxyUrl.value.trim(), noProxy: f.noProxy.value.trim(),
+      enabled: f.proxyEnabled.checked, system: f.proxySystem.checked, url: f.proxyUrl.value.trim(), noProxy: f.noProxy.value.trim(),
       pull: f.proxyPull.checked, exec: f.proxyExec.checked, provision: f.proxyProvision.checked,
     },
     ca: { enabled: f.caEnabled.checked, system: f.caSystem.checked, pem: f.caPem.value.trim(), replaceSystemBundle: f.caReplace.checked, pullTrust: f.caPullTrust.checked },
@@ -1495,7 +1504,18 @@ $('#btn-proxy-detect').addEventListener('click', async () => {
   out.hidden = false; out.className = 'small muted'; out.textContent = 'Поиск…';
   try {
     const d = await api('GET', '/ui/proxy/detect');
-    if (d.url) {
+    const sys = d.system;
+    if (sys?.available && (sys.pac || sys.enabled)) {
+      // Windows: use the system proxy as browsers do (PAC, Kerberos/NTLM sign-in).
+      f.proxyEnabled.checked = true;
+      f.proxySystem.checked = true;
+      out.className = 'small';
+      out.innerHTML = `Windows: ${sys.pac ? `PAC <code>${esc(sys.pac)}</code>` : `прокси <code>${esc(sys.server)}</code>`}`
+        + `${sys.sample !== undefined ? ` → для Docker Hub: <code>${esc(sys.sample || 'напрямую')}</code>` : ''}`
+        + `${sys.error ? ` <span class="error">(${esc(sys.error)})</span>` : ''}<br>`
+        + (d.sspi?.available ? `Вход в прокси: под учётной записью <b>${esc(d.sspi.user || '')}</b> (Kerberos / NTLM).` : `<span class="error">Встроенная авторизация Windows недоступна: ${esc(d.sspi?.error || '')}</span>`)
+        + ' Включён «Системный прокси Windows» — нажмите «Проверить», затем «Сохранить».';
+    } else if (d.url) {
       f.proxyUrl.value = d.url;
       if (d.noProxy && !f.noProxy.value) f.noProxy.value = d.noProxy;
       f.proxyEnabled.checked = true;
@@ -1514,8 +1534,16 @@ $('#btn-proxy-test').addEventListener('click', async () => {
   const out = $('#proxy-test-out');
   out.hidden = false; out.className = 'small muted'; out.textContent = 'Проверка…';
   try {
-    const r = await api('POST', '/ui/proxy/test', { url: f.proxyUrl.value.trim() });
+    const sys = f.proxySystem.checked && state.info?.platform === 'win32';
+    const r = await api('POST', '/ui/proxy/test', sys ? { system: true, noProxy: f.noProxy.value.trim() } : { url: f.proxyUrl.value.trim() });
     const li = (x) => `<li class="${x.ok ? 'okc' : 'badc'}">${x.ok ? '✓' : '✗'} ${esc(x.target)} — ${esc(x.status || x.error)}${x.ms != null ? ` (${x.ms} мс)` : ''}</li>`;
+    if (sys) {
+      let html = `<b>С этого компьютера (прокси по настройкам Windows, вход — учётная запись Windows${r.sspi?.user ? ` ${esc(r.sspi.user)}` : ''}):</b><ul class="result-list">${r.results.map(li).join('')}</ul>`;
+      html += r.relay ? `<b>Через ретранслятор для машин:</b><ul class="result-list">${li(r.relay)}</ul>` : '<div class="muted">Ретранслятор для машин проверится после сохранения настроек.</div>';
+      out.className = 'small';
+      out.innerHTML = html;
+      return;
+    }
     let html = `<b>С этого компьютера:</b><ul class="result-list">${r.results.map(li).join('')}</ul>`;
     if (r.guest?.rewritten) {
       html += `<div class="notice">${esc(r.guest.warning)}</div>`;
@@ -1532,7 +1560,7 @@ $('#form-settings').addEventListener('submit', async (e) => {
   const err = $('#settings-error');
   err.hidden = true;
   const s = settingsFromForm();
-  if (s.proxy.enabled && !s.proxy.url) { err.textContent = 'Укажите адрес прокси'; err.hidden = false; return; }
+  if (s.proxy.enabled && !s.proxy.url && !(s.proxy.system && state.info?.platform === 'win32')) { err.textContent = 'Укажите адрес прокси'; err.hidden = false; return; }
   try {
     await api('PUT', '/ui/settings', s);
     $('#dlg-settings').close();
