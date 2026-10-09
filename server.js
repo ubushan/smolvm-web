@@ -156,7 +156,6 @@ const AUDIT_LABELS = [
   [/^POST \/api\/v1\/machines\/[^/]+\/images\/pull$/, 'загрузка образа'],
   [/^POST \/ui\/machines\/[^/]+\/agents\/[\w-]+\/start$/, 'запуск агента'],
   [/^POST \/ui\/machines\/[^/]+\/agents\/[\w-]+\/stop$/, 'остановка агента'],
-  [/^POST \/ui\/machines\/[^/]+\/agents\/[\w-]+\/task$/, 'задача агенту'],
   [/^POST \/ui\/machines\/[^/]+\/agents(\/install)?$/, 'агенты: подключение/установка'],
   [/^POST \/ui\/machines\/[^/]+\/review$/, 'рабочая копия: создание'],
   [/^POST \/ui\/machines\/[^/]+\/review\/[\w.-]+\/apply$/, 'ревью: применено на хост'],
@@ -700,32 +699,6 @@ const UI = [
   ['GET', new RegExp(`${AG}/([\\w-]+)/log$`), async (req, res, m) => {
     try { sendJson(res, 200, { log: await agents.logTail(decodeURIComponent(m[1]), m[2], 20000) }); }
     catch (e) { sendJson(res, 400, { error: e.message }); }
-  }],
-  // One-shot headless task, streamed back as the exec/stream SSE.
-  ['POST', new RegExp(`${AG}/([\\w-]+)/task$`), async (req, res, m) => {
-    const name = decodeURIComponent(m[1]);
-    const { prompt, autonomous, snapshot } = await readJson(req);
-    if (!prompt || !String(prompt).trim()) return sendJson(res, 400, { error: 'пустая задача' });
-    // A snapshot first, so a bad run can be rolled back; its result goes into a response header.
-    if (snapshot) {
-      try { const sn = await snapshots.create(name, { reason: `перед задачей ${agents.AGENTS[m[2]]?.title || m[2]}`, label: String(prompt).slice(0, 80) }); res.setHeader('x-smolvm-snapshot', encodeURIComponent(sn.id)); }
-      catch (e) { res.setHeader('x-smolvm-snapshot-error', encodeURIComponent(e.message.slice(0, 300))); }
-    }
-    let body;
-    try { body = await agents.taskBody(name, m[2], prompt, { autonomous: !!autonomous }); } catch (e) { return sendJson(res, 400, { error: e.message }); }
-    res.auditDone = true;
-    const tev = { type: 'exec', machine: name, actor: `${actorOf(req)} → ${agents.AGENTS[m[2]]?.title || m[2]}`, action: 'задача агенту', detail: { agent: m[2], prompt: String(prompt).slice(0, 2000), autonomous: !!autonomous } };
-    let tacc = '';
-    req.url = `/api/v1/machines/${encodeURIComponent(name)}/exec/stream`;
-    req.method = 'POST';
-    forward(req, res, Buffer.from(JSON.stringify(body)), {
-      data(c) { if (tacc.length < 1e6) tacc += c.toString('utf8'); },
-      end(status) {
-        const mm = tacc.match(/event: exit\ndata: \{"exitCode":(-?\d+)\}/g);
-        const exitCode = mm ? Number(mm.pop().match(/(-?\d+)\}$/)[1]) : null;
-        audit.record({ ...tev, status, exitCode, severity: exitCode ? 'notice' : 'info' });
-      },
-    });
   }],
   ['GET', /^\/ui\/info$/, async (req, res) => {
     const s = cfg.getSettings();

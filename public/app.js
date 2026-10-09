@@ -866,7 +866,7 @@ async function tabSnapshots(body, m) {
         helpButton('Снимки и откат',
           h('p', {}, 'Снимок — это smolvm checkpoint: память, процессы и диски машины в один момент (машина замирает на доли секунды). Откат пересоздаёт машину из снимка под тем же именем; агенты, секреты, доступ в сеть и рабочие копии сохраняются.'),
           h('ul', {},
-            h('li', {}, 'Во вкладке «Агенты» включите «Снимок перед запуском» — перед каждым запуском агента или задачей будет снимок.'),
+            h('li', {}, 'Во вкладке «Агенты» включите «Снимок перед запуском» — перед каждым запуском агента будет снимок.'),
             h('li', {}, 'Перед откатом текущее состояние сохраняется страховочным снимком — откат можно отменить.'),
             h('li', {}, 'smolvm не снимает машины с подключёнными папками хоста, GPU/CUDA; на macOS машина должна работать с ветвлением.'),
             h('li', {}, `Хранится последних снимков: ${st.keep} (старые удаляются). Снимки лежат в каталоге настроек smolvm-web.`))),
@@ -1873,22 +1873,12 @@ function goAgent(w, url) {
 
 async function tabAgents(body, m) {
   const head = h('div', { class: 'col', style: 'display:flex;flex-direction:column;gap:14px' });
-  const taskBox = h('div');
   // Snapshot before an agent run (remembered per browser).
   const snapBefore = h('input', { type: 'checkbox', checked: localStorage.getItem('smolvm.snapBefore') !== '0' });
   snapBefore.addEventListener('change', () => localStorage.setItem('smolvm.snapBefore', snapBefore.checked ? '1' : '0'));
-  // Sub-sections: the agents themselves, and one-shot headless tasks.
-  let sub = localStorage.getItem('smolvm.agentsSub') === 'task' ? 'task' : 'agents';
-  const subBtn = (id, icon, label) => h('button', { class: `tab ${sub === id ? 'active' : ''}`, 'data-sub': id, onclick: () => {
-    sub = id; localStorage.setItem('smolvm.agentsSub', id);
-    subnav.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.sub === id));
-    head.hidden = id !== 'agents'; taskBox.hidden = id !== 'task';
-  } }, ic(icon), label);
-  const subnav = h('div', { class: 'row' }, h('nav', { class: 'tabs subtabs' }, subBtn('agents', 'bot', 'Агенты'), subBtn('task', 'send', 'Задача без интерфейса')),
-    h('span', { class: 'spacer' }),
-    h('label', { class: 'check small', title: 'Снимок машины (smolvm checkpoint) перед запуском агента или задачей — откат одной кнопкой во вкладке «Снимки»' }, snapBefore, 'Снимок перед запуском'));
-  head.hidden = sub !== 'agents'; taskBox.hidden = sub !== 'task';
-  body.append(subnav, head, taskBox);
+  const bar = h('div', { class: 'row' }, h('span', { class: 'spacer' }),
+    h('label', { class: 'check small', title: 'Снимок машины (smolvm checkpoint) перед запуском агента — откат одной кнопкой во вкладке «Снимки»' }, snapBefore, 'Снимок перед запуском'));
+  body.append(bar, head);
   let alive = true;
   let timer = null;
   let st = null;
@@ -1908,7 +1898,6 @@ async function tabAgents(body, m) {
     // Re-render only on change, so buttons are not replaced under the cursor.
     const sig = JSON.stringify(st);
     if (sig !== lastSig) { lastSig = sig; renderHead(); }
-    if (!taskBox.querySelector('textarea')) renderTask();
     timer = setTimeout(refresh, st.job?.status === 'running' ? 1500 : 5000);
   };
 
@@ -2034,51 +2023,6 @@ async function tabAgents(body, m) {
           h('td', {}, v.revoked
             ? h('button', { class: 'btn', onclick: () => toggle(v, true) }, 'Вернуть')
             : h('button', { class: 'btn ghost danger', onclick: () => toggle(v, false) }, 'Отозвать')))))));
-  }
-
-  function renderTask() {
-    const withTask = st.agents.filter((a) => a.task && a.installed);
-    if (!withTask.length) {
-      taskBox.replaceChildren(h('div', { class: 'block' }, h('div', { class: 'muted small' }, st.agents.length
-        ? 'Задачи выполняют Claude Code, OpenCode, DeepSeek Harness, Codex, Pi и Hermes — дождитесь их установки (подраздел «Агенты»).'
-        : 'Подключите агентов в подразделе «Агенты» — после установки здесь можно давать им задачи без интерфейса.')));
-      return;
-    }
-    const sel = h('select', { class: 'input small' }, withTask.map((a) => h('option', { value: a.id }, a.title)));
-    const prompt = h('textarea', { class: 'input', rows: 3, placeholder: 'Например: создай в /work простой HTTP-сервер на Python и проверь, что он отвечает' });
-    const auto = h('input', { type: 'checkbox' });
-    const out = h('div', { class: 'term', hidden: true });
-    let ctrl = null;
-    const run = h('button', { class: 'btn primary' }, [ic('send'), 'Выполнить']);
-    run.addEventListener('click', async () => {
-      if (ctrl) { ctrl.abort(); return; }
-      if (!prompt.value.trim()) return;
-      out.hidden = false; out.textContent = '';
-      ctrl = new AbortController();
-      run.replaceChildren(ic('stop'), 'Прервать');
-      const write = (t, cls) => { out.append(cls ? h('span', { class: cls }, t) : document.createTextNode(t)); out.scrollTop = out.scrollHeight; };
-      write(`$ ${sel.selectedOptions[0].textContent}: ${prompt.value.trim()}\n`, 'cmd');
-      try {
-        const res = await api('POST', `/ui/machines/${enc(m.name)}/agents/${sel.value}/task`, { prompt: prompt.value, autonomous: auto.checked, snapshot: snapBefore.checked }, { raw: true, signal: ctrl.signal });
-        const snOk = res.headers.get('x-smolvm-snapshot'); const snErr = res.headers.get('x-smolvm-snapshot-error');
-        if (snOk) write('[снимок перед задачей сделан — откат во вкладке «Снимки»]\n', 'sys');
-        if (snErr) write(`[снимок не сделан: ${decodeURIComponent(snErr)}]\n`, 'err');
-        await readSSE(res, (ev, data) => {
-          if (ev === 'stdout') write(data.endsWith('\n') ? data : `${data}\n`);
-          else if (ev === 'stderr') write(data.endsWith('\n') ? data : `${data}\n`, 'err');
-          else if (ev === 'exit') { let c = '?'; try { c = JSON.parse(data).exitCode; } catch {} write(`[exit ${c}]\n`, c === 0 ? 'ok' : 'err'); }
-          else if (ev === 'error') write(`error: ${data}\n`, 'err');
-        });
-      } catch (e) { if (e.name !== 'AbortError') write(`ошибка: ${e.message}\n`, 'err'); else write('^C\n', 'sys'); }
-      ctrl = null;
-      run.replaceChildren(ic('send'), 'Выполнить');
-    });
-    prompt.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) run.click(); });
-    taskBox.replaceChildren(h('section', { class: 'card task' },
-      h('div', { class: 'card-head' }, h('h3', {}, 'Задача без интерфейса'), h('span', { class: 'muted small' }, 'агент выполнит её в /work и вернёт результат сюда; окно агента не открывается')),
-      prompt,
-      h('div', { class: 'row' }, sel, h('label', { class: 'check small', title: 'Claude Code: --dangerously-skip-permissions; Codex: --dangerously-bypass-approvals-and-sandbox (без флага — --sandbox workspace-write). OpenCode, DeepSeek Harness, Pi и Hermes (-z) в режиме задачи не спрашивают подтверждений' }, auto, 'без подтверждений'), h('span', { class: 'spacer' }), h('span', { class: 'muted small' }, '⌘/Ctrl+Enter'), run),
-      out));
   }
 
   refresh();
