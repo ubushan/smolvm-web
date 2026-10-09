@@ -499,3 +499,25 @@ pre.diff .d-c { color: #a1a1aa; }
 .app-footer code { font-family: var(--mono, monospace); }
 .app-restart { color: var(--warn, #b45309); }
 @media (max-width: 1440px) { header .btn .lbl { display: none; } }
+
+/* Settings: sidebar with sections */
+.dialog.settings-dialog { width: min(980px, calc(100vw - 32px)); }
+.settings-layout { display: grid; grid-template-columns: 200px 1fr; min-height: 0; border-top: 1px solid var(--border); }
+.settings-nav { display: flex; flex-direction: column; gap: 2px; padding: 12px 10px; background: var(--panel-2); border-right: 1px solid var(--border); }
+.settings-nav button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font: inherit; text-align: left; cursor: pointer; }
+.settings-nav button:hover { background: var(--panel); color: var(--text); }
+.settings-nav button.active { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: inset 0 0 0 1px var(--border); }
+.settings-nav .ic { flex-shrink: 0; }
+.settings-main { padding: 16px 20px 20px; height: min(68vh, 680px); overflow: auto; display: flex; flex-direction: column; gap: 14px; }
+.settings-main form { display: contents; }
+.settings-pane { display: flex; flex-direction: column; gap: 14px; }
+.settings-pane[hidden] { display: none; }
+.pane-head h4 { margin: 0 0 4px; font-size: 15px; }
+.pane-head p { margin: 0; }
+#settings-footer .footer-note { margin-right: auto; }
+@media (max-width: 720px) {
+  .settings-layout { grid-template-columns: 1fr; }
+  .settings-nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); }
+  .settings-nav button { width: auto; white-space: nowrap; }
+  #settings-footer .footer-note { display: none; }
+}

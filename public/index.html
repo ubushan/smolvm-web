@@ -13,6 +13,7 @@
     <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></symbol>
     <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
     <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l3 3M15 8l2 2"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="m3 8 9 5 9-5M12 13v8"/></symbol>
     <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
     <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></symbol>
     <symbol id="i-contrast" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v18a9 9 0 0 0 0-18z" fill="currentColor"/></symbol>
@@ -61,8 +62,7 @@
     <div id="health" class="health"><span class="dot"></span><span>подключение…</span></div>
     <button id="proxy-chip" class="chip" hidden title="Настройки сети и прокси"></button>
     <div class="spacer"></div>
-    <button id="btn-vault" class="btn ghost" title="Хранилище секретов и API-ключей"><svg class="ic"><use href="#i-key"/></svg><span class="lbl">Секреты</span></button>
-    <button id="btn-settings" class="btn ghost" title="Сеть, прокси, сертификаты, репозитории, путь к smolvm"><svg class="ic"><use href="#i-gear"/></svg><span class="lbl">Настройки</span></button>
+    <button id="btn-settings" class="btn ghost" title="Прокси, сертификаты, репозитории, секреты, smolvm"><svg class="ic"><use href="#i-gear"/></svg><span class="lbl">Настройки</span></button>
     <button id="btn-theme" class="btn ghost icon" title="Тема"><svg class="ic"><use href="#i-contrast"/></svg></button>
     <button id="btn-create" class="btn primary"><svg class="ic"><use href="#i-plus"/></svg>Машина</button>
   </header>
@@ -226,146 +226,156 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
     </form>
   </dialog>
 
-  <!-- Network / proxy settings -->
-  <dialog id="dlg-settings" class="dialog">
-    <form id="form-settings" method="dialog">
-      <header><h3>Сеть, прокси и сертификаты</h3><button type="button" class="btn ghost icon" data-close title="Закрыть"><svg class="ic"><use href="#i-x"/></svg></button></header>
-      <div class="dialog-body">
-        <p class="muted small">Для работы за корпоративным прокси без прямого доступа в интернет: образы, <code>pip</code>, <code>npm</code>, <code>apk</code>/<code>apt</code>, <code>git</code>, <code>curl</code> внутри машин будут ходить через прокси.</p>
-        <label class="check"><input type="checkbox" name="proxyEnabled"> <b>Использовать прокси</b></label>
-        <label class="check win-only" id="proxy-system-wrap" hidden><input type="checkbox" name="proxySystem"> <b>Системный прокси Windows</b> <span class="muted small">— как в браузере: адрес и PAC-файл из настроек Windows, вход под вашей учётной записью (Kerberos / NTLM) без пароля. Машины ходят через ретранслятор smolvm-web на этом компьютере (порт 7792), отдельный px/proxydetox не нужен.</span></label>
-        <div class="grid-proxy">
-          <label>Адрес прокси<input name="proxyUrl" class="input mono" placeholder="http://proxy.corp.local:3128" autocomplete="off" spellcheck="false">
-            <small class="muted">Можно с логином: <code>http://user:pass@proxy:8080</code>. Если прокси просит Kerberos/NTLM, на Windows smolvm-web войдёт сам под вашей учётной записью; на macOS/Linux используйте локальный cntlm или px.</small>
-          </label>
-          <div class="row">
-            <button type="button" class="btn" id="btn-proxy-detect">Определить автоматически</button>
-            <button type="button" class="btn" id="btn-proxy-test">Проверить</button>
-          </div>
-        </div>
-        <div id="proxy-detect-out" class="small" hidden></div>
-        <div id="proxy-test-out" class="small" hidden></div>
-        <label>Без прокси (NO_PROXY, через запятую)<input name="noProxy" class="input mono" placeholder=".corp.local, 10.0.0.0/8, nexus.corp.local"></label>
-        <div class="checks-col">
-          <label class="check"><input type="checkbox" name="proxyPull"> Скачивать образы через прокси <span class="muted small">(запуск идёт через <code>smolvm machine start --proxy</code>)</span></label>
-          <label class="check"><input type="checkbox" name="proxyExec"> Передавать прокси в команды консоли и API exec</label>
-          <label class="check"><input type="checkbox" name="proxyProvision"> Настраивать машину после запуска <span class="muted small">(profile.d, pip.conf, npmrc, apt, git)</span></label>
-        </div>
-
-        <hr>
-        <label class="check"><input type="checkbox" name="caEnabled"> <b>Доверять корпоративным сертификатам</b> <span class="muted small">(TLS-инспекция на прокси)</span></label>
-        <label class="check"><input type="checkbox" name="caSystem"> Добавить сертификаты, которым доверяет этот компьютер <span class="muted small" id="ca-system-hint"></span></label>
-        <label>Корневой сертификат: PEM-текст или путь к файлу .pem/.crt/.cer на этом компьютере
-          <textarea name="caPem" class="input mono" rows="4" placeholder="-----BEGIN CERTIFICATE-----&#10;…&#10;-----END CERTIFICATE-----"></textarea>
-        </label>
-        <label class="check"><input type="checkbox" name="caReplace"> Заменить системный bundle в машине <span class="muted small">(чтобы доверяли apk, apt, curl, wget)</span></label>
-        <label class="check"><input type="checkbox" name="caPullTrust"> Доверять им при скачивании образа <span class="muted small">(bundle подключается к машине томом <code>/etc/smolvm-host-trust</code>, как <code>--trust-host-certs</code>; снимки для таких машин недоступны)</span></label>
-        <div id="ca-out" class="small muted"></div>
-
-        <hr>
-        <div class="label-like"><b>Корпоративные репозитории</b> <span class="muted small">(JFrog Artifactory, Nexus, Harbor…)</span></div>
-        <label>Реестр образов, зеркало Docker Hub <span class="muted small">(префикс: <code>artifactory.corp/docker-remote</code> или <code>docker-remote.artifactory.corp</code>)</span>
-          <input name="repoRegistry" class="input mono" placeholder="artifactory.corp/docker-remote" spellcheck="false"></label>
-        <label class="check"><input type="checkbox" name="repoRewrite"> Брать образы Docker Hub из этого реестра <span class="muted small" id="repo-rewrite-hint"></span></label>
-        <div class="grid2">
-          <label>Пользователь<input name="repoUser" class="input mono" autocomplete="off" spellcheck="false"></label>
-          <label>Токен / API key<input name="repoPassword" type="password" class="input mono" autocomplete="new-password" spellcheck="false"></label>
-        </div>
-        <label>PyPI (pip)<input name="repoPip" class="input mono" placeholder="https://artifactory.corp/artifactory/api/pypi/pypi-remote/simple" spellcheck="false"></label>
-        <label>npm<input name="repoNpm" class="input mono" placeholder="https://artifactory.corp/artifactory/api/npm/npm-remote/" spellcheck="false"></label>
-        <div class="grid2">
-          <label>apt: вместо deb.debian.org/debian<input name="repoAptDebian" class="input mono" placeholder="https://artifactory.corp/artifactory/debian-remote" spellcheck="false"></label>
-          <label>apt: вместо …/debian-security<input name="repoAptSecurity" class="input mono" placeholder="https://artifactory.corp/artifactory/debian-security-remote" spellcheck="false"></label>
-        </div>
-        <div class="grid2">
-          <label>Go (GOPROXY)<input name="repoGoproxy" class="input mono" placeholder="https://artifactory.corp/artifactory/api/go/go-remote" spellcheck="false"></label>
-          <label>GitHub releases: вместо https://github.com<input name="repoGithub" class="input mono" placeholder="https://artifactory.corp/artifactory/github-remote" spellcheck="false"></label>
-        </div>
-        <label class="check"><input type="checkbox" name="repoGuestAuth"> Передавать пользователя и токен в машину для pip/npm/apt/Go <span class="muted small">(агент сможет их прочитать; не нужно, если репозитории читаются анонимно)</span></label>
-        <p class="muted small">Логин к реестру образов передаётся smolvm на хосте (как <code>docker login</code>) и в машину не попадает. Адреса репозиториев автоматически разрешены фильтру «Доступ в сеть». Для <code>https://</code>-репозиториев машина получает сертификаты, которым доверяет этот компьютер (внутренний CA — тоже). smolvm serve, запущенный smolvm-web (<code>--autostart</code>), подхватывает логин сразу; если вы запускаете его сами, задайте ему <code>DOCKER_CONFIG=&lt;папка настроек smolvm-web&gt;/docker</code>.</p>
-
-        <hr>
-        <div class="label-like"><b>smolvm</b></div>
-        <div class="grid-proxy">
-          <label>Путь к бинарнику smolvm<input name="smolvmBin" class="input mono" spellcheck="false" placeholder="smolvm"></label>
-          <div class="row"><button type="button" class="btn" id="btn-smolvm-check">Проверить</button></div>
-        </div>
-        <div id="smolvm-check-out" class="small" hidden></div>
-        <div id="settings-error" class="error" hidden></div>
-        <p class="muted small">Новые настройки применяются к следующим запускам. Для уже запущенной машины нажмите «Применить прокси» в её карточке.</p>
-      </div>
-      <footer>
-        <button type="button" class="btn ghost" data-close>Отмена</button>
-        <button type="submit" class="btn primary">Сохранить</button>
-      </footer>
-    </form>
-  </dialog>
-
-  <!-- Vault -->
-  <dialog id="dlg-vault" class="dialog wide">
+  <!-- Settings: proxy, certificates, repositories, secrets, smolvm -->
+  <dialog id="dlg-settings" class="dialog settings-dialog">
     <div class="dlg-wrap">
-      <header><h3 class="h-ic"><svg class="ic"><use href="#i-key"/></svg>Хранилище секретов</h3><button type="button" class="btn ghost icon" data-close title="Закрыть"><svg class="ic"><use href="#i-x"/></svg></button></header>
-      <div class="dialog-body">
-        <div id="vault-status" class="small muted"></div>
-        <div id="vault-list"></div>
-        <div class="row"><button type="button" class="btn primary" id="btn-secret-add"><svg class="ic"><use href="#i-plus"/></svg>Добавить секрет</button></div>
+      <header><h3 class="h-ic"><svg class="ic"><use href="#i-gear"/></svg>Настройки</h3><button type="button" class="btn ghost icon" data-close title="Закрыть"><svg class="ic"><use href="#i-x"/></svg></button></header>
+      <div class="settings-layout">
+        <nav class="settings-nav" id="settings-nav">
+          <button type="button" data-pane="proxy"><svg class="ic"><use href="#i-globe"/></svg>Прокси</button>
+          <button type="button" data-pane="ca"><svg class="ic"><use href="#i-shield"/></svg>Сертификаты</button>
+          <button type="button" data-pane="repos"><svg class="ic"><use href="#i-box"/></svg>Репозитории</button>
+          <button type="button" data-pane="secrets"><svg class="ic"><use href="#i-key"/></svg>Секреты</button>
+          <button type="button" data-pane="smolvm"><svg class="ic"><use href="#i-terminal"/></svg>smolvm</button>
+        </nav>
+        <div class="settings-main">
+          <form id="form-settings" method="dialog">
+          <section class="settings-pane" data-pane="proxy" hidden>
+            <div class="pane-head"><h4>Прокси</h4><p class="muted small">Для работы за корпоративным прокси без прямого доступа в интернет: образы, <code>pip</code>, <code>npm</code>, <code>apt</code>, <code>git</code>, <code>curl</code> внутри машин ходят через прокси.</p></div>
+            <label class="check"><input type="checkbox" name="proxyEnabled"> <b>Использовать прокси</b></label>
+            <label class="check win-only" id="proxy-system-wrap" hidden><input type="checkbox" name="proxySystem"> <b>Системный прокси Windows</b> <span class="muted small">— как в браузере: адрес и PAC-файл из настроек Windows, вход под вашей учётной записью (Kerberos / NTLM) без пароля. Машины ходят через ретранслятор smolvm-web на этом компьютере (порт 7792), отдельный px/proxydetox не нужен.</span></label>
+            <div class="grid-proxy">
+              <label>Адрес прокси<input name="proxyUrl" class="input mono" placeholder="http://proxy.corp.local:3128" autocomplete="off" spellcheck="false">
+                <small class="muted">Можно с логином: <code>http://user:pass@proxy:8080</code>. Если прокси просит Kerberos/NTLM, на Windows smolvm-web войдёт сам под вашей учётной записью; на macOS/Linux используйте локальный cntlm или px.</small>
+              </label>
+              <div class="row">
+                <button type="button" class="btn" id="btn-proxy-detect">Определить автоматически</button>
+                <button type="button" class="btn" id="btn-proxy-test">Проверить</button>
+              </div>
+            </div>
+            <div id="proxy-detect-out" class="small" hidden></div>
+            <div id="proxy-test-out" class="small" hidden></div>
+            <label>Без прокси (NO_PROXY, через запятую)<input name="noProxy" class="input mono" placeholder=".corp.local, 10.0.0.0/8, nexus.corp.local"></label>
+            <div class="checks-col">
+              <label class="check"><input type="checkbox" name="proxyPull"> Скачивать образы через прокси <span class="muted small">(запуск идёт через <code>smolvm machine start --proxy</code>)</span></label>
+              <label class="check"><input type="checkbox" name="proxyExec"> Передавать прокси в команды консоли и API exec</label>
+              <label class="check"><input type="checkbox" name="proxyProvision"> Настраивать машину после запуска <span class="muted small">(profile.d, pip.conf, npmrc, apt, git)</span></label>
+            </div>
 
-        <form id="form-secret" hidden autocomplete="off">
-          <hr>
-          <div class="grid2">
-            <label>Шаблон
-              <select name="preset" class="input">
-                <option value="">— свой —</option>
-                <option value="deepseek">DeepSeek</option>
-                <option value="openai">OpenAI</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="openrouter">OpenRouter</option>
-                <option value="gemini">Google Gemini</option>
-                <option value="github">GitHub</option>
-                <option value="local">Локальная модель (OpenAI-совместимая)</option>
-              </select>
+          </section>
+          <section class="settings-pane" data-pane="ca" hidden>
+            <div class="pane-head"><h4>Сертификаты</h4><p class="muted small">Корпоративные корневые сертификаты: TLS-инспекция на прокси, внутренние репозитории и сервисы.</p></div>
+            <label class="check"><input type="checkbox" name="caEnabled"> <b>Доверять корпоративным сертификатам</b></label>
+            <label class="check"><input type="checkbox" name="caSystem"> Добавить сертификаты, которым доверяет этот компьютер <span class="muted small" id="ca-system-hint"></span></label>
+            <label>Корневой сертификат: PEM-текст или путь к файлу .pem/.crt/.cer на этом компьютере
+              <textarea name="caPem" class="input mono" rows="4" placeholder="-----BEGIN CERTIFICATE-----&#10;…&#10;-----END CERTIFICATE-----"></textarea>
             </label>
-            <label>Имя секрета<input name="name" class="input mono" required pattern="[A-Za-z0-9_.\-]{1,64}" placeholder="deepseek"></label>
-          </div>
+            <label class="check"><input type="checkbox" name="caReplace"> Заменить системный bundle в машине <span class="muted small">(чтобы доверяли apk, apt, curl, wget)</span></label>
+            <label class="check"><input type="checkbox" name="caPullTrust"> Доверять им при скачивании образа <span class="muted small">(bundle подключается к машине томом <code>/etc/smolvm-host-trust</code>, как <code>--trust-host-certs</code>; снимки для таких машин недоступны)</span></label>
+            <div id="ca-out" class="small muted"></div>
 
-          <div class="label-like">Как передавать в машину</div>
-          <div class="modes">
-            <label class="mode"><input type="radio" name="mode" value="gateway">
-              <span><b>Шлюз smolvm-web</b> <span class="tag ok">безопасно</span> <span class="tag">работает через корп. прокси</span><br>
-              <span class="muted small">Машина получает токен-заглушку и <code>BASE_URL</code> шлюза на хосте. Шлюз подменяет токен на ключ и отправляет запрос к API (через прокси, если он настроен).</span></span></label>
-            <label class="mode"><input type="radio" name="mode" value="substitute">
-              <span><b>Подстановка smolvm</b> <span class="tag ok">безопасно</span> <span class="tag warn">нужен прямой интернет</span><br>
-              <span class="muted small">Родной механизм smolvm: в переменной лежит заглушка, ключ подставляется хостом в HTTPS-заголовок только к указанным хостам. Задаётся при создании машины; корпоративный прокси не поддерживается.</span></span></label>
-            <label class="mode"><input type="radio" name="mode" value="env">
-              <span><b>Переменная окружения</b> <span class="tag bad">машина видит значение</span><br>
-              <span class="muted small">Значение передаётся в команды консоли/exec как есть. Только для того, что программа должна прочитать сама (URL БД и т.п.).</span></span></label>
-          </div>
+          </section>
+          <section class="settings-pane" data-pane="repos" hidden>
+            <div class="pane-head"><h4>Корпоративные репозитории</h4><p class="muted small">JFrog Artifactory, Nexus, Harbor: образы, pip, npm, apt, Go и GitHub releases из внутренних зеркал.</p></div>
+            <label>Реестр образов, зеркало Docker Hub <span class="muted small">(префикс: <code>artifactory.corp/docker-remote</code> или <code>docker-remote.artifactory.corp</code>)</span>
+              <input name="repoRegistry" class="input mono" placeholder="artifactory.corp/docker-remote" spellcheck="false"></label>
+            <label class="check"><input type="checkbox" name="repoRewrite"> Брать образы Docker Hub из этого реестра <span class="muted small" id="repo-rewrite-hint"></span></label>
+            <div class="grid2">
+              <label>Пользователь<input name="repoUser" class="input mono" autocomplete="off" spellcheck="false"></label>
+              <label>Токен / API key<input name="repoPassword" type="password" class="input mono" autocomplete="new-password" spellcheck="false"></label>
+            </div>
+            <label>PyPI (pip)<input name="repoPip" class="input mono" placeholder="https://artifactory.corp/artifactory/api/pypi/pypi-remote/simple" spellcheck="false"></label>
+            <label>npm<input name="repoNpm" class="input mono" placeholder="https://artifactory.corp/artifactory/api/npm/npm-remote/" spellcheck="false"></label>
+            <div class="grid2">
+              <label>apt: вместо deb.debian.org/debian<input name="repoAptDebian" class="input mono" placeholder="https://artifactory.corp/artifactory/debian-remote" spellcheck="false"></label>
+              <label>apt: вместо …/debian-security<input name="repoAptSecurity" class="input mono" placeholder="https://artifactory.corp/artifactory/debian-security-remote" spellcheck="false"></label>
+            </div>
+            <div class="grid2">
+              <label>Go (GOPROXY)<input name="repoGoproxy" class="input mono" placeholder="https://artifactory.corp/artifactory/api/go/go-remote" spellcheck="false"></label>
+              <label>GitHub releases: вместо https://github.com<input name="repoGithub" class="input mono" placeholder="https://artifactory.corp/artifactory/github-remote" spellcheck="false"></label>
+            </div>
+            <label class="check"><input type="checkbox" name="repoGuestAuth"> Передавать пользователя и токен в машину для pip/npm/apt/Go <span class="muted small">(агент сможет их прочитать; не нужно, если репозитории читаются анонимно)</span></label>
+            <p class="muted small">Логин к реестру образов передаётся smolvm на хосте (как <code>docker login</code>) и в машину не попадает. Адреса репозиториев автоматически разрешены фильтру «Доступ в сеть». Для <code>https://</code>-репозиториев машина получает сертификаты, которым доверяет этот компьютер (внутренний CA — тоже). smolvm serve, запущенный smolvm-web (<code>--autostart</code>), подхватывает логин сразу; если вы запускаете его сами, задайте ему <code>DOCKER_CONFIG=&lt;папка настроек smolvm-web&gt;/docker</code>.</p>
 
-          <div class="grid2">
-            <label>Переменная для ключа<input name="envVar" class="input mono" required placeholder="DEEPSEEK_API_KEY"></label>
-            <label data-mode="gateway">Переменная для base URL<input name="baseUrlVar" class="input mono" placeholder="DEEPSEEK_BASE_URL"></label>
-          </div>
-          <label data-mode="gateway">URL API (куда шлюз отправляет запросы)<input name="upstream" class="input mono" placeholder="https://api.deepseek.com"></label>
-          <label class="check" data-mode="gateway"><input type="checkbox" name="allowHttp"> Локальная модель / сервер по HTTP <span class="muted small">(Ollama, vLLM, LM Studio, llama.cpp; <code>localhost</code> — это хост; без TLS ключ идёт от хоста до сервера открытым текстом)</span></label>
-          <label data-mode="gateway">Модель <span class="muted small">(для локального сервера: OpenCode, Pi и Hermes настроятся на неё сами; Claude Code, Codex и DeepSeek Harness локальные модели не используют)</span><input name="model" class="input mono" placeholder="deepseek-r1:14b"></label>
-          <label data-mode="substitute">Разрешённые хосты (точные имена, через запятую)<input name="hosts" class="input mono" placeholder="api.deepseek.com"></label>
-          <label data-mode="gateway substitute">Разрешённые HTTP-методы <span class="muted small">(пусто — все)</span><input name="methods" class="input mono" placeholder="GET, POST"></label>
-          <label>Значение
-            <input name="value" type="password" class="input mono" placeholder="sk-…" autocomplete="new-password" spellcheck="false">
-            <small class="muted" id="secret-value-hint">Хранится зашифрованным (AES-256-GCM), ключ — в хранилище ОС. Обратно в интерфейс не выдаётся.</small>
-          </label>
-          <label>Заметка<input name="note" class="input" maxlength="200" placeholder="для агента в машине agent-1"></label>
-          <div id="secret-error" class="error" hidden></div>
-          <div class="row">
-            <button type="button" class="btn ghost" id="btn-secret-cancel">Отмена</button>
-            <button type="submit" class="btn primary">Сохранить секрет</button>
-          </div>
-        </form>
+          </section>
+          <section class="settings-pane" data-pane="smolvm" hidden>
+            <div class="pane-head"><h4>smolvm</h4><p class="muted small">Бинарник smolvm, которым пользуется smolvm-web.</p></div>
+            <div class="grid-proxy">
+              <label>Путь к бинарнику smolvm<input name="smolvmBin" class="input mono" spellcheck="false" placeholder="smolvm"></label>
+              <div class="row"><button type="button" class="btn" id="btn-smolvm-check">Проверить</button></div>
+            </div>
+            <div id="smolvm-check-out" class="small" hidden></div>
+          </section>
+          </form>
+          <section class="settings-pane" data-pane="secrets" hidden>
+            <div class="pane-head"><h4>Секреты</h4><p class="muted small">Зашифрованное хранилище API-ключей и токенов. Сохраняются сразу, кнопкой «Сохранить секрет».</p></div>
+                <div id="vault-status" class="small muted"></div>
+                <div id="vault-list"></div>
+                <div class="row"><button type="button" class="btn primary" id="btn-secret-add"><svg class="ic"><use href="#i-plus"/></svg>Добавить секрет</button></div>
+
+                <form id="form-secret" hidden autocomplete="off">
+                  <hr>
+                  <div class="grid2">
+                    <label>Шаблон
+                      <select name="preset" class="input">
+                        <option value="">— свой —</option>
+                        <option value="deepseek">DeepSeek</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="anthropic">Anthropic</option>
+                        <option value="openrouter">OpenRouter</option>
+                        <option value="gemini">Google Gemini</option>
+                        <option value="github">GitHub</option>
+                        <option value="local">Локальная модель (OpenAI-совместимая)</option>
+                      </select>
+                    </label>
+                    <label>Имя секрета<input name="name" class="input mono" required pattern="[A-Za-z0-9_.\-]{1,64}" placeholder="deepseek"></label>
+                  </div>
+
+                  <div class="label-like">Как передавать в машину</div>
+                  <div class="modes">
+                    <label class="mode"><input type="radio" name="mode" value="gateway">
+                      <span><b>Шлюз smolvm-web</b> <span class="tag ok">безопасно</span> <span class="tag">работает через корп. прокси</span><br>
+                      <span class="muted small">Машина получает токен-заглушку и <code>BASE_URL</code> шлюза на хосте. Шлюз подменяет токен на ключ и отправляет запрос к API (через прокси, если он настроен).</span></span></label>
+                    <label class="mode"><input type="radio" name="mode" value="substitute">
+                      <span><b>Подстановка smolvm</b> <span class="tag ok">безопасно</span> <span class="tag warn">нужен прямой интернет</span><br>
+                      <span class="muted small">Родной механизм smolvm: в переменной лежит заглушка, ключ подставляется хостом в HTTPS-заголовок только к указанным хостам. Задаётся при создании машины; корпоративный прокси не поддерживается.</span></span></label>
+                    <label class="mode"><input type="radio" name="mode" value="env">
+                      <span><b>Переменная окружения</b> <span class="tag bad">машина видит значение</span><br>
+                      <span class="muted small">Значение передаётся в команды консоли/exec как есть. Только для того, что программа должна прочитать сама (URL БД и т.п.).</span></span></label>
+                  </div>
+
+                  <div class="grid2">
+                    <label>Переменная для ключа<input name="envVar" class="input mono" required placeholder="DEEPSEEK_API_KEY"></label>
+                    <label data-mode="gateway">Переменная для base URL<input name="baseUrlVar" class="input mono" placeholder="DEEPSEEK_BASE_URL"></label>
+                  </div>
+                  <label data-mode="gateway">URL API (куда шлюз отправляет запросы)<input name="upstream" class="input mono" placeholder="https://api.deepseek.com"></label>
+                  <label class="check" data-mode="gateway"><input type="checkbox" name="allowHttp"> Локальная модель / сервер по HTTP <span class="muted small">(Ollama, vLLM, LM Studio, llama.cpp; <code>localhost</code> — это хост; без TLS ключ идёт от хоста до сервера открытым текстом)</span></label>
+                  <label data-mode="gateway">Модель <span class="muted small">(для локального сервера: OpenCode, Pi и Hermes настроятся на неё сами; Claude Code, Codex и DeepSeek Harness локальные модели не используют)</span><input name="model" class="input mono" placeholder="deepseek-r1:14b"></label>
+                  <label data-mode="substitute">Разрешённые хосты (точные имена, через запятую)<input name="hosts" class="input mono" placeholder="api.deepseek.com"></label>
+                  <label data-mode="gateway substitute">Разрешённые HTTP-методы <span class="muted small">(пусто — все)</span><input name="methods" class="input mono" placeholder="GET, POST"></label>
+                  <label>Значение
+                    <input name="value" type="password" class="input mono" placeholder="sk-…" autocomplete="new-password" spellcheck="false">
+                    <small class="muted" id="secret-value-hint">Хранится зашифрованным (AES-256-GCM), ключ — в хранилище ОС. Обратно в интерфейс не выдаётся.</small>
+                  </label>
+                  <label>Заметка<input name="note" class="input" maxlength="200" placeholder="для агента в машине agent-1"></label>
+                  <div id="secret-error" class="error" hidden></div>
+                  <div class="row">
+                    <button type="button" class="btn ghost" id="btn-secret-cancel">Отмена</button>
+                    <button type="submit" class="btn primary">Сохранить секрет</button>
+                  </div>
+                </form>
+          </section>
+          <div id="settings-error" class="error" hidden></div>
+        </div>
       </div>
+      <footer id="settings-footer">
+        <span class="muted small footer-note">Применяется к следующим запускам машин; для запущенной — «Применить прокси» в её карточке.</span>
+        <button type="button" class="btn ghost" data-close>Отмена</button>
+        <button type="submit" class="btn primary" form="form-settings">Сохранить</button>
+      </footer>
     </div>
   </dialog>
 
-  <!-- Help -->
   <dialog id="dlg-help" class="dialog">
     <div class="dlg-wrap">
       <header><h3 class="h-ic" id="help-title"></h3><button type="button" class="btn ghost icon" data-close title="Закрыть"><svg class="ic"><use href="#i-x"/></svg></button></header>

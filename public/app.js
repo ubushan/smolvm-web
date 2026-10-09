@@ -306,7 +306,7 @@ async function action(name, label, fn, okMsg) {
     if (e.code === 'ROOTFS_BROKEN') rootfsToast(name, e);
     else if (e.code === 'PULL_CERT') {
       toast(h('div', {}, h('div', { style: 'white-space:pre-wrap' }, `${name}: ${e.message}`),
-        h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn primary', onclick: () => openSettings() }, 'Открыть настройки сертификатов'))), 'err', 60000);
+        h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn primary', onclick: () => openSettings('ca') }, 'Открыть настройки сертификатов'))), 'err', 60000);
     } else if (e.code === 'PULL_DOCKERHUB') {
       toast(h('div', {}, h('div', { style: 'white-space:pre-wrap' }, `${name}: ${e.message}`),
         h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn primary', onclick: () => openCreate() }, 'Создать машину'))), 'err', 60000);
@@ -1189,7 +1189,7 @@ function syncImageHint() {
   el.hidden = !img || !(state.info?.imagePrefix || state.info?.reposActive);
   if (eff !== img) el.textContent = `Образ будет скачан из корпоративного реестра: ${eff}`;
   else if (state.info?.imagePrefix) el.textContent = 'Образ не из Docker Hub — скачивается как указан.';
-  else el.textContent = 'Реестр образов не задан (или выключено «Брать образы Docker Hub из этого реестра»): образ скачивается с Docker Hub напрямую. «Настройки» → «Корпоративные репозитории».';
+  else el.textContent = 'Реестр образов не задан (или выключено «Брать образы Docker Hub из этого реестра»): образ скачивается с Docker Hub напрямую. «Настройки» → «Репозитории».';
 }
 
 function openCreate() {
@@ -1395,7 +1395,24 @@ async function refreshInfo() {
   if (mounts) mounts.placeholder = i.platform === 'win32' ? 'C:\\Users\\me\\project:/work' : '/Users/me/project:/work';
 }
 
-async function openSettings() {
+// One settings window with a sidebar: proxy, certificates, repositories, secrets, smolvm.
+const SETTINGS_PANES = ['proxy', 'ca', 'repos', 'secrets', 'smolvm'];
+function showSettingsPane(pane) {
+  if (!SETTINGS_PANES.includes(pane)) pane = 'proxy';
+  document.querySelectorAll('#dlg-settings .settings-pane').forEach((el) => { el.hidden = el.dataset.pane !== pane; });
+  document.querySelectorAll('#settings-nav button').forEach((b) => b.classList.toggle('active', b.dataset.pane === pane));
+  // Secrets are saved one by one in their own form; the footer saves the rest.
+  const footer = $('#settings-footer');
+  footer.querySelector('[type=submit]').hidden = pane === 'secrets';
+  footer.querySelector('.footer-note').hidden = pane === 'secrets';
+  try { localStorage.setItem('smolvm.settingsPane', pane); } catch {}
+  if (pane === 'secrets') { $('#form-secret').hidden = true; renderVault(); }
+  $('.settings-main').scrollTop = 0;
+}
+$('#settings-nav').addEventListener('click', (e) => { const b = e.target.closest('button[data-pane]'); if (b) showSettingsPane(b.dataset.pane); });
+
+async function openSettings(pane) {
+  if (typeof pane !== 'string') { try { pane = localStorage.getItem('smolvm.settingsPane'); } catch { pane = null; } }
   const f = $('#form-settings');
   $('#settings-error').hidden = true;
   $('#proxy-detect-out').hidden = true;
@@ -1427,7 +1444,8 @@ async function openSettings() {
   $('#ca-system-hint').textContent = state.info?.platform === 'win32' ? '(хранилище Windows)' : state.info?.platform === 'darwin' ? '(связка ключей macOS)' : '(системный bundle)';
   syncSettingsForm();
   previewCa();
-  $('#dlg-settings').showModal();
+  showSettingsPane(pane || 'proxy');
+  if (!$('#dlg-settings').open) $('#dlg-settings').showModal();
 }
 
 function syncSettingsForm() {
@@ -1572,8 +1590,8 @@ $('#form-settings').addEventListener('submit', async (e) => {
   } catch (ex) { err.textContent = ex.message; err.hidden = false; }
 });
 
-$('#btn-settings').addEventListener('click', openSettings);
-$('#proxy-chip').addEventListener('click', openSettings);
+$('#btn-settings').addEventListener('click', () => openSettings());
+$('#proxy-chip').addEventListener('click', () => openSettings('proxy'));
 
 // ---------- vault ----------
 const MODE_LABEL = { gateway: 'шлюз', substitute: 'подстановка smolvm', env: 'переменная (видна машине)' };
@@ -1596,11 +1614,7 @@ async function loadVault() {
   return v;
 }
 
-async function openVault() {
-  $('#form-secret').hidden = true;
-  $('#dlg-vault').showModal();
-  await renderVault();
-}
+function openVault() { return openSettings('secrets'); }
 
 async function renderVault() {
   const st = $('#vault-status');
@@ -1658,7 +1672,6 @@ async function deleteSecret(x) {
   renderVault();
 }
 
-$('#btn-vault').addEventListener('click', openVault);
 $('#btn-secret-add').addEventListener('click', () => editSecret(null));
 $('#btn-secret-cancel').addEventListener('click', () => { $('#form-secret').hidden = true; });
 $('#form-secret').addEventListener('change', (e) => {
