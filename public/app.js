@@ -1476,6 +1476,8 @@ const PRESETS = {
   openrouter: { name: 'openrouter', envVar: 'OPENROUTER_API_KEY', hosts: 'openrouter.ai', upstream: 'https://openrouter.ai/api/v1', baseUrlVar: 'OPENROUTER_BASE_URL' },
   gemini: { name: 'gemini', envVar: 'GEMINI_API_KEY', hosts: 'generativelanguage.googleapis.com', upstream: 'https://generativelanguage.googleapis.com', baseUrlVar: 'GOOGLE_GEMINI_BASE_URL' },
   github: { name: 'github', envVar: 'GITHUB_TOKEN', hosts: 'api.github.com', upstream: 'https://api.github.com', baseUrlVar: 'GITHUB_API_URL' },
+  // Neutral variable names: agents' DeepSeek/OpenAI auto-config does not pick it up by mistake.
+  local: { name: 'local-llm', envVar: 'LOCAL_LLM_API_KEY', hosts: '', upstream: 'http://localhost:11434/v1', baseUrlVar: 'LOCAL_LLM_BASE_URL', allowHttp: true, mode: 'gateway' },
 };
 let vaultCache = [];
 
@@ -1528,7 +1530,7 @@ function editSecret(x) {
   f.name.readOnly = !!x;
   if (x) {
     f.name.value = x.name; f.mode.value = x.mode; f.envVar.value = x.envVar; f.baseUrlVar.value = x.baseUrlVar;
-    f.upstream.value = x.upstream; f.hosts.value = x.hosts.join(', '); f.methods.value = x.methods.join(', '); f.note.value = x.note;
+    f.upstream.value = x.upstream; f.allowHttp.checked = !!x.allowHttp; f.hosts.value = x.hosts.join(', '); f.methods.value = x.methods.join(', '); f.note.value = x.note;
     f.value.placeholder = 'оставьте пустым, чтобы не менять';
   } else {
     f.mode.value = state.info?.proxyActive ? 'gateway' : 'substitute';
@@ -1555,6 +1557,8 @@ $('#form-secret').addEventListener('change', (e) => {
   if (e.target.name === 'preset' && PRESETS[f.preset.value]) {
     const p = PRESETS[f.preset.value];
     for (const k of ['name', 'envVar', 'hosts', 'upstream', 'baseUrlVar']) f[k].value = p[k];
+    f.allowHttp.checked = !!p.allowHttp;
+    if (p.mode) f.mode.value = p.mode;
   }
   syncSecretForm();
 });
@@ -1566,7 +1570,7 @@ $('#form-secret').addEventListener('submit', async (e) => {
   const name = f.name.value.trim();
   const body = {
     mode: f.mode.value, envVar: f.envVar.value.trim(), baseUrlVar: f.baseUrlVar.value.trim(),
-    upstream: f.upstream.value.trim(), hosts: csv(f.hosts.value), methods: csv(f.methods.value),
+    upstream: f.upstream.value.trim(), allowHttp: f.allowHttp.checked, hosts: csv(f.hosts.value), methods: csv(f.methods.value),
     note: f.note.value.trim(), value: f.value.value,
   };
   try {

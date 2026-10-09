@@ -289,6 +289,7 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
                 <option value="openrouter">OpenRouter</option>
                 <option value="gemini">Google Gemini</option>
                 <option value="github">GitHub</option>
+                <option value="local">Локальная модель (OpenAI-совместимая)</option>
               </select>
             </label>
             <label>Имя секрета<input name="name" class="input mono" required pattern="[A-Za-z0-9_.\-]{1,64}" placeholder="deepseek"></label>
@@ -312,6 +313,7 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
             <label data-mode="gateway">Переменная для base URL<input name="baseUrlVar" class="input mono" placeholder="DEEPSEEK_BASE_URL"></label>
           </div>
           <label data-mode="gateway">URL API (куда шлюз отправляет запросы)<input name="upstream" class="input mono" placeholder="https://api.deepseek.com"></label>
+          <label class="check" data-mode="gateway"><input type="checkbox" name="allowHttp"> Локальная модель / сервер по HTTP <span class="muted small">(Ollama, vLLM, LM Studio, llama.cpp; <code>localhost</code> — это хост; без TLS ключ идёт от хоста до сервера открытым текстом)</span></label>
           <label data-mode="substitute">Разрешённые хосты (точные имена, через запятую)<input name="hosts" class="input mono" placeholder="api.deepseek.com"></label>
           <label data-mode="gateway substitute">Разрешённые HTTP-методы <span class="muted small">(пусто — все)</span><input name="methods" class="input mono" placeholder="GET, POST"></label>
           <label>Значение
