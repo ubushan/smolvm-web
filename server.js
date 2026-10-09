@@ -29,6 +29,11 @@ const snapshots = require('./lib/snapshots');
 const audit = require('./lib/audit');
 const egress = require('./lib/egress');
 const winhost = require('./lib/winhost');
+const repos = require('./lib/repos');
+const { execFile } = require('child_process');
+
+// Corporate repository hosts are reachable for machines behind the egress filter (internal addresses too).
+egress.setExtraRules(() => repos.hosts().map((host) => ({ host, ports: '*', allowPrivate: true, source: 'корпоративные репозитории' })));
 egress.onLog((e) => audit.onNet(e));
 const dirs = require('./lib/dirs');
 
@@ -435,8 +440,12 @@ const ROUTES = [
     if (body.network && !body.networkBackend && !body.from && !body.registryRef) body.networkBackend = 'virtio-net';
     url.searchParams.delete('webProxy');
     req.url = url.pathname + (url.search || '');
+    // Docker Hub images through the corporate registry (JFrog/Nexus), when configured.
+    const origImage = body.image;
+    if (body.image) body.image = repos.rewriteImage(body.image);
     let r;
     try { r = await up.request('POST', req.url, body); } catch (e) { await cleanup(); throw e; }
+    if (r.status === 200 && r.data && origImage && body.image !== origImage) r.data._webImage = { from: origImage, to: body.image };
     if (r.status === 200 && r.data?.name) {
       cfg.setMachineProxy(r.data.name, useProxy);
       // Records left by a machine of the same name deleted outside smolvm-web must not apply to this one.
@@ -520,9 +529,11 @@ const ROUTES = [
 ];
 
 // ---------- /ui endpoints ----------
+// Settings for the browser: the repository token never leaves the server.
 function publicSettings() {
   const s = cfg.getSettings();
-  return { ...s, ca: { ...s.ca } };
+  const { password, ...r } = s.repos;
+  return { ...s, ca: { ...s.ca }, repos: { ...r, hasPassword: !!password }, smolvmBinDefault: process.env.SMOLVM_BIN || 'smolvm' };
 }
 
 const AG = '^/ui/machines/([^/]+)/agents';
@@ -698,7 +709,7 @@ const UI = [
       upstream: up.UPSTREAM,
       listen: up.listenArg(),
       configDir: cfg.DIR,
-      smolvmBin: mc.SMOLVM_BIN,
+      smolvmBin: mc.smolvmBin(),
       proxyActive: !!(s.proxy.enabled && s.proxy.url),
       caActive: !!s.ca.enabled,
       guestProxy: g,
@@ -723,7 +734,26 @@ const UI = [
       try { px.buildBundle({ ...cfg.getSettings().ca, ...body.ca }); }
       catch (e) { return sendJson(res, 400, { error: `CA: ${e.message}` }); }
     }
-    sendJson(res, 200, cfg.saveSettings(body));
+    // Sections and fields the request leaves out keep their current values.
+    const cur = cfg.getSettings();
+    const next = {};
+    for (const k of Object.keys(cur)) next[k] = { ...cur[k], ...(body[k] && typeof body[k] === 'object' ? body[k] : {}) };
+    if (body.repos && !body.repos.password) next.repos.password = body.repos.clearPassword ? '' : cur.repos.password;
+    delete next.repos.clearPassword; delete next.repos.hasPassword;
+    next.smolvm.bin = String(next.smolvm.bin || '').trim().replace(/^"(.*)"$/, '$1');
+    try { repos.validate(next.repos); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+    cfg.saveSettings(next);
+    try { repos.dockerConfigDir(); } catch {}
+    sendJson(res, 200, publicSettings());
+  }],
+  // Does this smolvm binary run? (`smolvm --version`)
+  ['POST', /^\/ui\/smolvm\/check$/, async (req, res) => {
+    const { bin } = await readJson(req);
+    const exe = String(bin || '').trim().replace(/^"(.*)"$/, '$1') || mc.smolvmBin();
+    execFile(exe, ['--version'], { timeout: 15000, windowsHide: true }, (err, stdout, stderr) => {
+      if (err) return sendJson(res, 200, { ok: false, bin: exe, error: err.code === 'ENOENT' ? 'файл не найден' : (stderr || err.message).trim().slice(0, 300) });
+      sendJson(res, 200, { ok: true, bin: exe, version: String(stdout || stderr).trim().split('\n')[0] });
+    });
   }],
   ['GET', /^\/ui\/proxy\/detect$/, async (req, res) => sendJson(res, 200, await px.detect())],
   ['POST', /^\/ui\/proxy\/test$/, async (req, res) => {
@@ -992,12 +1022,12 @@ async function maybeAutostart() {
     env.NO_PROXY = env.NO_PROXY || np;
     env.no_proxy = env.no_proxy || np;
   }
-  console.log(`Запуск: ${mc.SMOLVM_BIN} serve start --listen ${listen}`);
+  console.log(`Запуск: ${mc.smolvmBin()} serve start --listen ${listen}`);
   // Log to a file, not a pipe: on Windows smolvm's children inherit pipe handles.
   const logPath = path.join(cfg.DIR, 'smolvm-serve.log');
   fs.mkdirSync(cfg.DIR, { recursive: true });
   const fd = fs.openSync(logPath, 'a');
-  const child = spawn(mc.SMOLVM_BIN, ['serve', 'start', '--listen', listen], { stdio: ['ignore', fd, fd], env, windowsHide: true });
+  const child = spawn(mc.smolvmBin(), ['serve', 'start', '--listen', listen], { stdio: ['ignore', fd, fd], env: repos.cliEnv(env), windowsHide: true });
   child.on('error', (e) => console.error(`не удалось запустить smolvm: ${e.message}`));
   child.on('exit', (code) => console.log(`smolvm serve завершился (код ${code}); лог: ${logPath}`));
   const stop = () => { try { child.kill(); } catch {} process.exit(0); };

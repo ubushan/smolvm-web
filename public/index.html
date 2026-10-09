@@ -258,6 +258,33 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
         <label class="check"><input type="checkbox" name="caReplace"> Заменить системный bundle в машине <span class="muted small">(чтобы доверяли apk, apt, curl, wget)</span></label>
         <label class="check"><input type="checkbox" name="caPullTrust"> Доверять им при скачивании образа <span class="muted small">(bundle подключается к машине томом <code>/etc/smolvm-host-trust</code>, как <code>--trust-host-certs</code>; снимки для таких машин недоступны)</span></label>
         <div id="ca-out" class="small muted"></div>
+
+        <hr>
+        <div class="label-like"><b>Корпоративные репозитории</b> <span class="muted small">(JFrog Artifactory, Nexus, Harbor…)</span></div>
+        <label>Реестр образов, зеркало Docker Hub <span class="muted small">(префикс: <code>artifactory.corp/docker-remote</code> или <code>docker-remote.artifactory.corp</code>)</span>
+          <input name="repoRegistry" class="input mono" placeholder="artifactory.corp/docker-remote" spellcheck="false"></label>
+        <label class="check"><input type="checkbox" name="repoRewrite"> Брать образы Docker Hub из этого реестра <span class="muted small" id="repo-rewrite-hint"></span></label>
+        <div class="grid2">
+          <label>Пользователь<input name="repoUser" class="input mono" autocomplete="off" spellcheck="false"></label>
+          <label>Токен / API key<input name="repoPassword" type="password" class="input mono" autocomplete="new-password" spellcheck="false"></label>
+        </div>
+        <label>PyPI (pip)<input name="repoPip" class="input mono" placeholder="https://artifactory.corp/artifactory/api/pypi/pypi-remote/simple" spellcheck="false"></label>
+        <label>npm<input name="repoNpm" class="input mono" placeholder="https://artifactory.corp/artifactory/api/npm/npm-remote/" spellcheck="false"></label>
+        <div class="grid2">
+          <label>apt: вместо deb.debian.org/debian<input name="repoAptDebian" class="input mono" placeholder="https://artifactory.corp/artifactory/debian-remote" spellcheck="false"></label>
+          <label>apt: вместо …/debian-security<input name="repoAptSecurity" class="input mono" placeholder="https://artifactory.corp/artifactory/debian-security-remote" spellcheck="false"></label>
+        </div>
+        <label>Go (GOPROXY)<input name="repoGoproxy" class="input mono" placeholder="https://artifactory.corp/artifactory/api/go/go-remote" spellcheck="false"></label>
+        <label class="check"><input type="checkbox" name="repoGuestAuth"> Передавать пользователя и токен в машину для pip/npm/apt/Go <span class="muted small">(агент сможет их прочитать; не нужно, если репозитории читаются анонимно)</span></label>
+        <p class="muted small">Логин к реестру образов передаётся smolvm на хосте (как <code>docker login</code>) и в машину не попадает. Адреса репозиториев автоматически разрешены фильтру «Доступ в сеть». smolvm serve, запущенный smolvm-web (<code>--autostart</code>), подхватывает логин сразу; если вы запускаете его сами, задайте ему <code>DOCKER_CONFIG=&lt;папка настроек smolvm-web&gt;/docker</code>.</p>
+
+        <hr>
+        <div class="label-like"><b>smolvm</b></div>
+        <div class="grid-proxy">
+          <label>Путь к бинарнику smolvm<input name="smolvmBin" class="input mono" spellcheck="false" placeholder="smolvm"></label>
+          <div class="row"><button type="button" class="btn" id="btn-smolvm-check">Проверить</button></div>
+        </div>
+        <div id="smolvm-check-out" class="small" hidden></div>
         <div id="settings-error" class="error" hidden></div>
         <p class="muted small">Новые настройки применяются к следующим запускам. Для уже запущенной машины нажмите «Применить прокси» в её карточке.</p>
       </div>
@@ -314,6 +341,7 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
           </div>
           <label data-mode="gateway">URL API (куда шлюз отправляет запросы)<input name="upstream" class="input mono" placeholder="https://api.deepseek.com"></label>
           <label class="check" data-mode="gateway"><input type="checkbox" name="allowHttp"> Локальная модель / сервер по HTTP <span class="muted small">(Ollama, vLLM, LM Studio, llama.cpp; <code>localhost</code> — это хост; без TLS ключ идёт от хоста до сервера открытым текстом)</span></label>
+          <label data-mode="gateway">Модель <span class="muted small">(для локального сервера: OpenCode, Pi и Hermes настроятся на неё сами; Claude Code, Codex и DeepSeek Harness локальные модели не используют)</span><input name="model" class="input mono" placeholder="deepseek-r1:14b"></label>
           <label data-mode="substitute">Разрешённые хосты (точные имена, через запятую)<input name="hosts" class="input mono" placeholder="api.deepseek.com"></label>
           <label data-mode="gateway substitute">Разрешённые HTTP-методы <span class="muted small">(пусто — все)</span><input name="methods" class="input mono" placeholder="GET, POST"></label>
           <label>Значение

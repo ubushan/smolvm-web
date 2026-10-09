@@ -1257,7 +1257,7 @@ $('#form-create').addEventListener('submit', async (e) => {
     const created = await api('POST', `/api/v1/machines${optOut ? '?webProxy=0' : ''}`, body);
     $('#dlg-create').close();
     f.reset();
-    toast(`Машина ${created.name} создана`, 'ok');
+    toast(`Машина ${created.name} создана${created._webImage ? ` — образ из корпоративного реестра: ${created._webImage.to}` : ''}`, 'ok');
     await refreshMachines();
     select(created.name);
     if (body._webProfile) switchTab('agents');
@@ -1362,6 +1362,15 @@ async function openSettings() {
   f.caPem.value = s.ca.pem;
   f.caReplace.checked = s.ca.replaceSystemBundle;
   f.caPullTrust.checked = s.ca.pullTrust !== false;
+  const r = s.repos || {};
+  f.repoRegistry.value = r.registry || ''; f.repoRewrite.checked = r.rewrite !== false;
+  f.repoUser.value = r.username || ''; f.repoPassword.value = '';
+  f.repoPassword.placeholder = r.hasPassword ? 'сохранён — оставьте пустым, чтобы не менять' : '';
+  f.repoPip.value = r.pip || ''; f.repoNpm.value = r.npm || ''; f.repoAptDebian.value = r.aptDebian || '';
+  f.repoAptSecurity.value = r.aptSecurity || ''; f.repoGoproxy.value = r.goproxy || ''; f.repoGuestAuth.checked = !!r.guestAuth;
+  f.smolvmBin.value = s.smolvm?.bin || ''; f.smolvmBin.placeholder = s.smolvmBinDefault || 'smolvm';
+  $('#smolvm-check-out').hidden = true;
+  syncRepoHint();
   $('#ca-system-hint').textContent = state.info?.platform === 'win32' ? '(хранилище Windows)' : state.info?.platform === 'darwin' ? '(связка ключей macOS)' : '(системный bundle)';
   syncSettingsForm();
   previewCa();
@@ -1400,8 +1409,33 @@ function settingsFromForm() {
       pull: f.proxyPull.checked, exec: f.proxyExec.checked, provision: f.proxyProvision.checked,
     },
     ca: { enabled: f.caEnabled.checked, system: f.caSystem.checked, pem: f.caPem.value.trim(), replaceSystemBundle: f.caReplace.checked, pullTrust: f.caPullTrust.checked },
+    repos: {
+      registry: f.repoRegistry.value.trim(), rewrite: f.repoRewrite.checked, username: f.repoUser.value.trim(),
+      ...(f.repoPassword.value ? { password: f.repoPassword.value } : {}),
+      pip: f.repoPip.value.trim(), npm: f.repoNpm.value.trim(), aptDebian: f.repoAptDebian.value.trim(),
+      aptSecurity: f.repoAptSecurity.value.trim(), goproxy: f.repoGoproxy.value.trim(), guestAuth: f.repoGuestAuth.checked,
+    },
+    smolvm: { bin: f.smolvmBin.value.trim() },
   };
 }
+
+// Preview of how a Docker Hub image is rewritten.
+function syncRepoHint() {
+  const f = $('#form-settings');
+  const p = f.repoRegistry.value.trim().replace(/^[a-z]+:\/\//i, '').replace(/\/+$/, '');
+  $('#repo-rewrite-hint').textContent = p ? `(node:22-bookworm-slim → ${p}/library/node:22-bookworm-slim)` : '';
+}
+$('#form-settings').repoRegistry.addEventListener('input', syncRepoHint);
+$('#btn-smolvm-check').addEventListener('click', async () => {
+  const f = $('#form-settings');
+  const out = $('#smolvm-check-out');
+  out.hidden = false; out.className = 'small muted'; out.textContent = 'Проверка…';
+  try {
+    const r = await api('POST', '/ui/smolvm/check', { bin: f.smolvmBin.value.trim() });
+    out.className = r.ok ? 'small okc' : 'small error';
+    out.textContent = r.ok ? `✓ ${r.version} (${r.bin})` : `✗ ${r.bin}: ${r.error}`;
+  } catch (e) { out.className = 'small error'; out.textContent = e.message; }
+});
 
 $('#form-settings').addEventListener('input', (e) => {
   syncSettingsForm();
@@ -1477,7 +1511,7 @@ const PRESETS = {
   gemini: { name: 'gemini', envVar: 'GEMINI_API_KEY', hosts: 'generativelanguage.googleapis.com', upstream: 'https://generativelanguage.googleapis.com', baseUrlVar: 'GOOGLE_GEMINI_BASE_URL' },
   github: { name: 'github', envVar: 'GITHUB_TOKEN', hosts: 'api.github.com', upstream: 'https://api.github.com', baseUrlVar: 'GITHUB_API_URL' },
   // Neutral variable names: agents' DeepSeek/OpenAI auto-config does not pick it up by mistake.
-  local: { name: 'local-llm', envVar: 'LOCAL_LLM_API_KEY', hosts: '', upstream: 'http://localhost:11434/v1', baseUrlVar: 'LOCAL_LLM_BASE_URL', allowHttp: true, mode: 'gateway' },
+  local: { name: 'local-llm', envVar: 'LOCAL_LLM_API_KEY', hosts: '', upstream: 'http://localhost:11434/v1', baseUrlVar: 'LOCAL_LLM_BASE_URL', allowHttp: true, model: 'deepseek-r1:14b', mode: 'gateway' },
 };
 let vaultCache = [];
 
@@ -1508,7 +1542,7 @@ async function renderVault() {
     v.secrets.map((x) => h('tr', {},
       h('td', {}, h('span', { class: 'with-mark' }, mark(secretMark(x), true), h('span', { class: 'mono' }, x.name)), x.note ? h('div', { class: 'muted small' }, x.note) : null),
       h('td', {}, h('span', { class: `tag ${MODE_TAG[x.mode]}` }, MODE_LABEL[x.mode])),
-      h('td', { class: 'mono small' }, x.envVar, x.baseUrlVar ? h('div', { class: 'muted' }, x.baseUrlVar) : null),
+      h('td', { class: 'mono small' }, x.envVar, x.baseUrlVar ? h('div', { class: 'muted' }, x.baseUrlVar) : null, x.model ? h('div', { class: 'muted' }, `модель: ${x.model}`) : null),
       h('td', { class: 'mono small' }, x.mode === 'gateway' ? x.upstream : x.mode === 'substitute' ? x.hosts.join(', ') : '—'),
       h('td', { class: 'small' }, x.machines.join(', ') || '—'),
       h('td', {},
@@ -1530,7 +1564,7 @@ function editSecret(x) {
   f.name.readOnly = !!x;
   if (x) {
     f.name.value = x.name; f.mode.value = x.mode; f.envVar.value = x.envVar; f.baseUrlVar.value = x.baseUrlVar;
-    f.upstream.value = x.upstream; f.allowHttp.checked = !!x.allowHttp; f.hosts.value = x.hosts.join(', '); f.methods.value = x.methods.join(', '); f.note.value = x.note;
+    f.upstream.value = x.upstream; f.allowHttp.checked = !!x.allowHttp; f.model.value = x.model || ''; f.hosts.value = x.hosts.join(', '); f.methods.value = x.methods.join(', '); f.note.value = x.note;
     f.value.placeholder = 'оставьте пустым, чтобы не менять';
   } else {
     f.mode.value = state.info?.proxyActive ? 'gateway' : 'substitute';
@@ -1558,6 +1592,7 @@ $('#form-secret').addEventListener('change', (e) => {
     const p = PRESETS[f.preset.value];
     for (const k of ['name', 'envVar', 'hosts', 'upstream', 'baseUrlVar']) f[k].value = p[k];
     f.allowHttp.checked = !!p.allowHttp;
+    f.model.value = p.model || '';
     if (p.mode) f.mode.value = p.mode;
   }
   syncSecretForm();
@@ -1570,7 +1605,7 @@ $('#form-secret').addEventListener('submit', async (e) => {
   const name = f.name.value.trim();
   const body = {
     mode: f.mode.value, envVar: f.envVar.value.trim(), baseUrlVar: f.baseUrlVar.value.trim(),
-    upstream: f.upstream.value.trim(), allowHttp: f.allowHttp.checked, hosts: csv(f.hosts.value), methods: csv(f.methods.value),
+    upstream: f.upstream.value.trim(), allowHttp: f.allowHttp.checked, model: f.model.value.trim(), hosts: csv(f.hosts.value), methods: csv(f.methods.value),
     note: f.note.value.trim(), value: f.value.value,
   };
   try {
