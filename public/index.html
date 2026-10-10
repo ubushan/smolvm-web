@@ -57,17 +57,17 @@
       <div id="health" class="health"><span class="dot"></span><span></span></div>
     </div>
     <nav class="pagenav" id="pagenav">
+      <a href="#/work" data-page="work" title="Агенты с настройками, MCP и памятью — каждый раз в чистой машине"><svg class="ic"><use href="#i-users"/></svg>Рабочие места</a>
       <a href="#/" data-page="machines"><svg class="ic"><use href="#i-server"/></svg>Машины</a>
       <a href="#/egress" data-page="egress" title="Allow list ресурсов интернета для машин"><svg class="ic"><use href="#i-globe"/></svg>Сеть</a>
       <a href="#/audit" data-page="audit" title="Журнал действий: команды, изменения файлов, экспорт в SIEM, оповещения"><svg class="ic"><use href="#i-shield"/></svg>Аудит</a>
-      <a href="#/sandbox" data-page="sandbox" title="Одноразовые машины для агентов с сохранением памяти, skills и MCP"><svg class="ic"><use href="#i-box"/></svg>Песочницы</a>
       <a href="#/dirs" data-page="dirs" title="Разрешённые директории хоста и права пользователей"><svg class="ic"><use href="#i-folder"/></svg>Директории</a>
     </nav>
     <button id="proxy-chip" class="chip" hidden title="Настройки сети и прокси"></button>
     <div class="spacer"></div>
-    <button id="btn-settings" class="btn ghost icon" title="Настройки: прокси, сертификаты, репозитории, секреты, smolvm" aria-label="Настройки"><svg class="ic"><use href="#i-gear"/></svg></button>
+    <button id="btn-settings" class="btn ghost" title="Настройки: прокси, сертификаты, репозитории, секреты, smolvm"><svg class="ic"><use href="#i-gear"/></svg><span class="lbl">Настройки</span></button>
     <button id="btn-theme" class="btn ghost icon" title="Тема"><svg class="ic"><use href="#i-contrast"/></svg></button>
-    <button id="btn-create" class="btn primary"><svg class="ic"><use href="#i-plus"/></svg>Создать</button>
+    <button id="btn-create" class="btn" title="Создать обычную машину"><svg class="ic"><use href="#i-plus"/></svg><span class="lbl">Машина</span></button>
   </header>
 
   <div id="host-warning" class="notice host-warning" hidden></div>
@@ -98,6 +98,7 @@
     </section>
   </main>
 
+  <main class="page" id="page-work" hidden></main>
   <main class="page" id="page-egress" hidden></main>
   <main class="page" id="page-log" hidden></main>
   <main class="page" id="page-dirs" hidden></main>
@@ -411,5 +412,6 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
   <script src="/dirs.js"></script>
   <script src="/audit.js"></script>
   <script src="/sandbox.js"></script>
+  <script src="/work.js"></script>
 </body>
 </html>

@@ -758,7 +758,7 @@ const UI = [
   }],
   ['POST', /^\/ui\/sandbox\/profiles$/, async (req, res) => {
     const b = await readJson(req);
-    try { sendJson(res, 200, await sandbox.createProfile({ name: b.name, from: b.from ? String(b.from) : null })); } catch (e) { err(res, e); }
+    try { sendJson(res, 200, await sandbox.createProfile({ name: b.name, from: b.from ? String(b.from) : null, template: b.template ? String(b.template) : null, agent: b.agent ? String(b.agent) : null })); } catch (e) { err(res, e); }
   }],
   ['PUT', /^\/ui\/sandbox\/profiles\/([\w-]+)$/, async (req, res, m) => {
     const b = await readJson(req);

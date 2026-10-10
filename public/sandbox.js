@@ -410,6 +410,7 @@
     render(el, p) {
       root = el; params = p; editing = null;
       section = SECTIONS.some(([id]) => id === p.get('tab')) ? p.get('tab') : 'open';
+      if (section === 'profiles' && p.get('profile')) editing = p.get('profile'); // from «Рабочие места»
       fill(el, h('p', { class: 'muted' }, 'Загрузка…'));
       load().then(() => { lastSig = ''; render(); }).catch((e) => fill(el, h('div', { class: 'error' }, e.message)));
       timer = setInterval(poll, 3000);

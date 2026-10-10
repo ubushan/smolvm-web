@@ -797,3 +797,52 @@ details.card[open] > summary { margin-bottom: 10px; }
 .notice.trifecta .btn { align-self: flex-start; }
 .limits-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
 .limits-grid label { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+
+/* ---------- «Рабочие места» (start page) ---------- */
+.ws-head { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; padding: 8px 2px 4px; }
+.ws-head-text { flex: 1 1 360px; display: flex; flex-direction: column; gap: 4px; }
+.ws-head h1, .ws-head p { margin: 0; }
+.ws-head h1 { font-size: 24px; font-weight: 700; letter-spacing: -.01em; }
+.ws-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.ws-card { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); padding: 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ws-card.live { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow); }
+.ws-card-head { display: flex; align-items: center; gap: 12px; }
+.ws-card-head > .mark { width: 40px; height: 40px; border-radius: 11px; font-size: 15px; }
+.ws-card-head > .mark .ic { width: 20px; height: 20px; }
+.ws-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ws-title b { font-size: 16px; overflow-wrap: anywhere; }
+.ws-live { font-size: 12px; font-weight: 600; color: var(--ok); background: var(--ok-soft); padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.ws-live.busy { color: var(--accent); background: var(--accent-soft); }
+.ws-chips { display: flex; flex-wrap: wrap; gap: 6px; min-height: 26px; align-items: center; }
+.ws-chip { font-size: 12px; padding: 4px 9px; border-radius: 7px; background: var(--panel-2); border: 1px solid var(--border); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-actions { display: flex; gap: 8px; align-items: center; margin-top: auto; }
+.ws-actions .ws-main { flex: 1; justify-content: center; min-height: 40px; }
+.ws-actions .btn:not(.ws-main):not(.icon) { min-height: 40px; }
+.ws-notice { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border-radius: 12px; background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent); color: var(--text); font-size: 14px; }
+.ws-notice > span { flex: 1 1 300px; }
+.ws-notice a { font-weight: 600; color: var(--warn); }
+.ws-empty { align-items: center; text-align: center; padding: 36px 20px; gap: 10px; }
+.ws-empty > .ic { width: 32px; height: 32px; color: var(--muted); }
+.ws-empty h3 { font-size: 17px; }
+.ws-empty p { max-width: 520px; }
+.ws-oneoff { display: flex; flex-direction: column; gap: 8px; }
+.ws-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
+.ws-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dot-state { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot-state.running { background: var(--ok); }
+.ws-foot { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; padding: 4px 2px; }
+.ws-foot a { color: var(--muted); }
+.ws-foot a:hover { color: var(--text); }
+/* «Новая песочница» / «Новое место» */
+.dialog.ws-dialog { width: min(560px, calc(100vw - 32px)); }
+.ws-dialog .dialog-body { gap: 16px; padding-top: 0; }
+.ws-dialog .dialog-body > p { margin: 0; }
+.ws-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.ws-field .input { color: var(--text); }
+.ws-agents { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.ws-agent { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font: inherit; font-size: 14px; cursor: pointer; text-align: left; }
+.ws-agent:hover { border-color: var(--border-2, var(--muted)); }
+.ws-agent.on { border: 2px solid var(--accent); background: var(--accent-soft); padding: 7px 11px; font-weight: 600; }
+.ws-go { min-height: 48px; justify-content: center; font-size: 15px; }
+.ws-center { text-align: center; }
+@media (max-width: 560px) { .ws-grid { grid-template-columns: 1fr; } .ws-head .btn { flex: 1; justify-content: center; } }

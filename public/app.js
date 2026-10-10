@@ -2034,6 +2034,8 @@ const pages = {}; // id -> { render(el, params), leave() }
 let pageCleanup = null;
 function routeParams() {
   const m = location.hash.match(/^#\/(\w*)(?:\?(.*))?$/);
+  // No hash at all: the start page is «Рабочие места»; «#/» stays the machines list.
+  if (!location.hash || location.hash === '#') return { page: 'work', params: new URLSearchParams() };
   return { page: (m && m[1]) || 'machines', params: new URLSearchParams((m && m[2]) || '') };
 }
 function route() {
@@ -2043,7 +2045,9 @@ function route() {
   state.page = id;
   $('#page-machines').hidden = id !== 'machines';
   for (const k of Object.keys(pages)) $(`#page-${k}`).hidden = k !== id;
-  document.querySelectorAll('#pagenav a').forEach((a) => a.classList.toggle('active', a.dataset.page === id));
+  // Sandbox templates, profiles and review live under «Рабочие места».
+  const navId = id === 'sandbox' ? 'work' : id === 'log' ? 'egress' : id;
+  document.querySelectorAll('#pagenav a').forEach((a) => a.classList.toggle('active', a.dataset.page === navId));
   if (id !== 'machines') pageCleanup = pages[id].render($(`#page-${id}`), params) || null;
 }
 window.addEventListener('hashchange', route);
