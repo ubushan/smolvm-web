@@ -1426,7 +1426,7 @@ async function refreshInfo() {
 }
 
 // One settings window with a sidebar: proxy, certificates, repositories, secrets, smolvm.
-const SETTINGS_PANES = ['smolvm', 'proxy', 'ca', 'repos', 'secrets', 'audit'];
+const SETTINGS_PANES = ['smolvm', 'policy', 'proxy', 'ca', 'repos', 'secrets', 'audit'];
 function showSettingsPane(pane) {
   if (!SETTINGS_PANES.includes(pane)) pane = 'smolvm';
   document.querySelectorAll('#dlg-settings .settings-pane').forEach((el) => { el.hidden = el.dataset.pane !== pane; });
@@ -1434,16 +1434,47 @@ function showSettingsPane(pane) {
   // Secrets are saved one by one in their own form; the footer saves the rest.
   const footer = $('#settings-footer');
   // Secrets and audit/SIEM are saved by their own buttons.
-  const own = pane === 'secrets' || pane === 'audit';
+  const own = pane === 'secrets' || pane === 'audit' || pane === 'policy';
   footer.querySelector('[type=submit]').hidden = own;
   footer.querySelector('.footer-note').hidden = own;
   try { localStorage.setItem('smolvm.settingsPane', pane); } catch {}
   if (pane === 'secrets') { $('#form-secret').hidden = true; renderVault(); }
   if (pane === 'smolvm') renderVirtInfo();
+  if (pane === 'policy') renderPolicy();
   if (pane === 'audit' && window.auditSettingsCards) window.auditSettingsCards().then((cards) => fill($('#audit-settings'), ...cards));
   $('.settings-main').scrollTop = 0;
 }
 $('#settings-nav').addEventListener('click', (e) => { const b = e.target.closest('button[data-pane]'); if (b) showSettingsPane(b.dataset.pane); });
+
+// «Песочницы»: what every new sandbox gets — lifetime, idle close, «ask» for unknown addresses, limits.
+async function renderPolicy() {
+  const box = $('#policy-settings');
+  let p;
+  try { p = await api('GET', '/ui/sandbox/policy'); } catch (e) { fill(box, h('div', { class: 'error' }, e.message)); return; }
+  const num = (v, ph) => h('input', { class: 'input', type: 'number', min: 0, value: v || '', placeholder: ph });
+  const f = {
+    ttl: num(p.ttlHours, 'без срока'), idle: num(p.idleMinutes, 'не закрывать'),
+    ask: h('input', { type: 'checkbox', checked: p.askUnknown }),
+    pids: num(p.limits.pids, 'без лимита'), agentMinutes: num(p.limits.agentMinutes, 'без лимита'), apiPerDay: num(p.limits.apiPerDay, 'без лимита'),
+  };
+  const row = (title, note, ctl) => h('div', { class: 'pol-row' }, h('div', { class: 'pol-text' }, h('b', {}, title), h('div', { class: 'muted small' }, note)), ctl);
+  const save = async () => {
+    try {
+      await api('PUT', '/ui/sandbox/policy', { ttlHours: f.ttl.value, idleMinutes: f.idle.value, askUnknown: f.ask.checked, limits: { pids: f.pids.value, agentMinutes: f.agentMinutes.value, apiPerDay: f.apiPerDay.value } });
+      toast('Политика сохранена — действует для новых песочниц', 'ok');
+    } catch (e) { toast(e.message, 'err'); }
+  };
+  fill(box,
+    h('div', { class: 'pol-card' },
+      row('Срок жизни, часов', 'Потом песочница закрывается сама, изменения профиля — на проверку. Открытую можно продлить.', f.ttl),
+      row('Закрывать при простое, минут', 'Если агент столько времени не ходит в сеть и в API моделей.', f.idle),
+      row('Спрашивать о незнакомых адресах', 'Для песочниц с фильтром «Сеть»: соединение не по правилам ждёт решения человека, а не блокируется сразу.', h('label', { class: 'switch' }, f.ask, h('span', {}))),
+      row('Процессов агента', 'ulimit -u: защита от бесконечного порождения процессов. Не меньше 32.', f.pids),
+      row('Время работы агента, минут', 'Агент останавливается, проработав столько.', f.agentMinutes),
+      row('Запросов к API в день', 'Через шлюз секретов; сверх лимита агент получает отказ (429).', f.apiPerDay)),
+    h('p', { class: 'muted small' }, 'Изменения профиля всегда идут на проверку, если у профиля не отмечено «без ревью»; skills, хуки и MCP на проверке не отмечаются заранее.'),
+    h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn primary', onclick: save }, 'Сохранить политику')));
+}
 
 async function openSettings(pane) {
   if (typeof pane !== 'string') { try { pane = localStorage.getItem('smolvm.settingsPane'); } catch { pane = null; } }
@@ -2062,7 +2093,7 @@ function route() {
   $('#page-machines').hidden = id !== 'machines';
   for (const k of Object.keys(pages)) $(`#page-${k}`).hidden = k !== id;
   // Sandbox templates, profiles and review live under «Рабочие места».
-  const navId = ['sandbox', 'session', 'review'].includes(id) ? 'work' : id === 'log' ? 'egress' : id;
+  const navId = ['sandbox', 'session', 'review', 'profile'].includes(id) ? 'work' : id === 'log' ? 'egress' : id;
   document.querySelectorAll('#pagenav a').forEach((a) => a.classList.toggle('active', a.dataset.page === navId));
   if (id !== 'machines') pageCleanup = pages[id].render($(`#page-${id}`), params) || null;
 }

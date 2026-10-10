@@ -9,6 +9,7 @@
   let cur = null;       // the shown one
   let shown = '';       // path in the diff view
   const sel = new Set();
+  const suspicious = new Set(); // paths whose diff has flagged lines
 
   const risky = (p) => /claude-mcp\.json$|settings\.json$|opencode\.json$|config\.toml$|config\.yaml$|\/(skills|hooks|agents|commands|plugin|extensions)\//.test(p);
   const showPath = (p) => (p === '.smolvm-profile/claude-mcp.json' ? '~/.claude.json → mcpServers' : `~/${p}`);
@@ -24,6 +25,20 @@
     const base = c.path.split('/').pop();
     return `${base} ${{ added: 'добавлен', modified: 'изменён', deleted: 'удалён' }[c.kind]}`;
   }
+
+  // Added lines that deserve a second look: secrets of this computer, piping the
+  // internet into a shell, sending files out, disabling checks, prompt injection.
+  const SUSPICIOUS = [
+    [/~\/\.ssh|\.ssh\/|id_(rsa|ed25519|ecdsa)|authorized_keys/i, 'ключи SSH'],
+    [/~\/\.(aws|kube|docker|gnupg|netrc|npmrc|pypirc)|\.git-credentials|\.env\b/i, 'файлы с учётными данными'],
+    [/\b(curl|wget)\b[^|\n]*\|\s*(ba|z)?sh\b|\bbash\s+<\(\s*curl/i, 'скачать и выполнить скрипт'],
+    [/\b(scp|rsync|sftp|nc|ncat|socat)\b.+[\w.-]+\.[a-z]{2,}|curl\b.*(-d|--data|-F|--upload-file|-T)\b/i, 'отправка данных наружу'],
+    [/\b(printenv|env)\b\s*($|[|>])|\$\{?[A-Z_]*(KEY|TOKEN|SECRET|PASSWORD)[A-Z_]*\}?/, 'переменные окружения с ключами'],
+    [/base64\s+(-d|--decode)|\beval\b\s*[("$`]|\bexec\s*\(/i, 'скрытое выполнение кода'],
+    [/--no-verify|--dangerously|skip[-_ ]?permissions|chmod\s+777|sudo\s/i, 'обход проверок и прав'],
+    [/ignore (all |the )?(previous|prior|above) instructions|игнорируй (все )?(предыдущие|прошлые) инструкции|do not (tell|mention|show) the user|не сообщай пользователю/i, 'похоже на prompt injection'],
+  ];
+  const suspicion = (line) => SUSPICIOUS.find(([re]) => re.test(line))?.[1] || null;
 
   async function load(id) {
     const data = await api('GET', '/ui/sandbox');
@@ -65,13 +80,23 @@
       h('span', { class: `ss-pill ${c.kind === 'deleted' ? 'bad' : c.kind === 'added' ? 'ok' : 'warn'}` }, { added: 'новый файл', modified: `${fmtBytes(df.oldSize)} → ${fmtBytes(df.newSize)}`, deleted: 'удалён' }[c.kind]));
     if (df.binary || df.tooBig) { box.replaceChildren(head, h('p', { class: 'muted rv-pad' }, df.binary ? 'Бинарный файл — построчный diff не показывается.' : 'Файл слишком большой для diff.')); return; }
     const pre = h('pre', { class: 'diff rv-pre' });
+    const flagged = [];
     for (const hk of df.hunks) {
       pre.append(h('span', { class: 'd-h' }, `${hk.header}\n`));
-      for (const l of hk.lines) pre.append(h('span', { class: l[0] === '+' ? 'd-a' : l[0] === '-' ? 'd-r' : 'd-c' }, `${l}\n`));
+      let n = Number((hk.header.match(/\+(\d+)/) || [])[1] || 1);
+      for (const l of hk.lines) {
+        const why = l[0] === '+' ? suspicion(l.slice(1)) : null;
+        if (why) flagged.push(`строка ${n}: ${why}`);
+        pre.append(h('span', { class: why ? 'd-a d-sus' : l[0] === '+' ? 'd-a' : l[0] === '-' ? 'd-r' : 'd-c', title: why || '' }, `${l}${why ? `   ← ${why}` : ''}\n`));
+        if (l[0] !== '-') n += 1;
+      }
     }
+    if (flagged.length) suspicious.add(path); else suspicious.delete(path);
+    const alarm = flagged.length ? h('div', { class: 'rv-alarm' }, h('b', {}, 'Подозрительно: '), `${flagged.join('; ')}. Это может быть prompt injection — сохранять не рекомендуется.`) : null;
     const warn = risky(path) && c.kind !== 'deleted'
       ? h('div', { class: 'rv-warn' }, 'Исполняемая настройка: она будет работать в каждой следующей песочнице этого профиля. Сохраняйте, только если понимаете, что она делает.') : null;
-    box.replaceChildren(head, pre, warn);
+    box.replaceChildren(head, alarm, pre, warn);
+    root.querySelector(`.rv-item[data-path="${CSS.escape(path)}"]`)?.classList.toggle('sus', flagged.length > 0);
   }
 
   function render() {

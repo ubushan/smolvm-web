@@ -15,6 +15,10 @@
   let lastSig = '';
 
   const AGENTS = { terminal: 'Терминал', claude: 'Claude Code', opencode: 'OpenCode', 'opencode-tui': 'OpenCode TUI', dsh: 'Harness', codex: 'Codex', pi: 'Pi', hermes: 'Hermes' };
+  const left = (ts) => {
+    const m = Math.max(0, Math.round((ts - Date.now()) / 60000));
+    return m < 60 ? `${m} мин` : `${Math.floor(m / 60)} ч ${m % 60} мин`;
+  };
   const minutes = (ms) => {
     const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
     return m < 60 ? `${m} мин` : `${Math.floor(m / 60)} ч ${m % 60} мин`;
@@ -87,14 +91,23 @@
     const e = t?.egress;
     const mode = iso ? ['bad', 'Изолирована'] : !e?.enabled ? ['warn', 'Сеть: без ограничений'] : ['ok', 'Сеть: только разрешённое'];
     const machine = state.machines.find((m) => m.name === x.name) || { name: x.name };
+    const pills = h('div', { class: 'ss-pills' },
+      h('span', { class: `ss-pill ${mode[0]}` }, mode[1]),
+      x.expiresAt ? h('span', { class: `ss-pill ${x.expiresAt - Date.now() < 30 * 60000 ? 'warn' : 'neutral'}`, title: `Закроется сама ${new Date(x.expiresAt).toLocaleString('ru-RU')}; изменения профиля уйдут на проверку` }, `осталось ${left(x.expiresAt)}`) : null,
+      x.expiresAt ? h('button', { class: 'btn ghost small-btn', title: 'Продлить срок жизни песочницы на 2 часа', onclick: async () => {
+        try { await api('POST', `/ui/sandbox/machines/${enc(x.name)}/extend`, { hours: 2 }); toast('Продлено на 2 часа', 'ok'); } catch (e) { toast(e.message, 'err'); }
+        await load(); render();
+      } }, '+2 ч') : null,
+      x.idleMinutes ? h('span', { class: 'muted small' }, `закроется после ${x.idleMinutes} мин простоя`) : null);
     return h('div', { class: 'ss-top' },
       h('div', { class: 'ss-top-title' },
         h('b', {}, p ? p.name : x.name),
-        h('span', { class: 'muted small' }, [AGENTS[x.agent] || null, `чистая машина из шаблона «${t?.title || x.template}»`, `открыта ${minutes(x.createdAt)} назад`].filter(Boolean).join(' · '))),
-      h('span', { class: `ss-pill ${mode[0]}` }, mode[1]),
-      iso ? null : h('button', { class: 'btn danger-outline', disabled: x.state !== 'running', title: 'Kill switch: оборвать соединения, заменить токены шлюза, поставить машину на паузу', onclick: async () => { await actions.isolate(machine); await load(); render(); } }, ic('shield'), 'Изолировать'),
-      x.profile ? h('button', { class: 'btn ghost', title: 'Удалить машину, профиль не трогать', onclick: () => close(x, false) }, 'Без сохранения') : null,
-      h('button', { class: 'btn primary', disabled: !!x.opening, title: x.profile ? 'Забрать изменения профиля на проверку и удалить машину' : 'Удалить машину', onclick: () => close(x, !!x.profile) }, x.profile ? 'Сохранить и закрыть' : 'Закрыть'));
+        h('span', { class: 'muted small' }, [AGENTS[x.agent] || null, `чистая машина из шаблона «${t?.title || x.template}»`, `открыта ${minutes(x.createdAt)} назад`].filter(Boolean).join(' · ')),
+        pills),
+      h('div', { class: 'ss-top-actions' },
+        iso ? null : h('button', { class: 'btn danger-outline', disabled: x.state !== 'running', title: 'Kill switch: оборвать соединения, заменить токены шлюза, поставить машину на паузу', onclick: async () => { await actions.isolate(machine); await load(); render(); } }, ic('shield'), 'Изолировать'),
+        x.profile ? h('button', { class: 'btn ghost', title: 'Удалить машину, профиль не трогать', onclick: () => close(x, false) }, 'Без сохранения') : null,
+        h('button', { class: 'btn primary', disabled: !!x.opening, title: x.profile ? 'Забрать изменения профиля на проверку и удалить машину' : 'Удалить машину', onclick: () => close(x, !!x.profile) }, x.profile ? 'Сохранить и закрыть' : 'Закрыть')));
   }
 
   function centre(x) {

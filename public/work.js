@@ -15,6 +15,10 @@
   const ready = () => data.templates.filter((t) => !t.creating && !t.missing);
   const tplOf = (id) => data.templates.find((t) => t.id === id) || null;
   const agentsOf = (t) => (t?.agents?.agents || []).filter((id) => id !== 'terminal');
+  const left = (ts) => {
+    const m = Math.max(0, Math.round((ts - Date.now()) / 60000));
+    return m < 60 ? `${m} мин` : `${Math.floor(m / 60)} ч ${m % 60} мин`;
+  };
   const minutes = (ms) => {
     const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
     return m < 60 ? `${m} мин` : `${Math.floor(m / 60)} ч ${m % 60} мин`;
@@ -202,6 +206,8 @@
         mark(MARKS[agent] || 'vm'),
         h('div', { class: 'ws-title' }, h('b', {}, p.name), h('span', { class: 'muted small' }, [AGENTS[agent] || 'без агента', t ? t.title : null].filter(Boolean).join(' · '))),
         sbx ? h('span', { class: `ws-live${busy ? ' busy' : ''}` }, busy ? busy : `открыто · ${minutes(sbx.createdAt)}`) : null),
+      sbx?.expiresAt && !busy ? h('div', { class: 'muted small', title: `Закроется сама ${new Date(sbx.expiresAt).toLocaleString('ru-RU')}; изменения профиля уйдут на проверку` }, `Закроется через ${left(sbx.expiresAt)}`) : null,
+      s.secrets?.length ? h('a', { class: 'ws-warn', href: `#/profile?id=${enc(p.id)}`, title: s.secrets.map((x) => `${x.file}: ${x.key}`).join('\n') }, `Токен открытым текстом в настройках агента (${s.secrets.length}) — агент его видит`) : null,
       h('div', { class: 'ws-chips' }, chips.length ? chips.map((c) => h('span', { class: 'ws-chip' }, c)) : h('span', { class: 'muted small' }, 'Профиль пока пустой — агент начнёт с настроек шаблона')),
       h('div', { class: 'muted small' }, netLine(t)),
       h('div', { class: 'ws-actions' },
@@ -210,7 +216,7 @@
             h('button', { class: 'btn', disabled: !!busy, title: 'Забрать изменения профиля на проверку и удалить машину', onclick: () => closeSandbox(sbx, true) }, 'Закрыть')]
           : go,
         sbx ? h('a', { class: 'btn ghost icon', href: `#/session?name=${enc(sbx.name)}`, title: 'Экран сеанса: агент, что загружено, что изменится, сеть', 'aria-label': 'Экран сеанса' }, ic('list')) : null,
-        h('a', { class: 'btn ghost icon', href: `#/sandbox?tab=profiles&profile=${enc(p.id)}`, title: 'Профиль: инструкции, MCP, skills, память', 'aria-label': `Профиль «${p.name}»` }, ic('gear'))),
+        h('a', { class: 'btn ghost icon', href: `#/profile?id=${enc(p.id)}`, title: 'Профиль: инструкции, MCP, skills, память', 'aria-label': `Профиль «${p.name}»` }, ic('gear'))),
       open.length > 1 ? h('div', { class: 'muted small' }, `Ещё открыто: ${open.slice(1).map((x) => x.name).join(', ')}`) : null);
   }
 

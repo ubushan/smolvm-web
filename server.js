@@ -182,6 +182,8 @@ const AUDIT_LABELS = [
   [/^POST \/ui\/sandbox\/pending\/[^/]+\/apply$/, 'песочницы: изменения профиля применены'],
   [/^DELETE \/ui\/sandbox\/pending\//, 'песочницы: изменения профиля отклонены'],
   [/^DELETE \/ui\/sandbox\/templates\//, 'песочницы: шаблон удалён'],
+  [/^PUT \/ui\/sandbox\/policy$/, 'песочницы: политика по умолчанию'],
+  [/^POST \/ui\/sandbox\/machines\/[^/]+\/extend$/, 'песочница продлена'],
 ];
 
 function auditRequest(req, res, url) {
@@ -388,6 +390,27 @@ setInterval(async () => {
     audit.notify({ machine: o.machine, text: `Агент ${agents.AGENTS[o.agent]?.title || o.agent} на машине ${o.machine} остановлен: лимит времени работы ${o.limitMin} мин`, detail: { agent: o.agent, startedAt: new Date(o.startedAt).toISOString() } });
   }
 }, 30000).unref();
+
+// Sandboxes past their lifetime or idle too long are closed: the profile goes to
+// review as with «Закрыть»; a machine that is not running is closed without it.
+let closingDue = false;
+setInterval(async () => {
+  if (closingDue) return;
+  closingDue = true;
+  try {
+    const last = (name) => Math.max(gateway.lastActivity(name), new Date(egress.log({ machine: name, limit: 1 })[0]?.ts || 0).getTime());
+    for (const d of sandbox.due(last)) {
+      let r = null; let note = '';
+      try { r = await sandbox.close(d.name, { save: true }, sandboxHooks); }
+      catch (e) {
+        if (e.status !== 409) { audit.notify({ machine: d.name, text: `Песочницу ${d.name} не удалось закрыть (${d.why}): ${e.message}` }); continue; }
+        r = await sandbox.close(d.name, { save: false }, sandboxHooks).catch(() => null);
+        note = ' Машина не была запущена — изменения профиля не забраны.';
+      }
+      if (r) audit.notify({ machine: d.name, severity: 'notice', text: `Песочница ${d.name} закрыта автоматически: ${d.why}.${r.pending ? ` Изменений профиля на проверку: ${r.changes}.` : ''}${note}` });
+    }
+  } catch {} finally { closingDue = false; }
+}, 60000).unref();
 
 // Host folders for the path field of «Дать доступ к папке»: subfolders of what was typed.
 const norm = (p) => (process.platform === 'win32' || process.platform === 'darwin' ? String(p).toLowerCase() : String(p));
@@ -755,6 +778,15 @@ const UI = [
     const b = await readJson(req);
     res.auditDone = true;
     try { sendJson(res, 200, await sandbox.close(decodeURIComponent(m[1]), { save: b.save !== false }, sandboxHooks)); } catch (e) { err(res, e); }
+  }],
+  ['GET', /^\/ui\/sandbox\/policy$/, (req, res) => sendJson(res, 200, sandbox.getPolicy())],
+  ['PUT', /^\/ui\/sandbox\/policy$/, async (req, res) => {
+    const b = await readJson(req);
+    try { sendJson(res, 200, sandbox.setPolicy(b)); } catch (e) { err(res, e); }
+  }],
+  ['POST', /^\/ui\/sandbox\/machines\/([^/]+)\/extend$/, async (req, res, m) => {
+    const b = await readJson(req);
+    try { sendJson(res, 200, sandbox.extend(decodeURIComponent(m[1]), b.hours)); } catch (e) { err(res, e); }
   }],
   ['GET', /^\/ui\/sandbox\/machines\/([^/]+)\/changes$/, async (req, res, m) => {
     try { sendJson(res, 200, await sandbox.previewChanges(decodeURIComponent(m[1]))); } catch (e) { err(res, e); }

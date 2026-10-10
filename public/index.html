@@ -101,6 +101,7 @@
   <main class="page" id="page-work" hidden></main>
   <main class="page" id="page-session" hidden></main>
   <main class="page" id="page-review" hidden></main>
+  <main class="page" id="page-profile" hidden></main>
   <main class="page" id="page-egress" hidden></main>
   <main class="page" id="page-log" hidden></main>
   <main class="page" id="page-dirs" hidden></main>
@@ -246,6 +247,7 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
       <div class="settings-layout">
         <nav class="settings-nav" id="settings-nav">
           <button type="button" data-pane="smolvm"><svg class="ic"><use href="#i-server"/></svg>Виртуализация</button>
+          <button type="button" data-pane="policy"><svg class="ic"><use href="#i-box"/></svg>Песочницы</button>
           <button type="button" data-pane="proxy"><svg class="ic"><use href="#i-globe"/></svg>Прокси</button>
           <button type="button" data-pane="ca"><svg class="ic"><use href="#i-shield"/></svg>Сертификаты</button>
           <button type="button" data-pane="repos"><svg class="ic"><use href="#i-box"/></svg>Репозитории</button>
@@ -322,6 +324,10 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
 
           </section>
           </form>
+          <section class="settings-pane" data-pane="policy" hidden>
+            <div class="pane-head"><h4>Песочницы: политика по умолчанию</h4><p class="muted small">Что получает каждая новая песочница. Уже открытые не меняются. Сохраняется кнопкой «Сохранить политику».</p></div>
+            <div id="policy-settings"></div>
+          </section>
           <section class="settings-pane" data-pane="audit" hidden>
             <div class="pane-head"><h4>Аудит и SIEM</h4><p class="muted small">Отправка журнала действий и сетевых событий в SIEM, оповещения о всплесках заблокированных соединений (попытки вывести данные). Сохраняются кнопками в карточках. Сам журнал — на странице «Аудит».</p></div>
             <div id="audit-settings"></div>
@@ -417,5 +423,6 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
   <script src="/work.js"></script>
   <script src="/session.js"></script>
   <script src="/review.js"></script>
+  <script src="/profile.js"></script>
 </body>
 </html>
