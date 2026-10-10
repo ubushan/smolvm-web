@@ -2,7 +2,7 @@
 
 ## Windows за 5 шагов
 
-Нужно: Windows 10/11 **x64** (на ARM-Windows smolvm не работает) и права администратора на шаги 1–2. Дальше smolvm-web работает от обычного пользователя.
+Нужно: Windows 10/11 **x64** (на ARM-Windows smolvm не работает) и права администратора на шаги 1–2. Всё остальное ставится в вашу папку пользователя (`%USERPROFILE%`, например `C:\Users\ivan`) и работает от обычного пользователя.
 
 ### 1. Включить виртуализацию и режим разработчика (один раз)
 
@@ -17,23 +17,23 @@ winget install OpenJS.NodeJS.LTS
 
 Или установщик LTS с <https://nodejs.org>. Нужна версия 22 и новее.
 
-### 3. Положить smolvm в `C:\smolvm`
+### 3. Положить smolvm в `%USERPROFILE%\smolvm`
 
-Скачайте `smolvm-<версия>-windows-x86_64.zip` со страницы <https://github.com/smol-machines/smolvm/releases> и распакуйте в `C:\smolvm`. Вложенная папка не мешает: smolvm-web сам найдёт `smolvm.exe` внутри `C:\smolvm`, править `PATH` не нужно.
+Скачайте `smolvm-<версия>-windows-x86_64.zip` со страницы <https://github.com/smol-machines/smolvm/releases> и распакуйте в папку `smolvm` внутри вашей папки пользователя — `%USERPROFILE%\smolvm` (в Проводнике введите `%USERPROFILE%` в адресной строке). Вложенная папка не мешает: smolvm-web сам найдёт `smolvm.exe` внутри неё, править `PATH` не нужно.
 
-### 4. Положить smolvm-web в `C:\smolvm-web`
+### 4. Положить smolvm-web в `%USERPROFILE%\smolvm-web`
 
-На GitHub: **Code → Download ZIP**. Перед распаковкой: правой кнопкой по архиву → **Свойства → Разблокировать → OK**, затем распакуйте содержимое в `C:\smolvm-web`. Или через git:
+На GitHub: **Code → Download ZIP**. Перед распаковкой: правой кнопкой по архиву → **Свойства → Разблокировать → OK**, затем распакуйте содержимое в `%USERPROFILE%\smolvm-web`. Или через git:
 
 ```powershell
-git clone https://github.com/ubushan/smolvm-web.git C:\smolvm-web
+git clone https://github.com/ubushan/smolvm-web.git "$env:USERPROFILE\smolvm-web"
 ```
 
-Путь — короткий, без пробелов и кириллицы. `npm install` не нужен: зависимостей нет.
+`npm install` не нужен: зависимостей нет. Права администратора для этих папок не нужны, и обновлять smolvm-web можно без них.
 
 ### 5. Запустить
 
-Двойной щелчок по **`C:\smolvm-web\start.cmd`**. Через несколько секунд откроется браузер на <http://127.0.0.1:7777>.
+Двойной щелчок по **`%USERPROFILE%\smolvm-web\start.cmd`**. Через несколько секунд откроется браузер на <http://127.0.0.1:7777>.
 
 Если брандмауэр спросит про Node.js — разрешите **только частные сети**.
 
@@ -52,7 +52,7 @@ git clone https://github.com/ubushan/smolvm-web.git C:\smolvm-web
 **Автозапуск при входе в систему:**
 
 ```powershell
-schtasks /Create /TN "smolvm-web" /SC ONLOGON /TR "C:\smolvm-web\start.cmd"
+schtasks /Create /TN "smolvm-web" /SC ONLOGON /TR "$env:USERPROFILE\smolvm-web\start.cmd"
 ```
 
 Задача должна работать под вашим пользователем: ключ хранилища секретов лежит в вашем профиле (`%APPDATA%\smolvm-web\vault.key`).
@@ -73,11 +73,12 @@ schtasks /Create /TN "smolvm-web" /SC ONLOGON /TR "C:\smolvm-web\start.cmd"
 
 | Симптом | Что сделать |
 |---|---|
-| `smolvm.exe not found` | Распакуйте smolvm в `C:\smolvm` или задайте `SMOLVM_BIN`. |
+| `smolvm.exe not found` | Распакуйте smolvm в `%USERPROFILE%\smolvm` или задайте `SMOLVM_BIN`. |
 | `boot process exited (code 127)` | Включите «Режим разработчика» (шаг 1), перезапустите smolvm-web и нажмите **«Починить»** в уведомлении. Вручную: удалите `%LOCALAPPDATA%\smolvm\rootfs`. |
 | Машина не скачивает образ | Настройте прокси (шаг 5) и запустите машину снова. |
 | «Хранилище создано прежней версией» или «ключ не найден» | Страница «Секреты» → «Создать хранилище заново» и введите ключи ещё раз. |
 | Порт 7777 занят | `set PORT=7800` перед `start.cmd`. |
+| Машина не запускается, а в имени пользователя есть пробелы или кириллица | Перенесите папки smolvm и smolvm-web в путь без них, например `C:\smolvm` и `C:\smolvm-web` — `start.cmd` найдёт smolvm и там. |
 
 ---
 

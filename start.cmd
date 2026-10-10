@@ -7,14 +7,15 @@ if not defined PORT set PORT=7777
 
 where node >nul 2>nul || (echo [smolvm-web] Node.js is required: winget install OpenJS.NodeJS.LTS & pause & exit /b 1)
 
-rem smolvm.exe: SMOLVM_BIN, else PATH, else unpacked anywhere under C:\smolvm.
+rem smolvm.exe: SMOLVM_BIN, else PATH, else unpacked anywhere under %USERPROFILE%\smolvm
+rem (or C:\smolvm, the earlier install path).
 if not defined SMOLVM_BIN (
   where smolvm >nul 2>nul || (
-    for /r "C:\smolvm" %%F in (smolvm.exe) do if exist "%%F" if not defined SMOLVM_BIN set "SMOLVM_BIN=%%F"
+    for %%D in ("%USERPROFILE%\smolvm" "C:\smolvm") do if exist "%%~D" for /r "%%~D" %%F in (smolvm.exe) do if exist "%%F" if not defined SMOLVM_BIN set "SMOLVM_BIN=%%F"
   )
 )
 if not defined SMOLVM_BIN (
-  where smolvm >nul 2>nul || (echo [smolvm-web] smolvm.exe not found: unpack smolvm into C:\smolvm or set SMOLVM_BIN & pause & exit /b 1)
+  where smolvm >nul 2>nul || (echo [smolvm-web] smolvm.exe not found: unpack smolvm into %USERPROFILE%\smolvm or set SMOLVM_BIN & pause & exit /b 1)
 )
 rem Administrator rights are not required: only the symlink right for smolvm's first rootfs
 rem extraction (Developer Mode, the "Create symbolic links" right, or one elevated first run).

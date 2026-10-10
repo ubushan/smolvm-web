@@ -96,7 +96,7 @@ sudo usermod -aG kvm "$USER"         # затем перелогиньтесь �
 
 ### Windows
 
-Пять шагов без командной строки: включить «Платформу низкоуровневой оболочки Windows» и «Режим разработчика», установить Node.js, распаковать smolvm в `C:\smolvm` и smolvm-web в `C:\smolvm-web`, запустить `start.cmd`. Подробно — [INSTALL.md](INSTALL.md#windows-за-5-шагов).
+Пять шагов без командной строки: включить «Платформу низкоуровневой оболочки Windows» и «Режим разработчика», установить Node.js, распаковать smolvm в `%USERPROFILE%\smolvm` и smolvm-web в `%USERPROFILE%\smolvm-web`, запустить `start.cmd`. Подробно — [INSTALL.md](INSTALL.md#windows-за-5-шагов).
 
 ### За корпоративным прокси
 
