@@ -19,7 +19,6 @@ const cfg = require('./lib/config');
 const px = require('./lib/proxy');
 const upproxy = require('./lib/upproxy');
 const sysproxy = require('./lib/sysproxy');
-const sspi = require('./lib/sspi');
 const relay = require('./lib/relay');
 const up = require('./lib/upstream');
 const mc = require('./lib/machines');
@@ -61,6 +60,7 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
 };
 
 function hostAllowed(req) {
@@ -167,6 +167,7 @@ const AUDIT_LABELS = [
   [/^DELETE \/ui\/machines\/[^/]+\/review\//, 'рабочая копия: удаление'],
   [/^POST \/ui\/egress\/machines\/[^/]+\/learn\/finish$/, 'обучение: список создан'],
   [/^PUT \/ui\/machines\/[^/]+\/agents\/vendor$/, 'сервер вендора: разрешён/отозван'],
+  [/^POST \/ui\/vault\/reset$/, 'хранилище секретов создано заново'],
   [/^PUT \/ui\/vault\//, 'секрет: сохранён'],
   [/^DELETE \/ui\/vault\//, 'секрет: удалён'],
   [/^PUT \/ui\/machines\/[^/]+\/secrets$/, 'секреты машины'],
@@ -224,7 +225,7 @@ function explainPullForbidden(name, message) {
   const filter = egress.pullAllowed(name, host);
   let hint;
   if (filter === false) {
-    hint = `Его заблокировал фильтр «Сеть» smolvm-web: ${host} нет среди реестров образов. Добавьте его в «Сеть» → «Списки» → «Реестры образов» (или кнопкой «Разрешить» во вкладке «Журнал») и запустите машину снова.`;
+    hint = `Его заблокировал фильтр «Сеть» smolvm-web: ${host} нет среди реестров образов. Добавьте его в «Настройки» → «Виртуализация» → «Реестры образов» (или кнопкой «Разрешить» во вкладке «Журнал») и запустите машину снова.`;
   } else {
     hint = `Его запретил корпоративный прокси (политика доступа к ${host}). Попросите ИТ открыть ${host} (CDN Docker Hub) или возьмите образ из зеркала — в поле «Образ» при создании машины: mirror.gcr.io/library/<образ> или public.ecr.aws/docker/library/<образ>, либо корпоративный Nexus/Artifactory.`;
   }
@@ -1046,7 +1047,6 @@ const UI = [
     if (process.platform === 'win32') {
       sysproxy.reset();
       d.system = await sysproxy.describe().catch((e) => ({ available: false, error: e.message }));
-      d.sspi = await sspi.status();
     }
     sendJson(res, 200, d);
   }],
@@ -1059,13 +1059,13 @@ const UI = [
       sysproxy.reset();
       const prev = cfg.getSettings().proxy;
       const results = (await upproxy.test(targets, { ...prev, enabled: true, system: true, noProxy: body.noProxy ?? prev.noProxy }))
-        .map((x) => ({ ...x, status: x.ok ? `${x.route}${x.auth ? `, вход: ${x.auth === 'Negotiate' ? 'Kerberos/Negotiate' : x.auth}` : ''}` : x.error }));
+        .map((x) => ({ ...x, status: x.ok ? `${x.route}${x.auth ? `, вход: ${x.auth}` : ''}` : x.error }));
       // The relay works with the saved settings: checked once they are saved.
       let relayReach = null;
       if (upproxy.systemMode()) {
         try { relayReach = await px.testConnect(await relay.urlFor(), targets[0], 30000); } catch (e) { relayReach = { ok: false, target: targets[0], error: e.message }; }
       }
-      return sendJson(res, 200, { results, relay: relayReach, sspi: await sspi.status() });
+      return sendJson(res, 200, { results, relay: relayReach });
     }
     const url = body.url || cfg.getSettings().proxy.url;
     if (!url) return sendJson(res, 400, { error: 'Не указан адрес прокси' });
@@ -1105,9 +1105,14 @@ const UI = [
     if (bound.some((x) => x.mode === 'gateway')) await gateway.start();
     sendJson(res, 200, { secrets: bound.map((x) => ({ name: x.name, mode: x.mode, envVar: x.envVar })) });
   }],
+  ['POST', /^\/ui\/vault\/reset$/, async (req, res) => {
+    const st = await vault.status();
+    if (st.ok) return sendJson(res, 409, { error: 'Хранилище открывается — пересоздавать его не нужно' });
+    try { sendJson(res, 200, await vault.reset()); } catch (e) { sendJson(res, 500, { error: e.message }); }
+  }],
   ['GET', /^\/ui\/vault$/, async (req, res) => {
     const st = await vault.status();
-    if (!st.ok) return sendJson(res, 200, { ok: false, error: st.error, secrets: [] });
+    if (!st.ok) return sendJson(res, 200, { ok: false, error: st.error, resettable: !!st.resettable, secrets: [] });
     sendJson(res, 200, { ok: true, backend: st.backend, gateway: { ...gateway.status(), baseUrl: await gateway.baseUrl('<секрет>') }, secrets: await vault.list() });
   }],
   ['PUT', /^\/ui\/vault\/([^/]+)$/, async (req, res, m) => {
@@ -1392,7 +1397,7 @@ async function maybeAutostart() {
   // Host-side registry requests made by the server honour the standard proxy env.
   const s = cfg.getSettings();
   if (upproxy.active()) {
-    // Windows system proxy: smolvm serve goes through the relay (it cannot do Kerberos/NTLM itself).
+    // Windows system proxy: smolvm serve goes through the relay (it picks the proxy per destination by PAC).
     let url = s.proxy.url;
     if (upproxy.systemMode()) { try { url = await relay.urlFor({ loopback: true }); } catch (e) { console.error(e.message); } }
     // The settings win over whatever proxy the environment carries.

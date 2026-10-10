@@ -17,7 +17,7 @@
   const SECTIONS = [
     ['machines', 'server', 'Машины', 'Куда может ходить каждая машина: режим, что разрешено, что недавно заблокировано.'],
     ['log', 'list', 'Журнал', 'Все соединения машин: что разрешено, что заблокировано и почему. Заблокированное можно разрешить одной кнопкой.'],
-    ['lists', 'shield', 'Списки', 'Наборы разрешённых адресов (PyPI, npm, GitHub…) для машин и реестры, откуда smolvm скачивает образы.'],
+    ['lists', 'shield', 'Списки', 'Наборы разрешённых адресов (PyPI, npm, GitHub…), которые подключаются к машинам. Реестры образов — в «Настройки» → «Виртуализация».'],
     ['settings', 'gear', 'Настройки', 'Что подставляется новым машинам, и как работает сам фильтр.'],
   ];
   let section = 'machines';
@@ -120,7 +120,7 @@
   // ---------- sections ----------
   function intro() {
     return h('section', { class: 'card intro' },
-      h('div', { class: 'row' }, h('h2', { class: 'h-ic' }, ic('globe'), 'Доступ машин в сеть'), helpButton('Как работает фильтр «Сеть»',
+      h('div', { class: 'row' }, h('h2', { class: 'h-ic' }, ic('globe'), 'Сеть'), helpButton('Как работает фильтр «Сеть»',
         h('p', { class: 'small' }, 'Машине с включённым фильтром в HTTP_PROXY/HTTPS_PROXY подставляется прокси smolvm-web на хосте со своим токеном. Каждое соединение (CONNECT для HTTPS, обычные HTTP-запросы) сверяется с allow list машины: подключёнными списками и её собственными правилами. Разрешённое уходит в интернет хоста — через корпоративный прокси, если он настроен. Всё остальное получает 403 и попадает в журнал, откуда его можно разрешить одной кнопкой. Изменения правил действуют сразу, без перезапуска машины.'),
         h('ul', { class: 'small' },
           h('li', {}, h('code', {}, 'api.example.com'), ' — ровно этот хост; ', h('code', {}, '.example.com'), ' — хост и все поддомены; ', h('code', {}, '*.example.com'), ' — только поддомены; ', h('code', {}, '10.0.0.0/8'), ', ', h('code', {}, '192.0.2.10'), ' — IP-адреса; ', h('code', {}, '*'), ' — любой хост.'),
@@ -368,24 +368,12 @@
           h('button', { class: 'btn small-btn', onclick: () => edit(l.id) }, 'Изменить')));
     });
 
-    // Registries for the image download at start: a list too, but only for that.
-    const pullCard = editingList === '__pull' ? pullEditor() : h('div', { class: 'lst-card lst-system' },
-      h('div', { class: 'lst-head' }, h('span', { class: 'mark m-icon' }, ic('download')),
-        h('div', { class: 'lst-title' }, h('b', {}, 'Реестры образов'), h('div', { class: 'muted small' }, `${plural3(data.pullHosts.length, 'адрес', 'адреса', 'адресов')} · агенту закрыто`)),
-        h('span', { class: 'spacer' }), h('span', { class: 'tag', title: 'Действует для всех машин под фильтром, но только на скачивание образа при запуске' }, 'служебный')),
-      h('p', { class: 'muted small' }, 'Откуда smolvm скачивает образ машины при запуске (Docker Hub, GitHub, Quay…). Разрешено только самому скачиванию — агенту в машине эти адреса закрыты.'),
-      preview(data.pullHosts),
-      h('div', { class: 'lst-foot' }, h('span', { class: 'muted small' }, 'Образ из своего реестра — добавьте его адрес'), h('span', { class: 'spacer' }),
-        h('button', { class: 'btn small-btn', onclick: () => edit('__pull') }, 'Изменить')));
-
     const newCard = editingList === 'new' ? newListForm() : h('button', { type: 'button', class: 'lst-card lst-add', onclick: () => edit('new') },
       h('span', { class: 'lst-add-ic' }, ic('plus')), h('b', {}, 'Новый список'), h('span', { class: 'muted small' }, 'пустой или из шаблона: PyPI, npm, GitHub, Hugging Face…'));
 
     return [
       h('div', { class: 'lst-section' }, h('div', { class: 'net-col-title' }, 'Списки для машин'), h('span', { class: 'muted small' }, 'подключаются к машинам на вкладке «Машины»')),
       h('div', { class: 'lst-grid' }, ...cards, newCard),
-      h('div', { class: 'lst-section' }, h('div', { class: 'net-col-title' }, 'Только для скачивания образа'), h('span', { class: 'muted small' }, 'агенту в машине эти адреса закрыты')),
-      h('div', { class: 'lst-grid' }, pullCard),
     ];
   }
 
@@ -434,19 +422,7 @@
       h('div', { class: 'row' }, h('span', { class: 'spacer' }), h('button', { class: 'btn primary', onclick: create }, 'Создать')));
   }
 
-  function pullEditor() {
-    return h('div', { class: 'lst-card lst-edit lst-system' },
-      h('div', { class: 'lst-head' }, h('span', { class: 'mark m-icon' }, ic('download')), h('b', {}, 'Реестры образов'), h('span', { class: 'spacer' }),
-        h('button', { class: 'btn ghost icon', title: 'Закрыть без сохранения', onclick: () => { editingList = null; render(); } }, ic('x'))),
-      h('p', { class: 'muted small' }, 'При запуске машины под фильтром smolvm скачивает её образ изнутри машины — через фильтр, отдельным пропуском. Этому пропуску разрешены адреса ниже (порты 443 и 80); агенту в машине они закрыты. Корпоративные реестры из «Настройки» → «Репозитории» разрешены автоматически.'),
-      rulesEditor(data.pullHosts.map((x) => ({ host: x })), {
-        hostsOnly: true,
-        onSave: async (rules) => {
-          await api('PUT', '/ui/egress/settings', { pullHosts: rules.map((r) => r.host) });
-          toast('Реестры образов сохранены', 'ok'); editingList = null; await load(); render();
-        },
-      }));
-  }
+
 
 
   // ---------- «Журнал»: filters, what waits for a decision, the connection feed ----------

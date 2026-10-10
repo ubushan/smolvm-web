@@ -1442,7 +1442,7 @@ async function refreshInfo() {
 }
 
 // One settings window with a sidebar: proxy, certificates, repositories, secrets, smolvm.
-const SETTINGS_PANES = ['smolvm', 'policy', 'proxy', 'ca', 'repos', 'secrets', 'audit'];
+const SETTINGS_PANES = ['smolvm', 'policy', 'proxy', 'ca', 'repos', 'audit'];
 function showSettingsPane(pane) {
   if (!SETTINGS_PANES.includes(pane)) pane = 'smolvm';
   document.querySelectorAll('#dlg-settings .settings-pane').forEach((el) => { el.hidden = el.dataset.pane !== pane; });
@@ -1450,17 +1450,43 @@ function showSettingsPane(pane) {
   // Secrets are saved one by one in their own form; the footer saves the rest.
   const footer = $('#settings-footer');
   // Secrets and audit/SIEM are saved by their own buttons.
-  const own = pane === 'secrets' || pane === 'audit' || pane === 'policy';
+  const own = pane === 'audit' || pane === 'policy';
   footer.querySelector('[type=submit]').hidden = own;
   footer.querySelector('.footer-note').hidden = own;
   try { localStorage.setItem('smolvm.settingsPane', pane); } catch {}
-  if (pane === 'secrets') { $('#form-secret').hidden = true; renderVault(); }
-  if (pane === 'smolvm') renderVirtInfo();
+  if (pane === 'smolvm') { renderVirtInfo(); renderPullHosts(); }
   if (pane === 'policy') renderPolicy();
   if (pane === 'audit' && window.auditSettingsCards) window.auditSettingsCards().then((cards) => fill($('#audit-settings'), ...cards));
   $('.settings-main').scrollTop = 0;
 }
 $('#settings-nav').addEventListener('click', (e) => { const b = e.target.closest('button[data-pane]'); if (b) showSettingsPane(b.dataset.pane); });
+
+// «Виртуализация» → registries smolvm may download machine images from (through
+// the filter, with a pass of its own; the agent in the machine gets none of them).
+async function renderPullHosts(editing = false) {
+  const box = $('#virt-pull');
+  let eg;
+  try { eg = await api('GET', '/ui/egress'); } catch (e) { fill(box, h('div', { class: 'error' }, e.message)); return; }
+  const hosts = eg.pullHosts || [];
+  const head = h('div', { class: 'virt-pull-head' },
+    h('div', {}, h('b', {}, 'Реестры образов'), h('div', { class: 'muted small' }, 'Только для скачивания образа при запуске машины под фильтром «Сеть». Агенту в машине эти адреса закрыты. Корпоративные реестры из «Репозиториев» разрешены автоматически.')),
+    editing ? null : h('button', { type: 'button', class: 'btn small-btn', onclick: () => renderPullHosts(true) }, 'Изменить'));
+  if (!editing) {
+    fill(box, head, h('div', { class: 'lst-hosts' }, ...hosts.map((x) => h('span', { class: 'lst-host mono' }, x)), hosts.length ? null : h('span', { class: 'muted small' }, 'Пусто — образы под фильтром не скачаются.')));
+    return;
+  }
+  const ta = h('textarea', { class: 'input mono', rows: Math.min(14, Math.max(5, hosts.length + 1)), spellcheck: false });
+  ta.value = hosts.join('\n');
+  const err = h('div', { class: 'error', hidden: true });
+  fill(box, head, h('label', {}, 'По одному адресу на строку (порты 443 и 80); *.example.com — все поддомены', ta), err,
+    h('div', { class: 'row' }, h('span', { class: 'spacer' }),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => renderPullHosts(false) }, 'Отмена'),
+      h('button', { type: 'button', class: 'btn primary', onclick: async () => {
+        err.hidden = true;
+        try { await api('PUT', '/ui/egress/settings', { pullHosts: ta.value.split(/[\n,]/).map((x) => x.trim()).filter(Boolean) }); toast('Реестры образов сохранены', 'ok'); renderPullHosts(false); }
+        catch (e) { err.textContent = e.message; err.hidden = false; }
+      } }, 'Сохранить реестры')));
+}
 
 // «Песочницы»: what every new sandbox gets — lifetime, idle close, «ask» for unknown addresses, limits.
 async function renderPolicy() {
@@ -1622,14 +1648,14 @@ $('#btn-proxy-detect').addEventListener('click', async () => {
     const d = await api('GET', '/ui/proxy/detect');
     const sys = d.system;
     if (sys?.available && (sys.pac || sys.enabled)) {
-      // Windows: use the system proxy as browsers do (PAC, Kerberos/NTLM sign-in).
+      // Windows: use the system proxy as browsers do (the PAC picks the proxy per address).
       f.proxyEnabled.checked = true;
       f.proxySystem.checked = true;
       out.className = 'small';
       out.innerHTML = `Windows: ${sys.pac ? `PAC <code>${esc(sys.pac)}</code>` : `прокси <code>${esc(sys.server)}</code>`}`
         + `${sys.sample !== undefined ? ` → для Docker Hub: <code>${esc(sys.sample || 'напрямую')}</code>` : ''}`
         + `${sys.error ? ` <span class="error">(${esc(sys.error)})</span>` : ''}<br>`
-        + (d.sspi?.available ? `Вход в прокси: под учётной записью <b>${esc(d.sspi.user || '')}</b> (Kerberos / NTLM).` : `<span class="error">Встроенная авторизация Windows недоступна: ${esc(d.sspi?.error || '')}</span>`)
+        + 'Если прокси просит вход под учётной записью Windows (Kerberos/NTLM), запустите proxydetox и укажите его адрес вместо системного прокси.'
         + ' Включён «Системный прокси Windows» — нажмите «Проверить», затем «Сохранить».';
     } else if (d.url) {
       f.proxyUrl.value = d.url;
@@ -1654,7 +1680,7 @@ $('#btn-proxy-test').addEventListener('click', async () => {
     const r = await api('POST', '/ui/proxy/test', sys ? { system: true, noProxy: f.noProxy.value.trim() } : { url: f.proxyUrl.value.trim() });
     const li = (x) => `<li class="${x.ok ? 'okc' : 'badc'}">${x.ok ? '✓' : '✗'} ${esc(x.target)} — ${esc(x.status || x.error)}${x.ms != null ? ` (${x.ms} мс)` : ''}</li>`;
     if (sys) {
-      let html = `<b>С этого компьютера (прокси по настройкам Windows, вход — учётная запись Windows${r.sspi?.user ? ` ${esc(r.sspi.user)}` : ''}):</b><ul class="result-list">${r.results.map(li).join('')}</ul>`;
+      let html = `<b>С этого компьютера (прокси по настройкам Windows):</b><ul class="result-list">${r.results.map(li).join('')}</ul>`;
       html += r.relay ? `<b>Через ретранслятор для машин:</b><ul class="result-list">${li(r.relay)}</ul>` : '<div class="muted">Ретранслятор для машин проверится после сохранения настроек.</div>';
       out.className = 'small';
       out.innerHTML = html;
@@ -1711,14 +1737,27 @@ async function loadVault() {
   return v;
 }
 
-function openVault() { return openSettings('secrets'); }
+// «Секреты» is a page of its own now.
+function openVault() {
+  document.querySelectorAll('dialog[open]').forEach((d) => d.close());
+  location.hash = '#/secrets';
+}
 
 async function renderVault() {
   const st = $('#vault-status');
   const list = $('#vault-list');
   let v;
   try { v = await loadVault(); } catch (e) { st.innerHTML = `<div class="error">${esc(e.message)}</div>`; return; }
-  if (!v.ok) { st.innerHTML = `<div class="error">${esc(v.error)}</div>`; list.innerHTML = ''; return; }
+  if (!v.ok) {
+    st.replaceChildren(h('div', { class: 'error' }, v.error),
+      v.resettable ? h('div', { class: 'row', style: 'margin-top:10px' }, h('button', { type: 'button', class: 'btn primary', onclick: async () => {
+        const c = await confirmDialog('Создать хранилище заново?', 'Старое хранилище и его ключ останутся в папке настроек (файлы с пометкой .old-<дата>), открыть их новой версией нельзя. Секреты нужно будет добавить заново и снова привязать к машинам.', false, '', 'Создать заново');
+        if (!c.ok) return;
+        try { await api('POST', '/ui/vault/reset', {}); vaultCache = []; toast('Хранилище секретов создано заново', 'ok'); } catch (e) { toast(e.message, 'err'); }
+        renderVault();
+      } }, 'Создать хранилище заново')) : null);
+    list.innerHTML = ''; return;
+  }
   const gw = v.gateway;
   st.innerHTML = `Ключ шифрования: <b>${esc(v.backend)}</b>.${gw?.listening ? ` Шлюз: <code>${esc(gw.baseUrl || '')}</code>` : gw?.error ? ` <span class="error">Шлюз: ${esc(gw.error)}</span>` : ''}`;
   list.innerHTML = '';
@@ -2081,19 +2120,33 @@ async function tabAgents(body, m) {
 }
 
 // ---------- theme ----------
+// Light (the mockups' paper), dark, or as the system says. Remembered per browser.
 function applyTheme(t) {
-  if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
 }
-applyTheme(localStorage.getItem('smolvm.theme'));
-$('#btn-theme').addEventListener('click', () => {
-  const cur = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-  const next = cur === 'dark' ? 'light' : 'dark';
-  localStorage.setItem('smolvm.theme', next);
-  applyTheme(next);
+const savedTheme = () => { try { return localStorage.getItem('smolvm.theme') || 'auto'; } catch { return 'auto'; } };
+applyTheme(savedTheme());
+$('#btn-theme').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const old = document.querySelector('.theme-menu');
+  if (old) { old.remove(); return; }
+  const cur = savedTheme();
+  const pick = (t) => { try { localStorage.setItem('smolvm.theme', t); } catch {} applyTheme(t); menu.remove(); };
+  const menu = h('div', { class: 'theme-menu', role: 'menu' },
+    ...[['light', 'Светлая', 'sun'], ['dark', 'Тёмная', 'moon'], ['auto', 'Как в системе', 'contrast']].map(([t, label]) =>
+      h('button', { type: 'button', role: 'menuitemradio', 'aria-checked': String(t === cur), class: t === cur ? 'on' : '', onclick: () => pick(t) },
+        h('span', { class: 'theme-dot' }), label)));
+  const r = $('#btn-theme').getBoundingClientRect();
+  menu.style.top = `${r.bottom + 6}px`; menu.style.left = `${Math.max(8, r.right - 190)}px`;
+  document.body.append(menu);
+  setTimeout(() => document.addEventListener('click', function off(ev) { if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('click', off); } }), 0);
 });
 
 // ---------- pages ----------
 const pages = {}; // id -> { render(el, params), leave() }
+pages.secrets = {
+  render() { $('#form-secret').hidden = true; renderVault(); return null; },
+};
 let pageCleanup = null;
 function routeParams() {
   const m = location.hash.match(/^#\/(\w*)(?:\?(.*))?$/);
@@ -2108,8 +2161,8 @@ function route() {
   state.page = id;
   $('#page-machines').hidden = id !== 'machines';
   for (const k of Object.keys(pages)) $(`#page-${k}`).hidden = k !== id;
-  // Sandbox templates, profiles and review live under «Рабочие места».
-  const navId = ['sandbox', 'session', 'review', 'profile'].includes(id) ? 'work' : id === 'log' ? 'egress' : id;
+  // The session, profile and review screens belong to «Рабочие места»; «Песочница» has its own link.
+  const navId = ['session', 'review', 'profile'].includes(id) ? 'work' : id === 'log' ? 'egress' : id;
   document.querySelectorAll('#pagenav a').forEach((a) => a.classList.toggle('active', a.dataset.page === navId));
   if (id !== 'machines') pageCleanup = pages[id].render($(`#page-${id}`), params) || null;
 }

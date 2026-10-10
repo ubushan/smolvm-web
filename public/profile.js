@@ -128,7 +128,7 @@
         h('div', { class: 'pf-side' }, nav,
           s.secrets?.length ? h('div', { class: 'ws-notice pf-secret' },
             h('span', {}, h('b', {}, 'Токен открытым текстом. '), `${s.secrets.map((x) => `${showPath(x.file)} → ${x.key}`).join('; ')}. Он попадёт в каждую песочницу, и агент его видит.`),
-            h('a', { href: '#', onclick: (e) => { e.preventDefault(); openSettings('secrets'); } }, 'Перенести в «Секреты» (через шлюз)')) : null,
+            h('a', { href: '#', onclick: (e) => { e.preventDefault(); openVault(); } }, 'Перенести в «Секреты» (через шлюз)')) : null,
           h('p', { class: 'muted small' }, 'Входы, токены, сессии и кэши в профиль не попадают никогда.')),
         h('div', { class: 'pf-main' }, fileList, edBox)));
     editor(edBox);

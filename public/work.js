@@ -199,7 +199,7 @@
     ].filter(Boolean);
     const sbx = open[0];
     const busy = sbx?.opening;
-    const go = h('button', { class: 'btn primary ws-main' }, ic('play'), 'Открыть');
+    const go = h('button', { class: 'btn ink ws-main' }, ic('play'), 'Открыть');
     go.addEventListener('click', () => (t && !t.missing ? openSandbox({ template: t.id, profile: p.id, agent }, go) : launcher({ profile: p.id })));
     return h('article', { class: `ws-card${sbx ? ' live' : ''}` },
       h('div', { class: 'ws-card-head' },

@@ -102,29 +102,21 @@
       f);
   }
 
-  // «Изменения агента»: review copies of the selected machine (former «Изменения» tab).
-  async function renderReview() {
-    const box = root?.querySelector('#dm-review');
-    if (!box) return;
-    const m = state.machines.find((x) => x.name === selected);
-    if (!m) { fill(box, h('p', { class: 'muted' }, 'Машин пока нет.')); return; }
-    let copies = [];
-    try { copies = (await api('GET', `/ui/machines/${enc(m.name)}/review`)).dirs; } catch (e) { fill(box, h('div', { class: 'error' }, e.message)); return; }
-    if (!copies.length) {
-      fill(box, h('div', { class: 'log-empty' }, ic('list'), h('div', {}, h('div', {}, `У машины ${m.name} нет рабочих копий.`),
-        h('div', { class: 'small' }, 'Чтобы агент правил папку через ревью, дайте к ней доступ в режиме «Рабочая копия с ревью».')),
-        h('button', { class: 'btn small-btn', onclick: () => openFolderDialog({ machine: m.name, mode: 'review', onDone: () => renderReview() }) }, ic('plus'), 'Дать доступ к папке')));
-      return;
-    }
-    fill(box, ...(await Promise.all(copies.map((d) => reviewDir(m, d, renderReview)))));
-  }
-
   // One card per machine: its folders in plain terms, and «Дать доступ к папке».
   function machineFolders() {
     if (!state.machines.length) return h('section', { class: 'card' }, h('p', { class: 'muted' }, 'Машин пока нет — создайте машину, затем дайте ей доступ к папкам.'));
     const wanted = params.get('machine');
     return state.machines.map((m) => {
-      const list = folderList(m, { onChange: () => renderReview() });
+      const changes = h('div', { class: 'mf-changes' });
+      const drawChanges = async () => {
+        let copies = [];
+        try { copies = (await api('GET', `/ui/machines/${enc(m.name)}/review`)).dirs; } catch { copies = []; }
+        if (!copies.length) { changes.replaceChildren(); return; }
+        changes.replaceChildren(h('div', { class: 'net-col-title' }, 'Изменения агента в рабочих копиях'),
+          ...(await Promise.all(copies.map((d) => reviewDir(m, d, drawChanges)))));
+      };
+      const list = folderList(m, { onChange: drawChanges });
+      drawChanges();
       const mk = state.marks?.[m.name];
       return h('section', { class: `card machine-folders${wanted === m.name ? ' hl' : ''}`, id: `mf-${m.name}` },
         h('div', { class: 'net-head' },
@@ -133,18 +125,17 @@
             h('div', { class: 'row' }, h('b', { class: 'mono' }, m.name), h('span', { class: `badge ${m.state}` }, stateLabel(m.state)), mk?.sandbox ? h('span', { class: 'tag sbx' }, 'песочница') : null),
             h('div', { class: 'muted small' }, mk?.title ? `пресет ${mk.title}` : 'машина без пресета')),
           h('span', { class: 'spacer' }),
-          h('button', { class: 'btn small-btn', onclick: () => openFolderDialog({ machine: m.name, onDone: () => { list.refresh(); renderReview(); } }) }, ic('plus'), 'Дать доступ к папке')),
-        list);
+          h('button', { class: 'btn small-btn', onclick: () => openFolderDialog({ machine: m.name, onDone: () => { list.refresh(); drawChanges(); } }) }, ic('plus'), 'Дать доступ к папке')),
+        list, changes);
     });
   }
 
   // Sections of the page, like the settings window: a bar on top, one section at a time.
   const SECTIONS = [
-    ['folders', 'folder', 'Папки машин', 'Какие папки компьютера видят агенты в каждой машине, в каком режиме и работает ли доступ.'],
-    ['changes', 'list', 'Изменения агента', 'Рабочие копии: агент правит копию, на компьютер попадает только то, что вы примените.'],
-    ['allowed', 'shield', 'Разрешённые папки', 'Политика: какие папки вообще можно давать машинам (строгий режим).'],
+    ['allowed', 'shield', 'Разрешённые папки', 'Какие папки этого компьютера вообще можно давать машинам.'],
+    ['folders', 'folder', 'Папки машин', 'Какие папки видят агенты в каждой машине, в каком режиме, работает ли доступ — и что агент поменял в рабочих копиях.'],
   ];
-  let section = 'folders';
+  let section = 'allowed';
 
   async function render() {
     if (!root || !reg) return;
@@ -161,11 +152,7 @@
     const [, , , about] = SECTIONS.find(([id]) => id === section);
     let content;
     if (section === 'folders') content = machineFolders();
-    else if (section === 'changes') {
-      content = h('section', { class: 'card review-host', id: 'changes' },
-        h('div', { class: 'card-head' }, h('h3', {}, 'Рабочие копии машины'), h('span', { class: 'spacer' }), reviewMachineSel()),
-        h('div', { id: 'dm-review' }));
-    } else content = registryCard();
+    else content = registryCard();
     fill(root,
       h('section', { class: 'card intro dirs-head' },
         h('div', { class: 'row' }, h('h2', { class: 'h-ic' }, ic('folder'), 'Папки компьютера для агентов'),
@@ -182,17 +169,7 @@
         nav,
         h('p', { class: 'muted small' }, about)),
       ...[].concat(content));
-    if (section === 'changes') renderReview();
     if (section === 'folders' && params.get('machine')) requestAnimationFrame(() => root?.querySelector(`#mf-${CSS.escape(params.get('machine'))}`)?.scrollIntoView({ behavior: 'smooth' }));
-  }
-
-  function reviewMachineSel() {
-    const names = state.machines.map((m) => m.name);
-    if (!names.length) return null;
-    if (!selected || !names.includes(selected)) selected = names[0];
-    const sel = h('select', { class: 'input small' }, names.map((n) => h('option', { value: n, selected: n === selected }, n)));
-    sel.addEventListener('change', () => { selected = sel.value; renderReview(); });
-    return sel;
   }
 
   pages.dirs = {
@@ -200,8 +177,10 @@
       root = el; params = p;
       selected = p.get('machine') || selected;
       // Old links: ?focus=changes, ?advanced=1.
-      section = p.get('tab') || (p.get('focus') === 'changes' ? 'changes' : p.get('advanced') === '1' ? 'allowed' : 'folders');
-      if (!SECTIONS.some(([id]) => id === section)) section = 'folders';
+      // «Разрешённые папки» first; old links (?tab=changes, ?focus=changes, ?machine=) go to the machines.
+      const t = p.get('tab');
+      section = t === 'changes' || p.get('focus') === 'changes' ? 'folders' : t || (p.get('machine') ? 'folders' : 'allowed');
+      if (!SECTIONS.some(([id]) => id === section)) section = 'allowed';
       fill(el, h('p', { class: 'muted' }, 'Загрузка…'));
       load().then(render).catch((e) => fill(el, h('div', { class: 'error' }, e.message)));
       return () => { root = null; };

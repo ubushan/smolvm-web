@@ -58,15 +58,17 @@
     </div>
     <nav class="pagenav" id="pagenav">
       <a href="#/work" data-page="work" title="Агенты с настройками, MCP и памятью — каждый раз в чистой машине"><svg class="ic"><use href="#i-users"/></svg>Рабочие места</a>
+      <a href="#/sandbox" data-page="sandbox" title="Песочницы: шаблоны, профили, открытые песочницы и ревью изменений"><svg class="ic"><use href="#i-box"/></svg>Песочница</a>
       <a href="#/" data-page="machines"><svg class="ic"><use href="#i-server"/></svg>Машины</a>
       <a href="#/egress" data-page="egress" title="Allow list ресурсов интернета для машин"><svg class="ic"><use href="#i-globe"/></svg>Сеть</a>
+      <a href="#/secrets" data-page="secrets" title="Хранилище API-ключей и токенов"><svg class="ic"><use href="#i-key"/></svg>Секреты</a>
       <a href="#/audit" data-page="audit" title="Журнал действий: команды, изменения файлов, экспорт в SIEM, оповещения"><svg class="ic"><use href="#i-shield"/></svg>Аудит</a>
       <a href="#/dirs" data-page="dirs" title="Разрешённые директории хоста и права пользователей"><svg class="ic"><use href="#i-folder"/></svg>Директории</a>
     </nav>
     <button id="proxy-chip" class="chip" hidden title="Настройки сети и прокси"></button>
     <div class="spacer"></div>
     <button id="btn-settings" class="btn ghost icon" title="Настройки: прокси, сертификаты, репозитории, секреты, smolvm" aria-label="Настройки"><svg class="ic"><use href="#i-gear"/></svg></button>
-    <button id="btn-theme" class="btn ghost icon" title="Тема"><svg class="ic"><use href="#i-contrast"/></svg></button>
+    <button id="btn-theme" class="btn ghost icon" title="Тема: светлая, тёмная или как в системе" aria-label="Тема" aria-haspopup="menu"><svg class="ic"><use href="#i-contrast"/></svg></button>
     <button id="btn-create" class="btn primary" title="Создать машину"><svg class="ic"><use href="#i-plus"/></svg>Создать</button>
   </header>
 
@@ -107,6 +109,70 @@
   <main class="page" id="page-dirs" hidden></main>
   <main class="page" id="page-audit" hidden></main>
   <main class="page" id="page-sandbox" hidden></main>
+  <main class="page" id="page-secrets" hidden>
+    <section class="card intro"><div class="row"><h2 class="h-ic"><svg class="ic"><use href="#i-key"/></svg>Секреты</h2></div>
+      <p class="muted small">Зашифрованное хранилище API-ключей и токенов. Агент пользуется ключом через шлюз на этом компьютере, но не видит его значения. Привязать секрет к машине — при создании или в её «Обзоре».</p></section>
+          <section class="card" id="secrets-card">
+      
+          <div id="vault-status" class="small muted"></div>
+          <div id="vault-list"></div>
+          <div class="row"><button type="button" class="btn primary" id="btn-secret-add"><svg class="ic"><use href="#i-plus"/></svg>Добавить секрет</button></div>
+
+          <form id="form-secret" hidden autocomplete="off">
+            <hr>
+            <div class="grid2">
+              <label>Шаблон
+                <select name="preset" class="input">
+                  <option value="">— свой —</option>
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="gemini">Google Gemini</option>
+                  <option value="github">GitHub</option>
+                  <option value="local">Локальная модель (OpenAI-совместимая)</option>
+                </select>
+              </label>
+              <label>Имя секрета<input name="name" class="input mono" required pattern="[A-Za-z0-9_.\-]{1,64}" placeholder="deepseek"></label>
+            </div>
+
+            <div class="label-like">Как передавать в машину</div>
+            <div class="modes">
+              <label class="mode"><input type="radio" name="mode" value="gateway">
+                <span><b>Шлюз smolvm-web</b> <span class="tag ok">безопасно</span> <span class="tag">работает через корп. прокси</span><br>
+                <span class="muted small">Машина получает токен-заглушку и <code>BASE_URL</code> шлюза на хосте. Шлюз подменяет токен на ключ и отправляет запрос к API (через прокси, если он настроен).</span></span></label>
+              <label class="mode"><input type="radio" name="mode" value="substitute">
+                <span><b>Подстановка smolvm</b> <span class="tag ok">безопасно</span> <span class="tag warn">нужен прямой интернет</span><br>
+                <span class="muted small">Родной механизм smolvm: в переменной лежит заглушка, ключ подставляется хостом в HTTPS-заголовок только к указанным хостам. Задаётся при создании машины; корпоративный прокси не поддерживается.</span></span></label>
+              <label class="mode"><input type="radio" name="mode" value="env">
+                <span><b>Переменная окружения</b> <span class="tag bad">машина видит значение</span><br>
+                <span class="muted small">Значение передаётся в команды консоли/exec как есть. Только для того, что программа должна прочитать сама (URL БД и т.п.).</span></span></label>
+            </div>
+
+            <div class="grid2">
+              <label>Переменная для ключа<input name="envVar" class="input mono" required placeholder="DEEPSEEK_API_KEY"></label>
+              <label data-mode="gateway">Переменная для base URL<input name="baseUrlVar" class="input mono" placeholder="DEEPSEEK_BASE_URL"></label>
+            </div>
+            <label data-mode="gateway">URL API (куда шлюз отправляет запросы)<input name="upstream" class="input mono" placeholder="https://api.deepseek.com"></label>
+            <label class="check" data-mode="gateway"><input type="checkbox" name="allowHttp"> Локальная модель / сервер по HTTP <span class="muted small">(Ollama, vLLM, LM Studio, llama.cpp; <code>localhost</code> — это хост; без TLS ключ идёт от хоста до сервера открытым текстом)</span></label>
+            <label data-mode="gateway">Модель <span class="muted small">(для локального сервера: OpenCode, Pi и Hermes настроятся на неё сами; Claude Code, Codex и Harness локальные модели не используют)</span><input name="model" class="input mono" placeholder="deepseek-r1:14b"></label>
+            <label data-mode="substitute">Разрешённые хосты (точные имена, через запятую)<input name="hosts" class="input mono" placeholder="api.deepseek.com"></label>
+            <label data-mode="gateway">Подтверждать вызовы человеком <span class="muted small">(необратимые действия: удаление, деплой, письма, платежи — запрос ждёт «Разрешить» в интерфейсе до 2 минут; «МЕТОД путь» через запятую, * — любой)</span><input name="confirm" class="input mono" placeholder="DELETE *, POST /repos/*/deployments, POST */messages/send"></label>
+    <label data-mode="gateway substitute">Разрешённые HTTP-методы <span class="muted small">(пусто — все)</span><input name="methods" class="input mono" placeholder="GET, POST"></label>
+            <label>Значение
+              <input name="value" type="password" class="input mono" placeholder="sk-…" autocomplete="new-password" spellcheck="false">
+              <small class="muted" id="secret-value-hint">Хранится зашифрованным (AES-256-GCM), ключ — в хранилище ОС. Обратно в интерфейс не выдаётся.</small>
+            </label>
+            <label>Заметка<input name="note" class="input" maxlength="200" placeholder="для агента в машине agent-1"></label>
+            <div id="secret-error" class="error" hidden></div>
+            <div class="row">
+              <button type="button" class="btn ghost" id="btn-secret-cancel">Отмена</button>
+              <button type="submit" class="btn primary">Сохранить секрет</button>
+            </div>
+          </form>
+    </section>
+  </main>
+
 
   <!-- Create machine -->
   <dialog id="dlg-create" class="dialog">
@@ -251,7 +317,6 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
           <button type="button" data-pane="proxy"><svg class="ic"><use href="#i-globe"/></svg>Прокси</button>
           <button type="button" data-pane="ca"><svg class="ic"><use href="#i-shield"/></svg>Сертификаты</button>
           <button type="button" data-pane="repos"><svg class="ic"><use href="#i-box"/></svg>Репозитории</button>
-          <button type="button" data-pane="secrets"><svg class="ic"><use href="#i-key"/></svg>Секреты</button>
           <button type="button" data-pane="audit"><svg class="ic"><use href="#i-list"/></svg>Аудит и SIEM</button>
         </nav>
         <div class="settings-main">
@@ -264,14 +329,15 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
               <div class="row"><button type="button" class="btn" id="btn-smolvm-check">Проверить</button></div>
             </div>
             <div id="smolvm-check-out" class="small" hidden></div>
+            <div class="virt-pull" id="virt-pull"></div>
           </section>
           <section class="settings-pane" data-pane="proxy" hidden>
             <div class="pane-head"><h4>Прокси</h4><p class="muted small">Для работы за корпоративным прокси без прямого доступа в интернет: образы, <code>pip</code>, <code>npm</code>, <code>apt</code>, <code>git</code>, <code>curl</code> внутри машин ходят через прокси.</p></div>
             <label class="check"><input type="checkbox" name="proxyEnabled"> <b>Использовать прокси</b></label>
-            <label class="check win-only" id="proxy-system-wrap" hidden><input type="checkbox" name="proxySystem"> <b>Системный прокси Windows</b> <span class="muted small">— как в браузере: адрес и PAC-файл из настроек Windows, вход под вашей учётной записью (Kerberos / NTLM) без пароля. Машины ходят через ретранслятор smolvm-web на этом компьютере (порт 7792), отдельный px/proxydetox не нужен.</span></label>
+            <label class="check win-only" id="proxy-system-wrap" hidden><input type="checkbox" name="proxySystem"> <b>Системный прокси Windows</b> <span class="muted small">— как в браузере: адрес и PAC-файл из настроек Windows. Вход под учётной записью Windows (Kerberos/NTLM) smolvm-web не выполняет — для такого прокси запустите proxydetox. Машины ходят через ретранслятор smolvm-web на этом компьютере (порт 7792), отдельный px/proxydetox не нужен.</span></label>
             <div class="grid-proxy">
               <label>Адрес прокси<input name="proxyUrl" class="input mono" placeholder="http://proxy.corp.local:3128" autocomplete="off" spellcheck="false">
-                <small class="muted">Можно с логином: <code>http://user:pass@proxy:8080</code>. Если прокси просит Kerberos/NTLM, на Windows smolvm-web войдёт сам под вашей учётной записью; на macOS/Linux используйте локальный cntlm или px.</small>
+                <small class="muted">Можно с логином: <code>http://user:pass@proxy:8080</code>. Если прокси просит вход под учётной записью Windows (Kerberos/NTLM), запустите proxydetox (или px, cntlm) и укажите здесь его адрес, например <code>http://127.0.0.1:3128</code>.</small>
               </label>
               <div class="row">
                 <button type="button" class="btn" id="btn-proxy-detect">Определить автоматически</button>
@@ -332,65 +398,7 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
             <div class="pane-head"><h4>Аудит и SIEM</h4><p class="muted small">Отправка журнала действий и сетевых событий в SIEM, оповещения о всплесках заблокированных соединений (попытки вывести данные). Сохраняются кнопками в карточках. Сам журнал — на странице «Аудит».</p></div>
             <div id="audit-settings"></div>
           </section>
-          <section class="settings-pane" data-pane="secrets" hidden>
-            <div class="pane-head"><h4>Секреты</h4><p class="muted small">Зашифрованное хранилище API-ключей и токенов. Сохраняются сразу, кнопкой «Сохранить секрет».</p></div>
-                <div id="vault-status" class="small muted"></div>
-                <div id="vault-list"></div>
-                <div class="row"><button type="button" class="btn primary" id="btn-secret-add"><svg class="ic"><use href="#i-plus"/></svg>Добавить секрет</button></div>
 
-                <form id="form-secret" hidden autocomplete="off">
-                  <hr>
-                  <div class="grid2">
-                    <label>Шаблон
-                      <select name="preset" class="input">
-                        <option value="">— свой —</option>
-                        <option value="deepseek">DeepSeek</option>
-                        <option value="openai">OpenAI</option>
-                        <option value="anthropic">Anthropic</option>
-                        <option value="openrouter">OpenRouter</option>
-                        <option value="gemini">Google Gemini</option>
-                        <option value="github">GitHub</option>
-                        <option value="local">Локальная модель (OpenAI-совместимая)</option>
-                      </select>
-                    </label>
-                    <label>Имя секрета<input name="name" class="input mono" required pattern="[A-Za-z0-9_.\-]{1,64}" placeholder="deepseek"></label>
-                  </div>
-
-                  <div class="label-like">Как передавать в машину</div>
-                  <div class="modes">
-                    <label class="mode"><input type="radio" name="mode" value="gateway">
-                      <span><b>Шлюз smolvm-web</b> <span class="tag ok">безопасно</span> <span class="tag">работает через корп. прокси</span><br>
-                      <span class="muted small">Машина получает токен-заглушку и <code>BASE_URL</code> шлюза на хосте. Шлюз подменяет токен на ключ и отправляет запрос к API (через прокси, если он настроен).</span></span></label>
-                    <label class="mode"><input type="radio" name="mode" value="substitute">
-                      <span><b>Подстановка smolvm</b> <span class="tag ok">безопасно</span> <span class="tag warn">нужен прямой интернет</span><br>
-                      <span class="muted small">Родной механизм smolvm: в переменной лежит заглушка, ключ подставляется хостом в HTTPS-заголовок только к указанным хостам. Задаётся при создании машины; корпоративный прокси не поддерживается.</span></span></label>
-                    <label class="mode"><input type="radio" name="mode" value="env">
-                      <span><b>Переменная окружения</b> <span class="tag bad">машина видит значение</span><br>
-                      <span class="muted small">Значение передаётся в команды консоли/exec как есть. Только для того, что программа должна прочитать сама (URL БД и т.п.).</span></span></label>
-                  </div>
-
-                  <div class="grid2">
-                    <label>Переменная для ключа<input name="envVar" class="input mono" required placeholder="DEEPSEEK_API_KEY"></label>
-                    <label data-mode="gateway">Переменная для base URL<input name="baseUrlVar" class="input mono" placeholder="DEEPSEEK_BASE_URL"></label>
-                  </div>
-                  <label data-mode="gateway">URL API (куда шлюз отправляет запросы)<input name="upstream" class="input mono" placeholder="https://api.deepseek.com"></label>
-                  <label class="check" data-mode="gateway"><input type="checkbox" name="allowHttp"> Локальная модель / сервер по HTTP <span class="muted small">(Ollama, vLLM, LM Studio, llama.cpp; <code>localhost</code> — это хост; без TLS ключ идёт от хоста до сервера открытым текстом)</span></label>
-                  <label data-mode="gateway">Модель <span class="muted small">(для локального сервера: OpenCode, Pi и Hermes настроятся на неё сами; Claude Code, Codex и Harness локальные модели не используют)</span><input name="model" class="input mono" placeholder="deepseek-r1:14b"></label>
-                  <label data-mode="substitute">Разрешённые хосты (точные имена, через запятую)<input name="hosts" class="input mono" placeholder="api.deepseek.com"></label>
-                  <label data-mode="gateway">Подтверждать вызовы человеком <span class="muted small">(необратимые действия: удаление, деплой, письма, платежи — запрос ждёт «Разрешить» в интерфейсе до 2 минут; «МЕТОД путь» через запятую, * — любой)</span><input name="confirm" class="input mono" placeholder="DELETE *, POST /repos/*/deployments, POST */messages/send"></label>
-          <label data-mode="gateway substitute">Разрешённые HTTP-методы <span class="muted small">(пусто — все)</span><input name="methods" class="input mono" placeholder="GET, POST"></label>
-                  <label>Значение
-                    <input name="value" type="password" class="input mono" placeholder="sk-…" autocomplete="new-password" spellcheck="false">
-                    <small class="muted" id="secret-value-hint">Хранится зашифрованным (AES-256-GCM), ключ — в хранилище ОС. Обратно в интерфейс не выдаётся.</small>
-                  </label>
-                  <label>Заметка<input name="note" class="input" maxlength="200" placeholder="для агента в машине agent-1"></label>
-                  <div id="secret-error" class="error" hidden></div>
-                  <div class="row">
-                    <button type="button" class="btn ghost" id="btn-secret-cancel">Отмена</button>
-                    <button type="submit" class="btn primary">Сохранить секрет</button>
-                  </div>
-                </form>
-          </section>
           <div id="settings-error" class="error" hidden></div>
         </div>
       </div>
