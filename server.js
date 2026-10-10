@@ -361,6 +361,11 @@ async function isolateMachine(name, actor, reason = 'вручную') {
 }
 
 // «Смертельная триада»: private data + untrusted content + a way out, all at once.
+// Each link has a level: open (anything on the internet), limited (only allowed
+// addresses), none. Where the machine can actually go depends on three things:
+// smolvm's own egress policy (allowedCidrs/allowedHosts), smolvm-web's filter
+// (and its rules, recording mode, approvals) and whether the filter can be
+// bypassed (isolation off: a program ignoring HTTP_PROXY goes out directly).
 async function lethalTrifecta(name) {
   const r = await up.request('GET', `/api/v1/machines/${encodeURIComponent(name)}`).catch(() => null);
   if (!r || r.status !== 200) return null;
@@ -374,12 +379,48 @@ async function lethalTrifecta(name) {
     ...(dm?.dirs || []).map((d) => `директория ${d.id}`),
     ...hostMounts.map((x) => `папка ${x.source || x.host || ''}${x.readonly ? ' (чтение)' : ''}`),
   ];
-  const network = !!vm.network;
-  const guarded = !!(eg?.enabled && !eg.learn);
+
+  // smolvm's policy: only this computer, a list of hosts/ranges, or nothing.
+  const ip = await px.hostIp().catch(() => null);
+  const cidrs = vm.allowedCidrs || [];
+  const hosts = vm.allowedHosts || [];
+  const hostOnly = cidrs.length > 0 && !hosts.length && cidrs.every((c) => c === `${ip}/32` || /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(c));
+  const policyList = !hostOnly && (cidrs.length > 0 || hosts.length > 0);
+
+  const filterOn = !!eg?.enabled;
+  const rules = filterOn ? egress.machineRules(name) : [];
+  const anyHost = rules.some((x) => x.host === '*');
+  const ask = !!eg?.ask;
+  let reach; let why; // where the machine can read from / send to
+  if (!vm.network) { reach = 'none'; why = 'сеть машины выключена'; }
+  else if (filterOn && eg.learn) { reach = 'open'; why = 'режим «Запись адресов» — фильтр пропускает всё'; }
+  else if (filterOn && anyHost) { reach = 'open'; why = 'в разрешённом есть «*» — любой адрес'; }
+  else if (filterOn) {
+    reach = 'limited';
+    why = `только разрешённые адреса (${rules.length})${ask ? ', остальные — с подтверждения человека' : ''}`;
+  } else if (hostOnly) { reach = 'none'; why = 'политика smolvm: только этот компьютер, интернета нет'; }
+  else if (policyList) { reach = 'limited'; why = `политика smolvm: только ${[...hosts, ...cidrs].slice(0, 4).join(', ')}${hosts.length + cidrs.length > 4 ? '…' : ''}`; }
+  else { reach = 'open'; why = 'фильтр «Сеть» выключен — любой адрес'; }
+
+  // Sending out: the filter can be bypassed when nothing below it is closed.
+  let exfil = reach; let exfilWhy = why;
+  if (filterOn && reach === 'limited' && !hostOnly && !policyList) {
+    exfil = 'open';
+    exfilWhy = 'фильтр можно обойти: изоляция выключена — программа без прокси выйдет напрямую';
+  }
+  // What changes on the next start through smolvm-web.
+  let note = null;
+  if (eg && !eg.enabled && eg.strictApplied && hostOnly) note = 'Сейчас машину держит только оставшаяся изоляция smolvm: фильтр выключен, при следующем запуске изоляция снимется и машина получит полный доступ в интернет.';
+  else if (eg?.enabled && eg.strict && !eg.strictApplied) note = 'Изоляция включится при следующем запуске машины — до этого фильтр можно обойти.';
+
+  const untrustedText = { open: 'машина может читать любой сайт', limited: why, none: why }[reach];
+  const lethal = privateData.length > 0 && reach !== 'none' && exfil === 'open';
   return {
-    privateData, untrusted: network, exfil: network && !guarded,
-    exfilWhy: !network ? 'сеть выключена' : !eg?.enabled ? 'фильтр «Доступ в сеть» выключен — машина может отправить данные куда угодно' : eg.learn ? 'включён режим обучения — фильтр пропускает всё' : eg.ask ? 'неизвестные адреса — только с подтверждения человека' : 'только адреса из allow list',
-    lethal: privateData.length > 0 && network && !guarded,
+    privateData,
+    untrusted: reach !== 'none', untrustedLevel: reach, untrustedWhy: untrustedText,
+    exfil: exfil === 'open', exfilLevel: exfil, exfilWhy,
+    lethal, limited: !lethal && privateData.length > 0 && reach !== 'none',
+    note,
   };
 }
 

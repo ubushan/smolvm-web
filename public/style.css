@@ -974,3 +974,7 @@ details.card[open] > summary { margin-bottom: 10px; }
 .ss-top-title { gap: 4px; }
 .ss-pills { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
 .ss-top-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.risk-wrap { display: flex; flex-direction: column; gap: 6px; }
+.risk-line.limited { border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.risk-line.limited summary b { color: var(--warn); }
+.risk-note { margin: 0; }

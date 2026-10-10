@@ -591,7 +591,7 @@ async function breakTrifecta(m) {
   try {
     const r = await api('PUT', `/ui/egress/machines/${enc(m.name)}`, { enabled: true });
     for (const n of r.notes || []) toast(`${m.name}: ${n}`);
-    toast(`${m.name}: фильтр «Доступ в сеть» включён — наружу только адреса из allow list (списки по умолчанию, серверы вендоров агентов и корпоративные репозитории)`, 'ok', 12000);
+    toast(`${m.name}: фильтр «Сеть» включён — наружу только разрешённые адреса (списки по умолчанию, серверы агентов и корпоративные репозитории)`, 'ok', 12000);
   } catch (e) { toast(e.message, 'err'); }
   renderTab();
 }
@@ -600,37 +600,53 @@ function trifectaBanner(m, tri) {
   return h('div', { class: 'notice bad-notice trifecta' },
     h('div', {}, h('b', {}, '«Смертельная триада»: '),
       'у агента одновременно есть приватные данные, недоверенный контент из интернета и свободный выход наружу. Через prompt injection в скачанной странице или файле агента можно заставить отправить данные куда угодно.'),
-    h('div', { class: 'row' }, h('button', { class: 'btn danger', onclick: () => breakTrifecta(m) }, ic('shield'), 'Разорвать: включить фильтр «Доступ в сеть»'),
+    h('div', { class: 'row' }, h('button', { class: 'btn danger', onclick: () => breakTrifecta(m) }, ic('shield'), 'Разорвать: включить фильтр «Сеть»'),
       h('span', { class: 'muted small' }, 'или уберите приватные данные: отвяжите секреты и папки')));
 }
 
 function trifectaBlock(m, tri) {
-  const row = (bad, label, text) => bitem(h('span', {}, h('span', { class: bad ? 'badc' : 'okc' }, bad ? '● ' : '○ '), h('b', {}, label), h('div', { class: 'muted small' }, text)));
+  // ● open (red) · ◐ limited (yellow) · ○ closed (green)
+  const LV = { open: ['badc', '●'], limited: ['warnc', '◐'], none: ['okc', '○'] };
+  const row = (level, label, text) => {
+    const [cls, dot] = LV[level];
+    return bitem(h('span', {}, h('span', { class: cls }, `${dot} `), h('b', {}, label), h('div', { class: 'muted small' }, text)));
+  };
+  const hasData = tri.privateData.length > 0;
+  const untrusted = tri.untrustedLevel || (tri.untrusted ? 'open' : 'none');
+  const exfil = tri.exfilLevel || (tri.exfil ? 'open' : 'none');
   return block({
     icon: 'shield', title: 'Риск утечки', sub: '«смертельная триада»: опасны все три звена сразу', on: !tri.lethal,
-    badge: tri.lethal ? 'все три звена' : 'разорвана',
+    badge: tri.lethal ? 'все три звена' : tri.limited ? 'ограничено' : 'разорвана',
     items: [
-      row(tri.privateData.length > 0, 'Приватные данные', tri.privateData.length ? tri.privateData.slice(0, 4).join(', ') + (tri.privateData.length > 4 ? ` и ещё ${tri.privateData.length - 4}` : '') : 'нет секретов и папок компьютера'),
-      row(tri.untrusted, 'Недоверенный контент', tri.untrusted ? 'машина читает интернет' : 'сеть выключена'),
-      row(tri.exfil, 'Выход наружу', tri.exfilWhy),
-    ],
+      row(hasData ? 'open' : 'none', 'Приватные данные', hasData ? tri.privateData.slice(0, 4).join(', ') + (tri.privateData.length > 4 ? ` и ещё ${tri.privateData.length - 4}` : '') : 'нет секретов и папок компьютера'),
+      row(untrusted, 'Недоверенный контент', tri.untrustedWhy || (tri.untrusted ? 'машина читает интернет' : 'сеть выключена')),
+      row(exfil, 'Выход наружу', tri.exfilWhy),
+      tri.note ? h('div', { class: 'small warnc' }, tri.note) : null,
+    ].filter(Boolean),
     footer: tri.lethal ? [h('button', { class: 'btn danger', onclick: () => breakTrifecta(m) }, 'Разорвать')] : null,
   });
 }
 
 // Risk of a leak in one line when the triad is broken; the three links on demand.
 function riskLine(tri) {
+  // ● open (red) · ◐ limited (yellow) · ○ closed (green)
+  const LV = { open: ['badc', '●'], limited: ['warnc', '◐'], none: ['okc', '○'] };
+  const untrusted = tri.untrustedLevel || (tri.untrusted ? 'open' : 'none');
+  const exfil = tri.exfilLevel || (tri.exfil ? 'open' : 'none');
+  const data = tri.privateData.length > 1 ? 'приватные данные' : tri.privateData[0];
   const why = !tri.privateData.length ? 'нет секретов и папок этого компьютера'
-    : !tri.untrusted ? `есть ${tri.privateData.length > 1 ? 'приватные данные' : tri.privateData[0]}, но сеть выключена`
-    : `есть ${tri.privateData.length > 1 ? 'приватные данные' : tri.privateData[0]}, но ${tri.exfilWhy}`;
-  const row = (bad, label, text) => h('div', {}, h('span', { class: bad ? 'badc' : 'okc' }, bad ? '● ' : '○ '), h('b', {}, label), h('span', { class: 'muted' }, ` — ${text}`));
-  return h('details', { class: 'risk-line' },
-    h('summary', {}, h('b', {}, 'Риск утечки низкий. '), why, h('span', { class: 'risk-more' }, 'Подробнее')),
-    h('div', { class: 'risk-rows small' },
-      row(tri.privateData.length > 0, 'Приватные данные', tri.privateData.length ? tri.privateData.slice(0, 4).join(', ') : 'нет'),
-      row(tri.untrusted, 'Недоверенный контент', tri.untrusted ? 'машина читает интернет' : 'сеть выключена'),
-      row(tri.exfil, 'Выход наружу', tri.exfilWhy),
-      h('div', { class: 'muted' }, 'Утечка возможна, только когда есть все три звена сразу («смертельная триада»).')));
+    : untrusted === 'none' ? `есть ${data}, но ${tri.untrustedWhy || 'сеть выключена'}`
+      : `есть ${data}, но ${tri.exfilWhy}`;
+  const row = (level, label, text) => { const [cls, dot] = LV[level]; return h('div', {}, h('span', { class: cls }, `${dot} `), h('b', {}, label), h('span', { class: 'muted' }, ` — ${text}`)); };
+  return h('div', { class: `risk-wrap${tri.limited ? ' limited' : ''}` },
+    h('details', { class: `risk-line${tri.limited ? ' limited' : ''}` },
+      h('summary', {}, h('b', {}, tri.limited ? 'Риск утечки ограничен. ' : 'Риск утечки низкий. '), why, h('span', { class: 'risk-more' }, 'Подробнее')),
+      h('div', { class: 'risk-rows small' },
+        row(tri.privateData.length ? 'open' : 'none', 'Приватные данные', tri.privateData.length ? tri.privateData.slice(0, 4).join(', ') : 'нет'),
+        row(untrusted, 'Недоверенный контент', tri.untrustedWhy || (tri.untrusted ? 'машина читает интернет' : 'сеть выключена')),
+        row(exfil, 'Выход наружу', tri.exfilWhy),
+        h('div', { class: 'muted' }, 'Утечка возможна, когда есть все три звена сразу («смертельная триада»). ◐ — только разрешённые адреса.'))),
+    tri.note ? h('div', { class: 'notice small risk-note' }, tri.note) : null);
 }
 
 // Limits on what the agent may consume.
@@ -2140,7 +2156,7 @@ function renderApprovals(list) {
   };
   box.replaceChildren(...list.map((a) => h('section', { class: `approval ${a.kind}` },
     h('div', { class: 'approval-head' }, ic(a.kind === 'net' ? 'globe' : 'key'),
-      h('b', {}, a.kind === 'net' ? 'Доступ в сеть' : 'Вызов API'), h('span', { class: 'spacer' }),
+      h('b', {}, a.kind === 'net' ? 'Сеть: неизвестный адрес' : 'Вызов API'), h('span', { class: 'spacer' }),
       h('span', { class: 'muted small', 'data-exp': a.expiresAt }, `${Math.max(0, Math.round((a.expiresAt - Date.now()) / 1000))} с`)),
     h('div', {}, h('span', { class: 'mono' }, a.machine), a.kind === 'net' ? ' хочет подключиться к ' : ` → ${a.detail?.secret || ''}: `, h('code', {}, a.title)),
     a.kind === 'api' ? h('div', { class: 'muted small' }, `${a.detail?.upstream || ''} · правило «${a.detail?.rule || ''}»`) : null,
