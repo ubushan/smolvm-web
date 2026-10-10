@@ -111,11 +111,13 @@
       };
       const learn = h('input', { type: 'checkbox', checked: !!m.learn, title: 'Временно разрешить всё и только журналировать' });
       learn.addEventListener('change', () => save({ learn: learn.checked }));
+      const ask = h('input', { type: 'checkbox', checked: !!m.ask, title: 'Неизвестный адрес не блокировать сразу, а спросить человека: «на 10 минут», «всегда» или «запретить»' });
+      ask.addEventListener('change', () => save({ ask: ask.checked }));
       on.addEventListener('change', () => save({ enabled: on.checked }));
       strict.addEventListener('change', () => save({ strict: strict.checked }));
       lists.addEventListener('change', () => save({ lists: [...lists.querySelectorAll('input:checked')].map((i) => i.value) }));
       const editRow = h('tr', { class: 'expand', hidden: !(params.get('machine') === name && m.enabled) },
-        h('td', { colspan: 7 }, h('div', { class: 'small muted' }, `Собственные правила машины ${name} (в дополнение к спискам):`),
+        h('td', { colspan: 8 }, h('div', { class: 'small muted' }, `Собственные правила машины ${name} (в дополнение к спискам):`),
           rulesEditor(m.rules, { onSave: async (rules) => { await api('PUT', `/ui/egress/machines/${enc(name)}`, { rules }); toast(`${name}: правила сохранены`, 'ok'); await load(); render(); } })));
       const pending = m.enabled && m.strict !== !!m.strictApplied;
       const tr = h('tr', { class: params.get('machine') === name ? 'hl' : '' },
@@ -123,6 +125,7 @@
         h('td', { class: 'center' }, on),
         h('td', { class: 'center' }, strict, pending ? h('div', { class: 'small warnc', title: 'Применится при следующем запуске через smolvm-web' }, 'при запуске') : null),
         h('td', { class: 'center' }, learn, m.learn ? h('div', {}, h('button', { class: 'btn small-btn', title: 'Превратить собранные хосты в список', onclick: () => openLearned(name) }, `Собрать (${m.learnedCount || 0})`)) : null),
+        h('td', { class: 'center' }, ask),
         h('td', {}, lists, m.vendorCount ? h('a', { class: 'small muted', href: '#/', title: 'Серверы вендоров агентов разрешены по умолчанию; отозвать — во вкладке «Агенты» машины', onclick: (e) => { e.preventDefault(); location.hash = '#/'; select(name); switchTab('agents'); } }, `+ серверы вендоров: ${m.vendorCount}`) : null),
         h('td', {}, m.enabled ? h('button', { class: 'btn ghost', onclick: () => { editRow.hidden = !editRow.hidden; } }, `Свои правила (${m.rules.length})`) : null),
         h('td', {},
@@ -132,7 +135,7 @@
     });
     return card('Машины',
       names.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
-        h('thead', {}, h('tr', {}, h('th', {}, 'Машина'), h('th', { class: 'center' }, 'Фильтр'), h('th', { class: 'center', title: 'Только хост в egress-политике smolvm' }, 'Жёстко'), h('th', { class: 'center', title: 'Режим обучения: всё разрешено и журналируется' }, 'Обучение'), h('th', {}, 'Списки'), h('th', {}, ''), h('th', {}, ''))),
+        h('thead', {}, h('tr', {}, h('th', {}, 'Машина'), h('th', { class: 'center' }, 'Фильтр'), h('th', { class: 'center', title: 'Только хост в egress-политике smolvm' }, 'Жёстко'), h('th', { class: 'center', title: 'Режим обучения: всё разрешено и журналируется' }, 'Обучение'), h('th', { class: 'center', title: 'Неизвестные адреса ждут решения человека' }, 'Спрашивать'), h('th', {}, 'Списки'), h('th', {}, ''), h('th', {}, ''))),
         h('tbody', {}, rows.flat()))) : h('p', { class: 'muted' }, 'Машин пока нет.'),
       h('p', { class: 'muted small' }, 'Включение фильтра действует сразу для консоли, exec и профиля гостя (profile.d, pip, npm, apt, git); основной процесс машины и жёсткая изоляция переключаются при следующем запуске через smolvm-web.'));
   }

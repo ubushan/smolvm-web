@@ -562,3 +562,16 @@ pre.diff .d-c { color: #a1a1aa; }
 .profile .p-desc { grid-column: 1 / -1; font-size: 12px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .profile .mark .ic { width: 14px; height: 14px; }
 .profile .mark { font-size: 10px; white-space: nowrap; overflow: hidden; letter-spacing: -.04em; }
+
+/* Human approvals: requests waiting for a person, bottom-left above everything. */
+.approvals { position: fixed; left: 16px; bottom: 16px; z-index: 60; display: flex; flex-direction: column; gap: 8px; width: min(380px, calc(100vw - 32px)); }
+.approval { background: var(--panel); border: 1px solid var(--warn); border-radius: 12px; box-shadow: var(--shadow-lg); padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; animation: pop .16s ease-out; }
+.approval.api { border-color: var(--bad); }
+.approval-head { display: flex; align-items: center; gap: 8px; }
+.approval code { overflow-wrap: anywhere; }
+.btn.danger:not(.ghost) { background: var(--bad); color: #fff; border-color: var(--bad); }
+.notice.bad-notice { background: var(--bad-soft); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 30%, transparent); }
+.notice.trifecta { display: flex; flex-direction: column; gap: 8px; }
+.notice.trifecta .btn { align-self: flex-start; }
+.limits-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.limits-grid label { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }

@@ -59,10 +59,19 @@
       }))) : h('p', { class: 'muted' }, 'Записей нет.');
     fill(wrap,
       h('div', { class: 'card-head' }, h('h3', {}, 'Журнал действий'), h('span', { class: 'spacer' }), mSel, tSel, qIn,
+        h('button', { class: 'btn', title: 'Проверить цепочку подписей журнала: изменённые, удалённые или вставленные записи', onclick: verifyLog }, ic('shield'), 'Проверить целостность'),
         h('a', { class: 'btn', href: '/ui/audit/export', download: '' }, ic('download'), 'Экспорт JSONL')),
       table,
       h('p', { class: 'muted small' }, `Файл: ${data.file}. Под наблюдением (rw-папки работающих машин): ${data.watched.length ? data.watched.map((w) => `${w.path} → ${w.machines.join(', ')}`).join('; ') : 'нет'}.`));
     if (focused) wrap.querySelector(`[name=${focused}]`)?.focus();
+  }
+
+  async function verifyLog() {
+    try {
+      const r = await api('GET', '/ui/audit/verify');
+      if (r.ok) toast(`Журнал цел: ${r.signed} подписанных записей${r.unsigned ? ` (+${r.unsigned} старых, до включения подписи)` : ''}.`, 'ok');
+      else toast(h('div', { style: 'white-space:pre-wrap' }, `Журнал аудита изменён!\n${r.broken.reason}\nЗапись №${r.broken.id ?? '?'}${r.broken.ts ? ` от ${new Date(r.broken.ts).toLocaleString()}` : ''}, строка ${r.broken.line} в ${r.broken.file}.\nСверьте с копией в SIEM.`), 'err', 60000);
+    } catch (e) { toast(e.message, 'err'); }
   }
 
   async function settingsCards() {

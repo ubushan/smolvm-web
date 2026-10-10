@@ -249,7 +249,7 @@ function renderList() {
   const html = list.map((m) => `
     <div class="machine ${m.name === state.selected ? 'active' : ''} ${state.preparing?.[m.name] ? 'preparing' : m.state === 'running' ? 'running' : ''}" data-name="${esc(m.name)}">
       <div class="name">${esc(m.name)}</div>
-      <div>${stateBadge(m)}</div>
+      <div>${state.isolated?.[m.name] ? '<span class="badge failed" title="Kill switch: машина изолирована">изолирована</span>' : stateBadge(m)}</div>
       <div class="meta">${esc(m.image || '—')} · ${m.cpus} vCPU · ${fmtMb(m.memoryMb)}${m.network ? ' · net' : ''}${m.branchable ? ' · branchable' : ''}${m.parentMachine ? ` · ⑂ ${esc(m.parentMachine)}` : ''}</div>
     </div>`).join('');
   if (box.dataset.html !== html) { box.innerHTML = html; box.dataset.html = html; }
@@ -369,6 +369,16 @@ const actions = {
     });
   },
   stop: (m) => action(m.name, 'остановка…', () => api('POST', `/api/v1/machines/${enc(m.name)}/stop`, {}), `${m.name} остановлена`),
+  isolate: (m) => action(m.name, 'изоляция…', async () => {
+    const r = await api('POST', `/ui/machines/${enc(m.name)}/isolate`, { on: true });
+    await pollLive(); await refreshMachines();
+    toast(`${m.name} изолирована: оборвано соединений — ${r.dropped}, токенов заменено — ${r.rotated}${r.paused ? ', машина на паузе' : r.pauseError ? `; пауза не удалась: ${r.pauseError}` : ''}`, r.pauseError ? 'err' : 'ok', 15000);
+    return r;
+  }),
+  unisolate: (m) => action(m.name, 'снятие изоляции…', async () => {
+    await api('POST', `/ui/machines/${enc(m.name)}/isolate`, { on: false });
+    await pollLive(); await refreshMachines();
+  }, `${m.name}: изоляция снята — возобновите машину и перезапустите агентов (у них новые токены)`),
   pause: (m) => action(m.name, 'пауза…', () => api('POST', `/api/v1/machines/${enc(m.name)}/pause`, {}), `${m.name} на паузе`),
   resume: (m) => action(m.name, 'возобновление…', () => api('POST', `/api/v1/machines/${enc(m.name)}/resume`, {}), `${m.name} возобновлена`),
   async remove(m) {
@@ -496,7 +506,8 @@ function updateDetailHead(m) {
   const head = $('#detail .detail-head');
   if (!head || $('#detail').dataset.name !== m.name) return;
   const busy = state.busy.has(m.name);
-  const sig = JSON.stringify([m.name, m.state, state.busy.get(m.name), state.preparing?.[m.name], m.branchable, m.parentMachine, state.info?.proxyActive, state.info?.caActive]);
+  const iso = state.isolated?.[m.name];
+  const sig = JSON.stringify([m.name, m.state, state.busy.get(m.name), state.preparing?.[m.name], m.branchable, m.parentMachine, state.info?.proxyActive, state.info?.caActive, !!iso]);
   if (head.dataset.sig === sig) return;
   head.dataset.sig = sig;
   const running = m.state === 'running';
@@ -507,11 +518,14 @@ function updateDetailHead(m) {
     h('h2', {}, m.name),
     h('span', { html: stateBadge(m) }),
     m.parentMachine ? h('span', { class: 'tag' }, `⑂ от ${m.parentMachine}`) : null,
+    iso ? h('span', { class: 'tag bad', title: `с ${new Date(iso.since).toLocaleString()}` }, 'изолирована') : null,
     h('div', { class: 'actions' },
-      stopped ? btn([ic('play'), 'Старт'], () => actions.start(m), { cls: 'primary' }) : null,
+      iso ? btn([ic('shield'), 'Снять изоляцию'], () => actions.unisolate(m), { title: 'Вернуть машине сеть и токены шлюза. Машина останется на паузе — возобновите её, агентов перезапустите' }) : null,
+      !iso && (running || paused) ? btn([ic('shield'), 'Изолировать'], () => actions.isolate(m), { cls: 'danger', title: 'Kill switch: мгновенно оборвать все соединения машины, отозвать токены шлюза, отклонить ожидающие подтверждения и поставить машину на паузу' }) : null,
+      !iso && stopped ? btn([ic('play'), 'Старт'], () => actions.start(m), { cls: 'primary' }) : null,
 
       running ? btn([ic('pause'), 'Пауза'], () => actions.pause(m), { title: 'Сохранить RAM, CPU и диски и остановить' }) : null,
-      paused ? btn([ic('play'), 'Возобновить'], () => actions.resume(m), { cls: 'primary' }) : null,
+      paused && !iso ? btn([ic('play'), 'Возобновить'], () => actions.resume(m), { cls: 'primary' }) : null,
       running ? btn([ic('branch'), 'Ветка'], () => actions.branch(m), { disabled: !m.branchable, title: m.branchable ? 'Copy-on-write клон работающей машины' : 'Машина должна быть запущена как branchable' }) : null,
       running && (state.info?.proxyActive || state.info?.caActive) ? btn([ic('globe'), 'Применить прокси'], () => actions.provision(m), { title: 'Записать настройки прокси и сертификаты в работающую машину' }) : null,
       running ? btn([ic('stop'), 'Стоп'], () => actions.stop(m)) : null,
@@ -559,13 +573,75 @@ function block({ icon, title, sub, badge, on, items = [], empty, footer }) {
 const bitem = (main, side) => h('div', { class: 'bitem' }, h('div', { class: 'bmain' }, main), side ? h('div', { class: 'bside' }, side) : null);
 const plural = (n, one, few, many) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? few : many}`;
 
+// «Смертельная триада»: private data + untrusted content + a way out. Breaking one link is enough.
+async function breakTrifecta(m) {
+  try {
+    const r = await api('PUT', `/ui/egress/machines/${enc(m.name)}`, { enabled: true });
+    for (const n of r.notes || []) toast(`${m.name}: ${n}`);
+    toast(`${m.name}: фильтр «Доступ в сеть» включён — наружу только адреса из allow list (списки по умолчанию, серверы вендоров агентов и корпоративные репозитории)`, 'ok', 12000);
+  } catch (e) { toast(e.message, 'err'); }
+  renderTab();
+}
+
+function trifectaBanner(m, tri) {
+  return h('div', { class: 'notice bad-notice trifecta' },
+    h('div', {}, h('b', {}, '«Смертельная триада»: '),
+      'у агента одновременно есть приватные данные, недоверенный контент из интернета и свободный выход наружу. Через prompt injection в скачанной странице или файле агента можно заставить отправить данные куда угодно.'),
+    h('div', { class: 'row' }, h('button', { class: 'btn danger', onclick: () => breakTrifecta(m) }, ic('shield'), 'Разорвать: включить фильтр «Доступ в сеть»'),
+      h('span', { class: 'muted small' }, 'или уберите приватные данные: отвяжите секреты и папки')));
+}
+
+function trifectaBlock(m, tri) {
+  const row = (bad, label, text) => bitem(h('span', {}, h('span', { class: bad ? 'badc' : 'okc' }, bad ? '● ' : '○ '), h('b', {}, label), h('div', { class: 'muted small' }, text)));
+  return block({
+    icon: 'shield', title: 'Риск утечки', sub: '«смертельная триада»: опасны все три звена сразу', on: !tri.lethal,
+    badge: tri.lethal ? 'все три звена' : 'разорвана',
+    items: [
+      row(tri.privateData.length > 0, 'Приватные данные', tri.privateData.length ? tri.privateData.slice(0, 4).join(', ') + (tri.privateData.length > 4 ? ` и ещё ${tri.privateData.length - 4}` : '') : 'нет секретов и папок компьютера'),
+      row(tri.untrusted, 'Недоверенный контент', tri.untrusted ? 'машина читает интернет' : 'сеть выключена'),
+      row(tri.exfil, 'Выход наружу', tri.exfilWhy),
+    ],
+    footer: tri.lethal ? [h('button', { class: 'btn danger', onclick: () => breakTrifecta(m) }, 'Разорвать')] : null,
+  });
+}
+
+// Limits on what the agent may consume.
+function limitsBlock(m, data) {
+  const L = data.limits;
+  const inp = (v, ph) => h('input', { class: 'input', type: 'number', min: 0, value: v || '', placeholder: ph });
+  const f = { pids: inp(L.pids, 'без лимита'), agentMinutes: inp(L.agentMinutes, 'без лимита'), apiPerDay: inp(L.apiPerDay, 'без лимита') };
+  const runs = Object.entries(data.runs || {});
+  const save = async () => {
+    try {
+      await api('PUT', `/ui/machines/${enc(m.name)}/limits`, { pids: f.pids.value, agentMinutes: f.agentMinutes.value, apiPerDay: f.apiPerDay.value });
+      toast(`${m.name}: лимиты сохранены${f.pids.value ? ' (лимит процессов — со следующего запуска агента)' : ''}`, 'ok');
+      renderTab();
+    } catch (e) { toast(e.message, 'err'); }
+  };
+  return block({
+    icon: 'sliders', title: 'Лимиты', sub: 'сколько может потратить агент', on: !!(L.pids || L.agentMinutes || L.apiPerDay),
+    badge: L.pids || L.agentMinutes || L.apiPerDay ? 'заданы' : 'нет',
+    items: [
+      h('div', { class: 'limits-grid' },
+        h('label', { title: 'ulimit -u для пользователя агента: защищает от fork-бомб и бесконечного порождения процессов' }, 'Процессов агента', f.pids),
+        h('label', { title: 'Агент останавливается, проработав столько минут' }, 'Время работы агента, мин', f.agentMinutes),
+        h('label', { title: 'Запросы машины через шлюз секретов за сутки; сверх — ответ 429' }, 'Запросов к API в день', f.apiPerDay)),
+      h('div', { class: 'muted small' }, `API сегодня: ${data.usage.api}${L.apiPerDay ? ` из ${L.apiPerDay}` : ''}`,
+        runs.length ? ` · работают: ${runs.map(([a, t]) => `${a} ${Math.round((Date.now() - t) / 60000)} мин`).join(', ')}` : ''),
+    ],
+    footer: [h('button', { class: 'btn', onclick: save }, 'Сохранить лимиты')],
+  });
+}
+
 async function tabOverview(body, m) {
-  const [infoR, miR, egR, dvR] = await Promise.allSettled([
+  const [infoR, miR, egR, dvR, , riskR, limR] = await Promise.allSettled([
     api('GET', `/api/v1/machines/${enc(m.name)}`),
     api('GET', `/ui/machines/${enc(m.name)}`),
     api('GET', '/ui/egress'),
     api('GET', `/ui/machines/${enc(m.name)}/dirs`),
     loadVault(),
+    api('GET', `/ui/machines/${enc(m.name)}/risk`),
+    api('GET', `/ui/machines/${enc(m.name)}/limits`),
   ]);
   if (!$('#tab-body') || current()?.name !== m.name || state.tab !== 'overview') return;
   const info = infoR.value || m;
@@ -588,9 +664,18 @@ async function tabOverview(body, m) {
     ['GPU / CUDA', `${info.gpu ? 'GPU' : '—'} / ${info.cuda ? 'CUDA' : '—'}`],
   ];
   body.innerHTML = '';
+  const iso = state.isolated?.[m.name];
+  if (iso) {
+    body.append(h('div', { class: 'notice bad-notice' }, h('b', {}, `Машина изолирована (kill switch) ${fmtAgo(iso.since / 1000)}`),
+      ` — ${iso.reason || 'вручную'}, ${iso.by || ''}. Соединения через smolvm-web запрещены, токены шлюза заменены, запуск и возобновление заблокированы. Снимок состояния сохранён на паузе — можно разобраться, что произошло, затем «Снять изоляцию».`));
+  }
+  const tri = riskR.value?.trifecta;
+  if (tri?.lethal) body.append(trifectaBanner(m, tri));
   body.append(h('div', { class: 'kv' }, kv.map(([k, v]) => h('div', {}, h('div', { class: 'k' }, k), h('div', { class: 'v' }, String(v))))));
 
   const blocks = [];
+  if (tri) blocks.push(trifectaBlock(m, tri));
+  if (limR.value) blocks.push(limitsBlock(m, limR.value));
 
   // Ports
   const ports = info.ports || [];
@@ -1624,7 +1709,7 @@ const PRESETS = {
   anthropic: { name: 'anthropic', envVar: 'ANTHROPIC_API_KEY', hosts: 'api.anthropic.com', upstream: 'https://api.anthropic.com', baseUrlVar: 'ANTHROPIC_BASE_URL' },
   openrouter: { name: 'openrouter', envVar: 'OPENROUTER_API_KEY', hosts: 'openrouter.ai', upstream: 'https://openrouter.ai/api/v1', baseUrlVar: 'OPENROUTER_BASE_URL' },
   gemini: { name: 'gemini', envVar: 'GEMINI_API_KEY', hosts: 'generativelanguage.googleapis.com', upstream: 'https://generativelanguage.googleapis.com', baseUrlVar: 'GOOGLE_GEMINI_BASE_URL' },
-  github: { name: 'github', envVar: 'GITHUB_TOKEN', hosts: 'api.github.com', upstream: 'https://api.github.com', baseUrlVar: 'GITHUB_API_URL' },
+  github: { name: 'github', envVar: 'GITHUB_TOKEN', hosts: 'api.github.com', upstream: 'https://api.github.com', baseUrlVar: 'GITHUB_API_URL', confirm: 'DELETE *, PUT /repos/*/merge, POST /repos/*/releases, POST /repos/*/deployments, PATCH /repos/*/branches/*' },
   // Neutral variable names: agents' DeepSeek/OpenAI auto-config does not pick it up by mistake.
   local: { name: 'local-llm', envVar: 'LOCAL_LLM_API_KEY', hosts: '', upstream: 'http://localhost:11434/v1', baseUrlVar: 'LOCAL_LLM_BASE_URL', allowHttp: true, model: 'deepseek-r1:14b', mode: 'gateway' },
 };
@@ -1653,7 +1738,7 @@ async function renderVault() {
     v.secrets.map((x) => h('tr', {},
       h('td', {}, h('span', { class: 'with-mark' }, mark(secretMark(x), true), h('span', { class: 'mono' }, x.name)), x.note ? h('div', { class: 'muted small' }, x.note) : null),
       h('td', {}, h('span', { class: `tag ${MODE_TAG[x.mode]}` }, MODE_LABEL[x.mode])),
-      h('td', { class: 'mono small' }, x.envVar, x.baseUrlVar ? h('div', { class: 'muted' }, x.baseUrlVar) : null, x.model ? h('div', { class: 'muted' }, `модель: ${x.model}`) : null),
+      h('td', { class: 'mono small' }, x.envVar, x.baseUrlVar ? h('div', { class: 'muted' }, x.baseUrlVar) : null, x.model ? h('div', { class: 'muted' }, `модель: ${x.model}`) : null, x.confirm?.length ? h('div', { class: 'warnc' }, `подтверждение: ${x.confirm.length}`) : null),
       h('td', { class: 'mono small' }, x.mode === 'gateway' ? x.upstream : x.mode === 'substitute' ? x.hosts.join(', ') : '—'),
       h('td', { class: 'small' }, x.machines.join(', ') || '—'),
       h('td', {},
@@ -1675,7 +1760,7 @@ function editSecret(x) {
   f.name.readOnly = !!x;
   if (x) {
     f.name.value = x.name; f.mode.value = x.mode; f.envVar.value = x.envVar; f.baseUrlVar.value = x.baseUrlVar;
-    f.upstream.value = x.upstream; f.allowHttp.checked = !!x.allowHttp; f.model.value = x.model || ''; f.hosts.value = x.hosts.join(', '); f.methods.value = x.methods.join(', '); f.note.value = x.note;
+    f.upstream.value = x.upstream; f.allowHttp.checked = !!x.allowHttp; f.model.value = x.model || ''; f.confirm.value = (x.confirm || []).join(', '); f.hosts.value = x.hosts.join(', '); f.methods.value = x.methods.join(', '); f.note.value = x.note;
     f.value.placeholder = 'оставьте пустым, чтобы не менять';
   } else {
     f.mode.value = state.info?.proxyActive ? 'gateway' : 'substitute';
@@ -1703,6 +1788,7 @@ $('#form-secret').addEventListener('change', (e) => {
     for (const k of ['name', 'envVar', 'hosts', 'upstream', 'baseUrlVar']) f[k].value = p[k];
     f.allowHttp.checked = !!p.allowHttp;
     f.model.value = p.model || '';
+    f.confirm.value = p.confirm || '';
     if (p.mode) f.mode.value = p.mode;
   }
   syncSecretForm();
@@ -1715,7 +1801,7 @@ $('#form-secret').addEventListener('submit', async (e) => {
   const name = f.name.value.trim();
   const body = {
     mode: f.mode.value, envVar: f.envVar.value.trim(), baseUrlVar: f.baseUrlVar.value.trim(),
-    upstream: f.upstream.value.trim(), allowHttp: f.allowHttp.checked, model: f.model.value.trim(), hosts: csv(f.hosts.value), methods: csv(f.methods.value),
+    upstream: f.upstream.value.trim(), allowHttp: f.allowHttp.checked, model: f.model.value.trim(), confirm: csv(f.confirm.value), hosts: csv(f.hosts.value), methods: csv(f.methods.value),
     note: f.note.value.trim(), value: f.value.value,
   };
   try {
@@ -2074,6 +2160,60 @@ async function pollAlerts() {
   }
 }
 
+// ---------- human approvals & isolation ----------
+// Requests waiting for a person (egress "Спрашивать", gateway "Подтверждать") and isolated machines.
+let liveBusy = false;
+async function pollLive() {
+  if (liveBusy) return;
+  liveBusy = true;
+  try {
+    const r = await api('GET', '/ui/live');
+    const isoSig = JSON.stringify(Object.keys(r.isolated || {}).sort());
+    const changed = isoSig !== JSON.stringify(Object.keys(state.isolated || {}).sort());
+    state.isolated = r.isolated || {};
+    renderApprovals(r.approvals || []);
+    if (changed) { renderList(); const m = current(); if (m) updateDetailHead(m); }
+  } catch {} finally { liveBusy = false; }
+}
+
+function renderApprovals(list) {
+  const box = $('#approvals');
+  const sig = JSON.stringify(list.map((a) => [a.id, a.waiting]));
+  if (box.dataset.sig === sig) { box.querySelectorAll('[data-exp]').forEach((el) => { el.textContent = `${Math.max(0, Math.round((Number(el.dataset.exp) - Date.now()) / 1000))} с`; }); return; }
+  box.dataset.sig = sig;
+  const decide = async (a, decision) => {
+    try { await api('POST', `/ui/approvals/${a.id}`, { decision }); } catch (e) { toast(e.message, 'err'); }
+    pollLive();
+  };
+  box.replaceChildren(...list.map((a) => h('section', { class: `approval ${a.kind}` },
+    h('div', { class: 'approval-head' }, ic(a.kind === 'net' ? 'globe' : 'key'),
+      h('b', {}, a.kind === 'net' ? 'Доступ в сеть' : 'Вызов API'), h('span', { class: 'spacer' }),
+      h('span', { class: 'muted small', 'data-exp': a.expiresAt }, `${Math.max(0, Math.round((a.expiresAt - Date.now()) / 1000))} с`)),
+    h('div', {}, h('span', { class: 'mono' }, a.machine), a.kind === 'net' ? ' хочет подключиться к ' : ` → ${a.detail?.secret || ''}: `, h('code', {}, a.title)),
+    a.kind === 'api' ? h('div', { class: 'muted small' }, `${a.detail?.upstream || ''} · правило «${a.detail?.rule || ''}»`) : null,
+    a.waiting > 1 ? h('div', { class: 'muted small' }, `ждут ${a.waiting} запросов`) : null,
+    h('div', { class: 'row' },
+      a.kind === 'net'
+        ? [h('button', { class: 'btn primary', onclick: () => decide(a, 'once') }, 'На 10 минут'), h('button', { class: 'btn', onclick: () => decide(a, 'always') }, 'Всегда')]
+        : h('button', { class: 'btn primary', onclick: () => decide(a, 'once') }, 'Разрешить'),
+      h('button', { class: 'btn ghost danger', onclick: () => decide(a, 'deny') }, 'Запретить')))));
+  document.title = list.length ? `(${list.length}) ждёт подтверждения — smolvm web` : 'smolvm web';
+}
+setInterval(() => { if (!document.hidden) pollLive(); }, 2000);
+
+$('#btn-isolate-all').addEventListener('click', async () => {
+  const running = state.machines.filter((m) => m.state === 'running' && !state.isolated?.[m.name]);
+  if (!running.length) return toast('Нет работающих машин');
+  const c = await confirmDialog('Остановить всех агентов?', `Изолировать все работающие машины: ${running.map((m) => m.name).join(', ')}. Соединения оборвутся, токены шлюза заменятся, машины встанут на паузу.`, false, '', 'Изолировать все');
+  if (!c.ok) return;
+  try {
+    const r = await api('POST', '/ui/isolate-all', {});
+    const n = Object.keys(r.machines || {}).length;
+    toast(`Изолировано машин: ${n}`, 'ok', 10000);
+  } catch (e) { toast(e.message, 'err'); }
+  await pollLive(); await refreshMachines();
+});
+
 // ---------- loop ----------
 let ticking = false;
 async function tick() {
@@ -2088,5 +2228,6 @@ async function tick() {
   } finally { ticking = false; }
 }
 refreshInfo().then(tick).then(route);
+pollLive();
 setInterval(() => { if (!document.hidden) tick(); }, 3000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });

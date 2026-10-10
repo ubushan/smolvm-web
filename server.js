@@ -40,6 +40,9 @@ const { execFile } = require('child_process');
 egress.setExtraRules(() => repos.hosts().map((host) => ({ host, ports: '*', allowPrivate: true, source: 'корпоративные репозитории' })));
 egress.onLog((e) => audit.onNet(e));
 const dirs = require('./lib/dirs');
+const approvals = require('./lib/approvals');
+const isolation = require('./lib/isolation');
+const limits = require('./lib/limits');
 
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 7777);
@@ -173,6 +176,7 @@ const AUDIT_LABELS = [
   [/^PUT \/ui\/machines\/[^/]+\/secrets$/, 'секреты машины'],
   [/^(PUT|POST|DELETE) \/ui\/egress/, 'доступ в сеть: изменение'],
   [/^(PUT|POST|DELETE) \/ui\/dirs/, 'директории: изменение'],
+  [/^PUT \/ui\/machines\/[^/]+\/limits$/, 'лимиты машины'],
   [/^PUT \/ui\/settings$/, 'настройки прокси/сертификатов'],
   [/^POST \/ui\/host\/repair-rootfs$/, 'починка rootfs smolvm (Windows)'],
   [/^PUT \/ui\/audit\/settings$/, 'настройки аудита'],
@@ -336,6 +340,58 @@ async function startMachineInner(name, { apiPath, body = {}, branchable = false 
   return info;
 }
 
+// ---------- kill switch ----------
+// Isolate: refuse and cut everything that goes through smolvm-web, rotate the
+// machine's gateway tokens, then pause the VM (state kept for investigation).
+async function isolateMachine(name, actor, reason = 'вручную') {
+  isolation.set(name, { by: actor, reason });
+  const dropped = egress.dropConnections(name);
+  approvals.denyMachine(name, actor);
+  const rotated = await vault.rotateTokens(name).catch(() => 0);
+  let paused = false; let pauseError = null;
+  try {
+    const st = await machineState(name);
+    if (st === 'running') {
+      const r = await up.request('POST', `/api/v1/machines/${encodeURIComponent(name)}/pause`, {}, { timeoutMs: 30000 });
+      paused = r.status === 200;
+      if (!paused) pauseError = r.data?.error || `HTTP ${r.status}`;
+    }
+  } catch (e) { pauseError = e.message; }
+  audit.notify({ machine: name, severity: 'alert', text: `Машина ${name} изолирована (kill switch): оборвано соединений — ${dropped}, токены шлюза заменены — ${rotated}${paused ? ', машина на паузе' : ''}`, detail: { by: actor, reason, pauseError } });
+  return { isolated: true, dropped, rotated, paused, pauseError };
+}
+
+// «Смертельная триада»: private data + untrusted content + a way out, all at once.
+async function lethalTrifecta(name) {
+  const r = await up.request('GET', `/api/v1/machines/${encodeURIComponent(name)}`).catch(() => null);
+  if (!r || r.status !== 200) return null;
+  const vm = r.data;
+  const eg = egress.getMachine(name);
+  const secrets = await vault.machineSecrets(name).catch(() => []);
+  const dm = dirs.getMachine(name);
+  const hostMounts = (vm.mounts || []).filter((x) => !/^\/(etc\/smolvm-host-trust|\.smolvm-dirs)/.test(x.target || x.guest || ''));
+  const privateData = [
+    ...secrets.map((s) => `секрет ${s.name}`),
+    ...(dm?.dirs || []).map((d) => `директория ${d.id}`),
+    ...hostMounts.map((x) => `папка ${x.source || x.host || ''}${x.readonly ? ' (чтение)' : ''}`),
+  ];
+  const network = !!vm.network;
+  const guarded = !!(eg?.enabled && !eg.learn);
+  return {
+    privateData, untrusted: network, exfil: network && !guarded,
+    exfilWhy: !network ? 'сеть выключена' : !eg?.enabled ? 'фильтр «Доступ в сеть» выключен — машина может отправить данные куда угодно' : eg.learn ? 'включён режим обучения — фильтр пропускает всё' : eg.ask ? 'неизвестные адреса — только с подтверждения человека' : 'только адреса из allow list',
+    lethal: privateData.length > 0 && network && !guarded,
+  };
+}
+
+// Agents past their time limit are stopped (checked every 30 s).
+setInterval(async () => {
+  for (const o of limits.overdue()) {
+    try { await agents.stop(o.machine, o.agent); } catch { limits.endRun(o.machine, o.agent); }
+    audit.notify({ machine: o.machine, text: `Агент ${agents.AGENTS[o.agent]?.title || o.agent} на машине ${o.machine} остановлен: лимит времени работы ${o.limitMin} мин`, detail: { agent: o.agent, startedAt: new Date(o.startedAt).toISOString() } });
+  }
+}, 30000).unref();
+
 async function machineState(name) {
   const r = await up.request('GET', `/api/v1/machines/${encodeURIComponent(name)}`);
   return r.status === 200 ? r.data.state : null;
@@ -488,8 +544,16 @@ const ROUTES = [
   // Start: CLI when the proxy/gateway/egress filter must be reachable, API
   // (with credential values pushed first) for smolvm substitution; then
   // provision the guest.
+  // An isolated machine stays frozen: its own network is not ours to cut once it runs.
+  ['POST', new RegExp(`^${M}/resume$`), async (req, res, m) => {
+    const name = decodeURIComponent(m[1]);
+    if (isolation.isIsolated(name)) return sendJson(res, 409, { error: `машина ${name} изолирована — сначала снимите изоляцию`, code: 'ISOLATED' });
+    const r = await up.request('POST', req.url, {});
+    sendJson(res, r.status, r.data);
+  }],
   ['POST', new RegExp(`^${M}/start$`), async (req, res, m, url) => {
     const name = decodeURIComponent(m[1]);
+    if (isolation.isIsolated(name)) return sendJson(res, 409, { error: `машина ${name} изолирована — сначала снимите изоляцию`, code: 'ISOLATED' });
     const raw = await readBody(req);
     const body = raw.length ? JSON.parse(raw.toString('utf8') || '{}') || {} : {};
     const branchable = url.searchParams.get('branchable') === 'true' || url.searchParams.get('forkable') === 'true';
@@ -537,7 +601,7 @@ const ROUTES = [
   ['DELETE', new RegExp(`^${M}$`), async (req, res, m) => {
     const name = decodeURIComponent(m[1]);
     const r = await up.request('DELETE', req.url);
-    if (r.status === 200) { cfg.forgetMachine(name); await vault.forgetMachine(name); egress.forgetMachine(name); dirs.forgetMachine(name); agents.forget(name); agentproxy.closeFor(`${name}/`); smolfile.forget(name); review.forget(name); snapshots.forget(name); }
+    if (r.status === 200) { cfg.forgetMachine(name); await vault.forgetMachine(name); egress.forgetMachine(name); dirs.forgetMachine(name); agents.forget(name); agentproxy.closeFor(`${name}/`); smolfile.forget(name); review.forget(name); snapshots.forget(name); limits.forget(name); isolation.set(name, null); }
     sendJson(res, r.status, r.data);
   }],
 
@@ -590,6 +654,7 @@ const UI = [
     if (body.siem?.http && !body.siem.http.authorization) delete body.siem.http.authorization;
     try { audit.saveSettings(body); sendJson(res, 200, { ok: true }); } catch (e) { sendJson(res, 400, { error: e.message }); }
   }],
+  ['GET', /^\/ui\/audit\/verify$/, (req, res) => sendJson(res, 200, audit.verify())],
   ['POST', /^\/ui\/audit\/test$/, async (req, res) => sendJson(res, 200, await audit.test())],
   ['GET', /^\/ui\/alerts$/, (req, res, _m, url) => sendJson(res, 200, { alerts: audit.alerts(Number(url.searchParams.get('since')) || 0) })],
   // ---- review copies ----
@@ -700,6 +765,39 @@ const UI = [
     try { sendJson(res, 200, { log: await agents.logTail(decodeURIComponent(m[1]), m[2], 20000) }); }
     catch (e) { sendJson(res, 400, { error: e.message }); }
   }],
+  // Human approvals and isolation state, polled by the UI.
+  ['GET', /^\/ui\/live$/, (req, res) => sendJson(res, 200, { approvals: approvals.list(), isolated: isolation.all() })],
+  ['POST', /^\/ui\/approvals\/([\w-]+)$/, async (req, res, m) => {
+    const { decision } = await readJson(req);
+    res.auditDone = true; // approvals.decide() writes its own audit record
+    sendJson(res, approvals.decide(m[1], decision, actorOf(req)) ? 200 : 404, { ok: true });
+  }],
+  ['POST', /^\/ui\/machines\/([^/]+)\/isolate$/, async (req, res, m) => {
+    const name = decodeURIComponent(m[1]);
+    const { on = true } = await readJson(req);
+    res.auditDone = true;
+    if (on) return sendJson(res, 200, await isolateMachine(name, actorOf(req)));
+    isolation.set(name, null);
+    audit.notify({ machine: name, severity: 'notice', text: `Изоляция машины ${name} снята. Машина остаётся на паузе; агентов перезапустите — у них новые токены шлюза.`, detail: { by: actorOf(req) } });
+    sendJson(res, 200, { isolated: false });
+  }],
+  ['POST', /^\/ui\/isolate-all$/, async (req, res) => {
+    res.auditDone = true;
+    const list = await up.request('GET', '/api/v1/machines').catch(() => null);
+    const names = (list?.data?.machines || []).filter((x) => x.state === 'running').map((x) => x.name);
+    const results = {};
+    await Promise.all(names.map(async (n) => { results[n] = await isolateMachine(n, actorOf(req), 'остановить всех агентов').catch((e) => ({ error: e.message })); }));
+    sendJson(res, 200, { machines: results });
+  }],
+  ['GET', /^\/ui\/machines\/([^/]+)\/limits$/, (req, res, m) => {
+    const name = decodeURIComponent(m[1]);
+    sendJson(res, 200, { limits: limits.get(name), usage: limits.usage(name), runs: limits.runs(name) });
+  }],
+  ['PUT', /^\/ui\/machines\/([^/]+)\/limits$/, async (req, res, m) => {
+    const name = decodeURIComponent(m[1]);
+    try { sendJson(res, 200, { limits: limits.set(name, await readJson(req)), usage: limits.usage(name) }); } catch (e) { sendJson(res, 400, { error: e.message }); }
+  }],
+  ['GET', /^\/ui\/machines\/([^/]+)\/risk$/, async (req, res, m) => sendJson(res, 200, { trifecta: await lethalTrifecta(decodeURIComponent(m[1])) })],
   ['GET', /^\/ui\/info$/, async (req, res) => {
     const s = cfg.getSettings();
     const sys = upproxy.systemMode();
@@ -972,6 +1070,7 @@ const UI = [
   // Stop and start through smolvm-web, so pending mounts and the strict policy are applied.
   ['POST', /^\/ui\/machines\/([^/]+)\/restart$/, async (req, res, m) => {
     const name = decodeURIComponent(m[1]);
+    if (isolation.isIsolated(name)) return sendJson(res, 409, { error: `машина ${name} изолирована — сначала снимите изоляцию`, code: 'ISOLATED' });
     const state = await machineState(name);
     if (state === 'running' || state === 'paused') {
       const r = await up.request('POST', `/api/v1/machines/${encodeURIComponent(name)}/stop`, {});

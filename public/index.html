@@ -79,6 +79,7 @@
           <button id="btn-search" class="btn ghost icon" type="button" title="Поиск"><svg class="ic"><use href="#i-search"/></svg></button>
         </div>
         <button id="btn-refresh" class="btn ghost icon" title="Обновить"><svg class="ic"><use href="#i-refresh"/></svg></button>
+        <button id="btn-isolate-all" class="btn ghost icon danger" title="Остановить всех агентов: изолировать все работающие машины (kill switch)"><svg class="ic"><use href="#i-shield"/></svg></button>
       </div>
       <div id="machines" class="machines"></div>
     </section>
@@ -358,7 +359,8 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
                   <label class="check" data-mode="gateway"><input type="checkbox" name="allowHttp"> Локальная модель / сервер по HTTP <span class="muted small">(Ollama, vLLM, LM Studio, llama.cpp; <code>localhost</code> — это хост; без TLS ключ идёт от хоста до сервера открытым текстом)</span></label>
                   <label data-mode="gateway">Модель <span class="muted small">(для локального сервера: OpenCode, Pi и Hermes настроятся на неё сами; Claude Code, Codex и DeepSeek Harness локальные модели не используют)</span><input name="model" class="input mono" placeholder="deepseek-r1:14b"></label>
                   <label data-mode="substitute">Разрешённые хосты (точные имена, через запятую)<input name="hosts" class="input mono" placeholder="api.deepseek.com"></label>
-                  <label data-mode="gateway substitute">Разрешённые HTTP-методы <span class="muted small">(пусто — все)</span><input name="methods" class="input mono" placeholder="GET, POST"></label>
+                  <label data-mode="gateway">Подтверждать вызовы человеком <span class="muted small">(необратимые действия: удаление, деплой, письма, платежи — запрос ждёт «Разрешить» в интерфейсе до 2 минут; «МЕТОД путь» через запятую, * — любой)</span><input name="confirm" class="input mono" placeholder="DELETE *, POST /repos/*/deployments, POST */messages/send"></label>
+          <label data-mode="gateway substitute">Разрешённые HTTP-методы <span class="muted small">(пусто — все)</span><input name="methods" class="input mono" placeholder="GET, POST"></label>
                   <label>Значение
                     <input name="value" type="password" class="input mono" placeholder="sk-…" autocomplete="new-password" spellcheck="false">
                     <small class="muted" id="secret-value-hint">Хранится зашифрованным (AES-256-GCM), ключ — в хранилище ОС. Обратно в интерфейс не выдаётся.</small>
@@ -391,6 +393,7 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
 
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
+  <div id="approvals" class="approvals" aria-live="polite"></div>
   <footer id="app-footer" class="app-footer"><span id="app-version">smolvm-web</span><span id="app-restart" class="app-restart" hidden></span></footer>
 
   <script src="/app.js"></script>
