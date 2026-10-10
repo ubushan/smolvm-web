@@ -756,6 +756,9 @@ const UI = [
     res.auditDone = true;
     try { sendJson(res, 200, await sandbox.close(decodeURIComponent(m[1]), { save: b.save !== false }, sandboxHooks)); } catch (e) { err(res, e); }
   }],
+  ['GET', /^\/ui\/sandbox\/machines\/([^/]+)\/changes$/, async (req, res, m) => {
+    try { sendJson(res, 200, await sandbox.previewChanges(decodeURIComponent(m[1]))); } catch (e) { err(res, e); }
+  }],
   ['POST', /^\/ui\/sandbox\/profiles$/, async (req, res) => {
     const b = await readJson(req);
     try { sendJson(res, 200, await sandbox.createProfile({ name: b.name, from: b.from ? String(b.from) : null, template: b.template ? String(b.template) : null, agent: b.agent ? String(b.agent) : null })); } catch (e) { err(res, e); }

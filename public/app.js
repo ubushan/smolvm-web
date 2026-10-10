@@ -2046,7 +2046,7 @@ function route() {
   $('#page-machines').hidden = id !== 'machines';
   for (const k of Object.keys(pages)) $(`#page-${k}`).hidden = k !== id;
   // Sandbox templates, profiles and review live under «Рабочие места».
-  const navId = id === 'sandbox' ? 'work' : id === 'log' ? 'egress' : id;
+  const navId = ['sandbox', 'session', 'review'].includes(id) ? 'work' : id === 'log' ? 'egress' : id;
   document.querySelectorAll('#pagenav a').forEach((a) => a.classList.toggle('active', a.dataset.page === navId));
   if (id !== 'machines') pageCleanup = pages[id].render($(`#page-${id}`), params) || null;
 }

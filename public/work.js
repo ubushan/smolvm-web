@@ -48,16 +48,20 @@
       toast(`Песочница ${r.name} открыта`, 'ok');
       if (r.url) goAgent(w, r.url); else if (w) w.close();
       refreshMachines();
+      location.hash = `#/session?name=${enc(r.name)}`;
+      return;
     } catch (e) { if (w) w.close(); toast(e.message, 'err', 12000); }
     await load(); render();
   }
 
   async function goToAgent(x) {
     const id = x.agent || x.agents.find((a) => a.id !== 'terminal')?.id || x.agents[0]?.id;
-    if (!id) { location.hash = '#/'; setTimeout(() => select(x.name), 0); return; }
-    const w = agentTab();
-    try { goAgent(w, (await api('POST', `/ui/machines/${enc(x.name)}/agents/${enc(id)}/start`, {})).url); }
-    catch (e) { if (w) w.close(); toast(e.message, 'err'); }
+    if (id) {
+      const w = agentTab();
+      try { goAgent(w, (await api('POST', `/ui/machines/${enc(x.name)}/agents/${enc(id)}/start`, {})).url); }
+      catch (e) { if (w) w.close(); toast(e.message, 'err'); }
+    }
+    location.hash = `#/session?name=${enc(x.name)}`;
   }
 
   async function closeSandbox(x, keep) {
@@ -68,7 +72,7 @@
     try {
       const r = await api('POST', `/ui/sandbox/machines/${enc(x.name)}/close`, { save: keep });
       refreshMachines();
-      if (r.pending) toast(h('span', {}, `Песочница закрыта. Изменений профиля: ${r.changes}. `, h('a', { href: '#/sandbox?tab=review' }, 'Проверить')), 'ok', 10000);
+      if (r.pending) { toast(`Песочница закрыта. Изменений профиля: ${r.changes} — проверьте их`, 'ok', 8000); location.hash = `#/review?id=${enc(r.pending)}`; return; }
       else if (r.applied) toast(`Песочница закрыта, в профиль сохранено изменений: ${r.applied}`, 'ok');
       else toast('Песочница закрыта', 'ok');
     } catch (e) { toast(e.message, 'err', 12000); }
@@ -205,6 +209,7 @@
           ? [h('button', { class: 'btn primary ws-main', disabled: !!busy || sbx.state !== 'running', onclick: () => goToAgent(sbx) }, 'Перейти к агенту'),
             h('button', { class: 'btn', disabled: !!busy, title: 'Забрать изменения профиля на проверку и удалить машину', onclick: () => closeSandbox(sbx, true) }, 'Закрыть')]
           : go,
+        sbx ? h('a', { class: 'btn ghost icon', href: `#/session?name=${enc(sbx.name)}`, title: 'Экран сеанса: агент, что загружено, что изменится, сеть', 'aria-label': 'Экран сеанса' }, ic('list')) : null,
         h('a', { class: 'btn ghost icon', href: `#/sandbox?tab=profiles&profile=${enc(p.id)}`, title: 'Профиль: инструкции, MCP, skills, память', 'aria-label': `Профиль «${p.name}»` }, ic('gear'))),
       open.length > 1 ? h('div', { class: 'muted small' }, `Ещё открыто: ${open.slice(1).map((x) => x.name).join(', ')}`) : null);
   }
@@ -244,7 +249,7 @@
       const exec = x.changes.filter((c) => /skills\/|hooks\/|mcp|settings\.json|config\.(toml|yaml)|opencode\.json/.test(c.path)).length;
       return h('div', { class: 'ws-notice' },
         h('span', {}, h('b', {}, `«${p?.name || x.profile}»: `), `${x.changes.length} ${x.changes.length === 1 ? 'изменение ждёт' : 'изменений ждут'} проверки`, exec ? ` — среди них skills, MCP или настройки` : ''),
-        h('a', { href: '#/sandbox?tab=review' }, 'Посмотреть изменения'));
+        h('a', { href: `#/review?id=${enc(x.id)}` }, 'Посмотреть изменения'));
     });
 
     const oneOffBox = oneOff.length ? h('section', { class: 'ws-oneoff' },
@@ -256,7 +261,7 @@
         h('button', { class: 'btn small-btn', disabled: !!x.opening, onclick: () => closeSandbox(x, false) }, 'Закрыть')))) : null;
 
     fill(root, head, ...pending, grid, oneOffBox,
-      h('div', { class: 'ws-foot' }, h('a', { href: '#/sandbox?tab=templates' }, 'Шаблоны машин'), h('a', { href: '#/sandbox?tab=profiles' }, 'Все профили'), h('a', { href: '#/sandbox?tab=review' }, 'Ревью изменений')));
+      h('div', { class: 'ws-foot' }, h('a', { href: '#/sandbox?tab=templates' }, 'Шаблоны машин'), h('a', { href: '#/sandbox?tab=profiles' }, 'Все профили'), h('a', { href: '#/review' }, 'Ревью изменений')));
     root.scrollTop = y;
   }
 
