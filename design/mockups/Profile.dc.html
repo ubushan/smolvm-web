@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Профиль агента</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#2849B0}a:hover{color:#1B347F}
+</style>
+</helmet>
+<div style="width: 1280px; height: 820px; box-sizing: border-box; background: #F4F2EE; color: #1A2130; font-family: 'Manrope', system-ui, sans-serif; display: flex; flex-direction: column">
+  <header style="height: 60px; box-sizing: border-box; padding: 0 32px; display: flex; align-items: center; gap: 28px; border-bottom: 1px solid #E2DED6; background: #FBFAF7">
+    <div style="font-weight: 700; font-size: 17px">smolvm web</div>
+    <nav style="display: flex; gap: 22px; font-size: 14px">
+      <a href="#" style="color: #1A2130; text-decoration: none; font-weight: 600">Рабочие места</a>
+      <a href="#" style="color: #5A6273; text-decoration: none">Машины</a>
+      <a href="#" style="color: #5A6273; text-decoration: none">Сеть</a>
+      <a href="#" style="color: #5A6273; text-decoration: none">Аудит</a>
+    </nav>
+    <div style="flex: 1"></div>
+    <a href="#" style="font-size: 14px; color: #5A6273; text-decoration: none">Настройки</a>
+  </header>
+
+  <main style="flex: 1; padding: 24px 48px; display: flex; flex-direction: column; gap: 18px; min-height: 0">
+    <div style="display: flex; align-items: center; gap: 14px">
+      <a href="#" style="font-size: 14px; text-decoration: none">← Рабочие места</a>
+      <div style="flex: 1"></div>
+      <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; color: #3E4656"><input type="checkbox" checked> Проверять изменения перед сохранением</label>
+      <button style="height: 40px; padding: 0 16px; border-radius: 10px; border: 0; background: #2F5BD3; color: #FFFFFF; font: 600 14px 'Manrope', sans-serif; cursor: pointer">Открыть песочницу</button>
+    </div>
+    <div style="display: flex; align-items: center; gap: 14px">
+      <div style="width: 52px; height: 52px; border-radius: 14px; background: #1A2130; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px">CC</div>
+      <div>
+        <h1 style="margin: 0; font-size: 26px; font-weight: 700">Бэкенд-разработка</h1>
+        <div style="font-size: 13px; color: #5A6273">Claude Code · шаблон «dev-base» · обновлён вчера</div>
+      </div>
+    </div>
+
+    <div style="flex: 1; display: grid; grid-template-columns: 300px 1fr; gap: 20px; min-height: 0">
+      <div style="display: flex; flex-direction: column; gap: 12px">
+        <div style="background: #FFFFFF; border: 1px solid #E2DED6; border-radius: 14px; padding: 8px; display: flex; flex-direction: column">
+          <a href="#" style="padding: 10px 12px; border-radius: 10px; background: #EEF2FC; color: #1A2130; text-decoration: none; display: flex; justify-content: space-between; font-size: 14px"><b>Инструкции</b><span style="color: #5A6273">CLAUDE.md</span></a>
+          <a href="#" style="padding: 10px 12px; border-radius: 10px; color: #1A2130; text-decoration: none; display: flex; justify-content: space-between; font-size: 14px"><span>MCP-серверы</span><span style="color: #5A6273">3</span></a>
+          <a href="#" style="padding: 10px 12px; border-radius: 10px; color: #1A2130; text-decoration: none; display: flex; justify-content: space-between; font-size: 14px"><span>Skills</span><span style="color: #5A6273">6</span></a>
+          <a href="#" style="padding: 10px 12px; border-radius: 10px; color: #1A2130; text-decoration: none; display: flex; justify-content: space-between; font-size: 14px"><span>Подагенты и команды</span><span style="color: #5A6273">4</span></a>
+          <a href="#" style="padding: 10px 12px; border-radius: 10px; color: #1A2130; text-decoration: none; display: flex; justify-content: space-between; font-size: 14px"><span>Память</span><span style="color: #5A6273">12 записей</span></a>
+          <a href="#" style="padding: 10px 12px; border-radius: 10px; color: #1A2130; text-decoration: none; display: flex; justify-content: space-between; font-size: 14px"><span>Хуки</span><span style="color: #5A6273">1</span></a>
+        </div>
+        <div style="background: #FDF3EA; border: 1px solid #F0D3B8; border-radius: 14px; padding: 14px 16px; font-size: 13px; color: #6B3A12">В MCP «github» найден токен открытым текстом. <a href="#" style="color: #8A4614; font-weight: 600">Перенести в «Секреты»</a></div>
+        <div style="font-size: 12px; color: #5A6273; padding: 0 4px">Входы, токены, кэши и сессии в профиль не попадают никогда.</div>
+      </div>
+
+      <div style="background: #FFFFFF; border: 1px solid #E2DED6; border-radius: 14px; display: flex; flex-direction: column; min-height: 0">
+        <div style="padding: 14px 18px; border-bottom: 1px solid #EEEAE3; display: flex; align-items: center; gap: 10px">
+          <b style="font-size: 15px; flex: 1">CLAUDE.md</b>
+          <span style="font-size: 12px; color: #5A6273">1,2 КБ</span>
+          <button style="height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid #D5D0C6; background: #FFFFFF; font: 600 13px 'Manrope', sans-serif; color: #1A2130; cursor: pointer">Сохранить</button>
+        </div>
+        <div style="flex: 1; padding: 18px 20px; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.75; color: #2A3142; white-space: pre-line"># Правила проекта
+- TypeScript strict, без any
+- Тесты: vitest, рядом с кодом
+- Перед коммитом: npm run lint &amp;&amp; npm test
+- Миграции БД — только через prisma migrate
+
+# Стиль ответов
+- Кратко, по-русски
+- Сначала план, потом правки</div>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

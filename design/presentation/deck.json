@@ -1,0 +1,18 @@
+{
+  "v": 4,
+  "createdOnFiles": { "v": 1, "at": "2026-10-10T09:00:00Z" },
+  "lists": "css",
+  "title": "smolvm-web: изоляция ИИ-агентов",
+  "order": ["cover", "problem", "triad", "arch", "vm", "net", "secrets", "files", "human", "audit", "checklist", "limits", "next"],
+  "sections": {
+    "s1": { "description": "Зачем: риски ИИ-агентов и смертельная триада", "start": "cover" },
+    "s2": { "description": "Как устроено: microVM и контроль на хосте", "start": "arch" },
+    "s3": { "description": "Слои защиты: сеть, секреты, файлы, человек, аудит", "start": "vm" },
+    "s4": { "description": "Итог: покрытие чек-листа, ограничения и следующие шаги", "start": "checklist" }
+  },
+  "faces": {
+    "ibm-plex-sans": { "family": "IBM Plex Sans", "href": "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" },
+    "jetbrains-mono": { "family": "JetBrains Mono", "href": "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" }
+  },
+  "designSystems": []
+}

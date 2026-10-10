@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Машины</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#2849B0}a:hover{color:#1B347F}
+</style>
+</helmet>
+<div style="width: 1280px; height: 820px; box-sizing: border-box; background: #F4F2EE; color: #1A2130; font-family: 'Manrope', system-ui, sans-serif; display: flex; flex-direction: column">
+  <header style="height: 60px; box-sizing: border-box; padding: 0 32px; display: flex; align-items: center; gap: 28px; border-bottom: 1px solid #E2DED6; background: #FBFAF7">
+    <div style="font-weight: 700; font-size: 17px">smolvm web</div>
+    <nav style="display: flex; gap: 22px; font-size: 14px">
+      <a href="#" style="color: #5A6273; text-decoration: none">Рабочие места</a>
+      <a href="#" style="color: #1A2130; text-decoration: none; font-weight: 600">Машины</a>
+      <a href="#" style="color: #5A6273; text-decoration: none">Сеть</a>
+      <a href="#" style="color: #5A6273; text-decoration: none">Аудит</a>
+    </nav>
+    <div style="flex: 1"></div>
+    <a href="#" style="font-size: 14px; color: #5A6273; text-decoration: none">Настройки</a>
+  </header>
+
+  <div style="flex: 1; display: flex; min-height: 0">
+    <aside style="width: 320px; box-sizing: border-box; border-right: 1px solid #E2DED6; background: #FBFAF7; padding: 20px 16px; display: flex; flex-direction: column; gap: 8px">
+      <div style="display: flex; gap: 8px; padding-bottom: 8px">
+        <label for="q" style="position: absolute; left: -9999px">Поиск</label>
+        <input id="q" placeholder="Найти машину" style="flex: 1; height: 40px; box-sizing: border-box; border: 1px solid #D5D0C6; border-radius: 10px; padding: 0 12px; font: 14px 'Manrope', sans-serif; background: #FFFFFF">
+        <button style="height: 40px; padding: 0 14px; border-radius: 10px; border: 0; background: #2F5BD3; color: #FFFFFF; font: 600 14px 'Manrope', sans-serif; cursor: pointer">Создать</button>
+      </div>
+      <a href="#" style="display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; background: #FFFFFF; border: 1px solid #C9D5F5; text-decoration: none; color: #1A2130">
+        <span style="width: 9px; height: 9px; border-radius: 50%; background: #2E8B57" aria-hidden="true"></span>
+        <span style="flex: 1; display: flex; flex-direction: column"><b style="font-size: 14px">dev-base</b><span style="font-size: 12px; color: #5A6273">шаблон · Claude Code</span></span>
+        <span style="font-size: 12px; color: #1F6B45">работает</span>
+      </a>
+      <a href="#" style="display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; text-decoration: none; color: #1A2130">
+        <span style="width: 9px; height: 9px; border-radius: 50%; background: #2E8B57" aria-hidden="true"></span>
+        <span style="flex: 1; display: flex; flex-direction: column"><b style="font-size: 14px">sbx-backend-3f2a</b><span style="font-size: 12px; color: #5A6273">песочница · 42 мин</span></span>
+        <span style="font-size: 12px; color: #1F6B45">работает</span>
+      </a>
+      <a href="#" style="display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; text-decoration: none; color: #1A2130">
+        <span style="width: 9px; height: 9px; border-radius: 50%; background: #9AA1AE" aria-hidden="true"></span>
+        <span style="flex: 1; display: flex; flex-direction: column"><b style="font-size: 14px">research-hermes</b><span style="font-size: 12px; color: #5A6273">Hermes</span></span>
+        <span style="font-size: 12px; color: #5A6273">остановлена</span>
+      </a>
+      <a href="#" style="display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; text-decoration: none; color: #1A2130">
+        <span style="width: 9px; height: 9px; border-radius: 50%; background: #C0392B" aria-hidden="true"></span>
+        <span style="flex: 1; display: flex; flex-direction: column"><b style="font-size: 14px">tmp-scraper</b><span style="font-size: 12px; color: #5A6273">OpenCode</span></span>
+        <span style="font-size: 12px; color: #A1321C; font-weight: 600">изолирована</span>
+      </a>
+    </aside>
+
+    <section style="flex: 1; padding: 28px 32px; display: flex; flex-direction: column; gap: 20px; min-width: 0">
+      <div style="display: flex; align-items: center; gap: 14px">
+        <div style="flex: 1">
+          <h1 style="margin: 0; font-size: 26px; font-weight: 700">dev-base</h1>
+          <div style="font-size: 13px; color: #5A6273">node:22 · 2 vCPU · 4 ГБ · шаблон для «Бэкенд-разработка»</div>
+        </div>
+        <button style="height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid #D5D0C6; background: #FFFFFF; font: 600 14px 'Manrope', sans-serif; color: #1A2130; cursor: pointer">Консоль</button>
+        <button style="height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid #D5D0C6; background: #FFFFFF; font: 600 14px 'Manrope', sans-serif; color: #1A2130; cursor: pointer">Стоп</button>
+        <button style="height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid #E3B3A8; background: #FFFFFF; color: #A1321C; font: 600 14px 'Manrope', sans-serif; cursor: pointer">Изолировать</button>
+      </div>
+
+      <nav style="display: flex; gap: 6px; border-bottom: 1px solid #E2DED6">
+        <a href="#" style="padding: 10px 14px; font-size: 14px; font-weight: 600; color: #1A2130; text-decoration: none; border-bottom: 2px solid #2F5BD3">Обзор</a>
+        <a href="#" style="padding: 10px 14px; font-size: 14px; color: #5A6273; text-decoration: none">Агенты</a>
+        <a href="#" style="padding: 10px 14px; font-size: 14px; color: #5A6273; text-decoration: none">Файлы</a>
+        <a href="#" style="padding: 10px 14px; font-size: 14px; color: #5A6273; text-decoration: none">Логи</a>
+      </nav>
+
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px">
+        <div style="background: #FFFFFF; border: 1px solid #E2DED6; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 6px">
+          <div style="font-size: 13px; color: #5A6273">Сеть</div>
+          <div style="font-weight: 700; font-size: 16px">Только разрешённое</div>
+          <a href="#" style="font-size: 13px">4 списка, 2 своих правила</a>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E2DED6; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 6px">
+          <div style="font-size: 13px; color: #5A6273">Секреты</div>
+          <div style="font-weight: 700; font-size: 16px">2 ключа через шлюз</div>
+          <a href="#" style="font-size: 13px">Anthropic, GitHub</a>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E2DED6; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 6px">
+          <div style="font-size: 13px; color: #5A6273">Папки хоста</div>
+          <div style="font-weight: 700; font-size: 16px">Нет</div>
+          <a href="#" style="font-size: 13px">Дать доступ к папке</a>
+        </div>
+      </div>
+
+      <div style="background: #E5F3EB; border: 1px solid #BFE0CC; border-radius: 14px; padding: 16px 18px; display: flex; align-items: center; gap: 12px">
+        <div style="flex: 1; font-size: 14px; color: #1F4D33"><b>Риск утечки низкий.</b> Есть секреты, но выход в сеть только по allow list.</div>
+        <a href="#" style="font-size: 13px; font-weight: 600; color: #1F6B45">Подробнее</a>
+      </div>
+
+      <div style="background: #FFFFFF; border: 1px solid #E2DED6; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px">
+        <div style="font-weight: 700; font-size: 15px">Лимиты</div>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; font-size: 14px">
+          <div><div style="color: #5A6273; font-size: 13px">Процессов агента</div><b>512</b></div>
+          <div><div style="color: #5A6273; font-size: 13px">Время агента</div><b>8 ч</b></div>
+          <div><div style="color: #5A6273; font-size: 13px">Запросов API сегодня</div><b>214 из 2 000</b></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

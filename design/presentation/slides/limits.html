@@ -1,0 +1,14 @@
+<section id="limits" data-transition="fade" style="background:#F5F3EE;color:#1B2333;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:48px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;letter-spacing:3px;text-transform:uppercase;color:#B4521C">Остаточные риски</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#121A2B">Что проект не закрывает и как это компенсировать</h2>
+<table style="font-size:26px;color:#1B2333;font-family:'IBM Plex Sans', Arial, sans-serif">
+<tr style="background:#121A2B"><th style="width:50%;color:#EEF1F6">Ограничение</th><th style="width:50%;color:#EEF1F6">Компенсирующая мера</th></tr>
+<tr><td>HTTPS не расшифровывается: фильтр видит хост и порт, не путь</td><td>Узкий allow list; подтверждение опасных вызовов на шлюзе</td></tr>
+<tr style="background:#EDEAE2"><td>Разрешённый адрес тоже может стать каналом утечки</td><td>Не разрешать «файлообменники» и общие домены; журнал в SIEM</td></tr>
+<tr><td>Root внутри машины обходит гостевые права на папки</td><td>Агент от обычного пользователя; потолок прав задаёт хост</td></tr>
+<tr style="background:#EDEAE2"><td>Ключ подписи аудита хранится на том же хосте</td><td>Отправка журнала в SIEM в реальном времени</td></tr>
+<tr><td>Без «жёсткой изоляции» программа может обойти прокси</td><td>Включать жёсткий режим по умолчанию для агентов</td></tr>
+</table>
+<p style="position:absolute;left:128px;bottom:64px;width:1664px;font-size:24px;color:#6B7280">smolvm-web · изоляция ИИ-агентов · 12</p>
+<aside>Этот слайд важен для доверия: показываем, что модель угроз продумана. Ещё одно архитектурное условие: локальный API smolvm не имеет аутентификации, поэтому веб-интерфейс слушает только 127.0.0.1, проверяет Host и Origin и требует служебный заголовок для изменяющих запросов. Публиковать порт наружу нельзя.</aside>
+</section>

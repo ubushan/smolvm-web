@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Аудит</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#2849B0}a:hover{color:#1B347F}
+</style>
+</helmet>
+<div style="width: 1280px; height: 820px; box-sizing: border-box; background: #F4F2EE; color: #1A2130; font-family: 'Manrope', system-ui, sans-serif; display: flex; flex-direction: column">
+  <header style="height: 60px; box-sizing: border-box; padding: 0 32px; display: flex; align-items: center; gap: 28px; border-bottom: 1px solid #E2DED6; background: #FBFAF7">
+    <div style="font-weight: 700; font-size: 17px">smolvm web</div>
+    <nav style="display: flex; gap: 22px; font-size: 14px">
+      <a href="#" style="color: #5A6273; text-decoration: none">Рабочие места</a>
+      <a href="#" style="color: #5A6273; text-decoration: none">Машины</a>
+      <a href="#" style="color: #5A6273; text-decoration: none">Сеть</a>
+      <a href="#" style="color: #1A2130; text-decoration: none; font-weight: 600">Аудит</a>
+    </nav>
+    <div style="flex: 1"></div>
+    <a href="#" style="font-size: 14px; color: #5A6273; text-decoration: none">Настройки</a>
+  </header>
+
+  <main style="flex: 1; padding: 28px 48px; display: flex; flex-direction: column; gap: 18px">
+    <div style="display: flex; align-items: center; gap: 14px">
+      <h1 style="margin: 0; font-size: 26px; font-weight: 700; flex: 1">Аудит</h1>
+      <span style="font-size: 13px; font-weight: 600; color: #1F6B45; background: #E5F3EB; padding: 6px 12px; border-radius: 999px">Журнал цел · проверено 2 мин назад</span>
+      <span style="font-size: 13px; font-weight: 600; color: #3E4656; background: #EEEBE5; padding: 6px 12px; border-radius: 999px">SIEM: отправка идёт</span>
+      <button style="height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid #D5D0C6; background: #FFFFFF; font: 600 14px 'Manrope', sans-serif; color: #1A2130; cursor: pointer">Экспорт</button>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px">
+      <div style="background: #FFFFFF; border: 1px solid #E2DED6; border-radius: 14px; padding: 16px 18px"><div style="font-size: 13px; color: #5A6273">Сегодня событий</div><div style="font-size: 26px; font-weight: 700">1 284</div></div>
+      <div style="background: #FFFFFF; border: 1px solid #E2DED6; border-radius: 14px; padding: 16px 18px"><div style="font-size: 13px; color: #5A6273">Решения людей</div><div style="font-size: 26px; font-weight: 700">9</div></div>
+      <div style="background: #FFFFFF; border: 1px solid #E2DED6; border-radius: 14px; padding: 16px 18px"><div style="font-size: 13px; color: #5A6273">Блокировки сети</div><div style="font-size: 26px; font-weight: 700">17</div></div>
+      <div style="background: #FCF1EE; border: 1px solid #EBC4BA; border-radius: 14px; padding: 16px 18px"><div style="font-size: 13px; color: #8A2E1A">Оповещения</div><div style="font-size: 26px; font-weight: 700; color: #A1321C">1</div></div>
+    </div>
+
+    <div style="display: flex; gap: 10px; align-items: center">
+      <div style="display: flex; gap: 4px; background: #EAE7E1; border-radius: 10px; padding: 4px">
+        <span style="padding: 6px 12px; border-radius: 8px; background: #FFFFFF; font-size: 13px; font-weight: 600">Всё</span>
+        <span style="padding: 6px 12px; font-size: 13px; color: #5A6273">Важное</span>
+        <span style="padding: 6px 12px; font-size: 13px; color: #5A6273">Решения</span>
+        <span style="padding: 6px 12px; font-size: 13px; color: #5A6273">Файлы</span>
+        <span style="padding: 6px 12px; font-size: 13px; color: #5A6273">Сеть</span>
+      </div>
+      <label for="aq" style="position: absolute; left: -9999px">Поиск по журналу</label>
+      <input id="aq" placeholder="Поиск: машина, команда, файл" style="flex: 1; height: 40px; box-sizing: border-box; border: 1px solid #D5D0C6; border-radius: 10px; padding: 0 12px; font: 14px 'Manrope', sans-serif; background: #FFFFFF">
+    </div>
+
+    <div style="background: #FFFFFF; border: 1px solid #E2DED6; border-radius: 16px; overflow: hidden; font-size: 14px">
+      <div style="padding: 10px 20px; font-size: 12px; font-weight: 600; color: #5A6273; background: #F8F6F2">Сегодня</div>
+      <div style="display: grid; grid-template-columns: 70px 1fr 180px 140px; gap: 12px; padding: 14px 20px; border-top: 1px solid #EEEAE3; background: #FCF1EE">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #5A6273">14:02</span>
+        <span><b style="color: #A1321C">Оповещение:</b> 12 блокировок сети за минуту</span>
+        <span style="color: #3E4656">sbx-backend-3f2a</span>
+        <span style="color: #5A6273">smolvm-web</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 70px 1fr 180px 140px; gap: 12px; padding: 14px 20px; border-top: 1px solid #EEEAE3">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #5A6273">13:58</span>
+        <span>Вызов API <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px">DELETE /repos/acme/api/branches/old</span> — <b>запрещено</b></span>
+        <span style="color: #3E4656">sbx-backend-3f2a</span>
+        <span style="color: #5A6273">ui@127.0.0.1</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 70px 1fr 180px 140px; gap: 12px; padding: 14px 20px; border-top: 1px solid #EEEAE3">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #5A6273">13:41</span>
+        <span>Применены изменения: 3 файла в <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px">~/src/api</span></span>
+        <span style="color: #3E4656">sbx-backend-3f2a</span>
+        <span style="color: #5A6273">ui@127.0.0.1</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 70px 1fr 180px 140px; gap: 12px; padding: 14px 20px; border-top: 1px solid #EEEAE3">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #5A6273">13:20</span>
+        <span>Песочница открыта · профиль «Бэкенд-разработка»</span>
+        <span style="color: #3E4656">sbx-backend-3f2a</span>
+        <span style="color: #5A6273">smolvm-web</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 70px 1fr 180px 140px; gap: 12px; padding: 14px 20px; border-top: 1px solid #EEEAE3">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #5A6273">12:05</span>
+        <span>Машина изолирована (kill switch): 4 соединения оборвано</span>
+        <span style="color: #3E4656">tmp-scraper</span>
+        <span style="color: #5A6273">ui@127.0.0.1</span>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

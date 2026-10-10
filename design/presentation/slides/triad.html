@@ -1,0 +1,23 @@
+<section id="triad" data-transition="fade" style="background:#121A2B;color:#EEF1F6;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:56px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;letter-spacing:3px;text-transform:uppercase;color:#F2A766">Модель угроз</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#EEF1F6">«Смертельная триада»: утечка возможна, только когда есть все три</h2>
+<div style="display:flex;align-items:center;gap:24px">
+<div style="flex:1;background:#1E2940;border:1px solid #33415E;border-radius:16px;padding:40px;display:flex;flex-direction:column;gap:12px">
+<h3 style="font-size:40px;font-weight:600;color:#F2A766">Приватные данные</h3>
+<p style="font-size:28px;line-height:1.4;color:#B9C3D4">секреты, папки с кодом, документы</p>
+</div>
+<p style="font-size:64px;color:#8592A8">+</p>
+<div style="flex:1;background:#1E2940;border:1px solid #33415E;border-radius:16px;padding:40px;display:flex;flex-direction:column;gap:12px">
+<h3 style="font-size:40px;font-weight:600;color:#F2A766">Недоверенный ввод</h3>
+<p style="font-size:28px;line-height:1.4;color:#B9C3D4">веб-страницы, issues, письма</p>
+</div>
+<p style="font-size:64px;color:#8592A8">+</p>
+<div style="flex:1;background:#1E2940;border:1px solid #33415E;border-radius:16px;padding:40px;display:flex;flex-direction:column;gap:12px">
+<h3 style="font-size:40px;font-weight:600;color:#F2A766">Канал наружу</h3>
+<p style="font-size:28px;line-height:1.4;color:#B9C3D4">выход в интернет без фильтра</p>
+</div>
+</div>
+<p style="font-size:40px;line-height:1.3;color:#EEF1F6">smolvm-web показывает по каждой машине, какие стороны триады у неё есть, и кнопкой <b>«Разорвать»</b> закрывает канал наружу</p>
+<p style="position:absolute;left:128px;bottom:64px;width:1664px;font-size:24px;color:#8592A8">smolvm-web · изоляция ИИ-агентов · 3</p>
+<aside>Термин Саймона Уиллисона. Защититься от prompt injection полностью нельзя, поэтому архитектурно убираем хотя бы одну сторону. В интерфейсе на вкладке «Обзор» машины есть блок «Риск утечки»: если у машины есть секреты или папки, есть сеть и фильтр выключен (или в режиме записи), появляется предупреждение. Кнопка «Разорвать» включает фильтр, и наружу остаются только адреса из allow list.</aside>
+</section>

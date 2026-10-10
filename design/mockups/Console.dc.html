@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Пульт ИБ</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#8FB0FF}a:hover{color:#B7CCFF}
+</style>
+</helmet>
+<div style="width: 1280px; height: 820px; box-sizing: border-box; background: #10151F; color: #E6E9F0; font-family: 'Manrope', system-ui, sans-serif; display: flex; flex-direction: column">
+  <header style="height: 60px; box-sizing: border-box; padding: 0 32px; display: flex; align-items: center; gap: 24px; border-bottom: 1px solid #222A3A">
+    <div style="font-weight: 700; font-size: 17px">smolvm web <span style="color: #8A93A6; font-weight: 500">· пульт</span></div>
+    <div style="flex: 1"></div>
+    <span style="font-size: 13px; color: #9FD9B4">Журнал цел</span>
+    <span style="font-size: 13px; color: #9FD9B4">SIEM на связи</span>
+    <button style="height: 40px; padding: 0 16px; border-radius: 10px; border: 1px solid #7A2E22; background: #3A1712; color: #FFB4A6; font: 600 14px 'Manrope', sans-serif; cursor: pointer">Остановить всех агентов</button>
+  </header>
+
+  <main style="flex: 1; padding: 24px 32px; display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 24px; min-height: 0">
+    <section style="display: flex; flex-direction: column; gap: 16px; min-width: 0">
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+        <div style="background: #171E2B; border: 1px solid #263044; border-radius: 14px; padding: 16px"><div style="font-size: 13px; color: #9AA3B5">Агентов работает</div><div style="font-size: 30px; font-weight: 700">4</div></div>
+        <div style="background: #171E2B; border: 1px solid #263044; border-radius: 14px; padding: 16px"><div style="font-size: 13px; color: #9AA3B5">Ждут решения</div><div style="font-size: 30px; font-weight: 700; color: #F2B66D">2</div></div>
+        <div style="background: #171E2B; border: 1px solid #263044; border-radius: 14px; padding: 16px"><div style="font-size: 13px; color: #9AA3B5">С риском утечки</div><div style="font-size: 30px; font-weight: 700; color: #FF9A86">1</div></div>
+        <div style="background: #171E2B; border: 1px solid #263044; border-radius: 14px; padding: 16px"><div style="font-size: 13px; color: #9AA3B5">Изолировано</div><div style="font-size: 30px; font-weight: 700">1</div></div>
+      </div>
+
+      <div style="background: #171E2B; border: 1px solid #263044; border-radius: 16px; overflow: hidden">
+        <div style="display: grid; grid-template-columns: 220px 150px 1fr 120px 130px; padding: 12px 20px; font-size: 12px; font-weight: 600; color: #8A93A6; text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid #263044">
+          <div>Машина</div><div>Риск</div><div>Почему</div><div>Сеть, мин</div><div></div>
+        </div>
+        <div style="display: grid; grid-template-columns: 220px 150px 1fr 120px 130px; padding: 16px 20px; align-items: center; font-size: 14px; border-bottom: 1px solid #1F2738; background: #2A1714">
+          <div><b>agent-opencode</b><div style="font-size: 12px; color: #9AA3B5">OpenCode · 2 ч</div></div>
+          <div><span style="font-size: 12px; font-weight: 700; color: #FFB4A6; background: #4A1E17; padding: 4px 10px; border-radius: 999px">Высокий</span></div>
+          <div style="color: #E3C8C2">секреты + папка ~/src + сеть без фильтра</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px">48 запр.</div>
+          <div><button style="height: 36px; padding: 0 12px; border-radius: 9px; border: 0; background: #E2725B; color: #1A0E0B; font: 700 13px 'Manrope', sans-serif; cursor: pointer">Разорвать</button></div>
+        </div>
+        <div style="display: grid; grid-template-columns: 220px 150px 1fr 120px 130px; padding: 16px 20px; align-items: center; font-size: 14px; border-bottom: 1px solid #1F2738">
+          <div><b>sbx-backend-3f2a</b><div style="font-size: 12px; color: #9AA3B5">Claude Code · 42 мин</div></div>
+          <div><span style="font-size: 12px; font-weight: 700; color: #F2C894; background: #3A2A14; padding: 4px 10px; border-radius: 999px">Средний</span></div>
+          <div style="color: #C9CFDB">секреты + сеть по allow list · спрашивает о новых</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px">12 запр.</div>
+          <div><a href="#" style="font-size: 13px; font-weight: 600">Открыть</a></div>
+        </div>
+        <div style="display: grid; grid-template-columns: 220px 150px 1fr 120px 130px; padding: 16px 20px; align-items: center; font-size: 14px; border-bottom: 1px solid #1F2738">
+          <div><b>research-hermes</b><div style="font-size: 12px; color: #9AA3B5">Hermes · 5 мин</div></div>
+          <div><span style="font-size: 12px; font-weight: 700; color: #A7E0BD; background: #16301F; padding: 4px 10px; border-radius: 999px">Низкий</span></div>
+          <div style="color: #C9CFDB">нет секретов и папок</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px">3 запр.</div>
+          <div><a href="#" style="font-size: 13px; font-weight: 600">Открыть</a></div>
+        </div>
+        <div style="display: grid; grid-template-columns: 220px 150px 1fr 120px 130px; padding: 16px 20px; align-items: center; font-size: 14px">
+          <div><b>tmp-scraper</b><div style="font-size: 12px; color: #9AA3B5">OpenCode · на паузе</div></div>
+          <div><span style="font-size: 12px; font-weight: 700; color: #C9CFDB; background: #283044; padding: 4px 10px; border-radius: 999px">Изолирована</span></div>
+          <div style="color: #9AA3B5">с 12:05 · всплеск блокировок</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px">—</div>
+          <div><a href="#" style="font-size: 13px; font-weight: 600">Расследовать</a></div>
+        </div>
+      </div>
+    </section>
+
+    <aside style="display: flex; flex-direction: column; gap: 12px; min-height: 0">
+      <div style="font-size: 13px; font-weight: 700; color: #9AA3B5; text-transform: uppercase; letter-spacing: .6px">Ждут решения</div>
+      <div style="background: #221C12; border: 1px solid #5A4220; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 10px">
+        <div style="font-size: 14px"><b>sbx-backend-3f2a</b> → <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px">PUT /repos/acme/api/merge</span></div>
+        <div style="font-size: 12px; color: #D9B98A">вызов API GitHub · 1:12</div>
+        <div style="display: flex; gap: 8px">
+          <button style="height: 36px; padding: 0 12px; border-radius: 9px; border: 0; background: #E6E9F0; color: #10151F; font: 700 13px 'Manrope', sans-serif; cursor: pointer">Разрешить</button>
+          <button style="height: 36px; padding: 0 12px; border-radius: 9px; border: 1px solid #7A2E22; background: transparent; color: #FFB4A6; font: 700 13px 'Manrope', sans-serif; cursor: pointer">Запретить</button>
+        </div>
+      </div>
+      <div style="background: #221C12; border: 1px solid #5A4220; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 10px">
+        <div style="font-size: 14px"><b>research-hermes</b> → <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px">arxiv.org:443</span></div>
+        <div style="font-size: 12px; color: #D9B98A">новый адрес · 0:40</div>
+        <div style="display: flex; gap: 8px">
+          <button style="height: 36px; padding: 0 12px; border-radius: 9px; border: 0; background: #E6E9F0; color: #10151F; font: 700 13px 'Manrope', sans-serif; cursor: pointer">На 10 мин</button>
+          <button style="height: 36px; padding: 0 12px; border-radius: 9px; border: 1px solid #3A4560; background: transparent; color: #E6E9F0; font: 700 13px 'Manrope', sans-serif; cursor: pointer">Всегда</button>
+          <button style="height: 36px; padding: 0 12px; border-radius: 9px; border: 1px solid #7A2E22; background: transparent; color: #FFB4A6; font: 700 13px 'Manrope', sans-serif; cursor: pointer">Нет</button>
+        </div>
+      </div>
+      <div style="font-size: 13px; font-weight: 700; color: #9AA3B5; text-transform: uppercase; letter-spacing: .6px; padding-top: 8px">Последнее</div>
+      <div style="font-size: 13px; color: #C9CFDB; display: flex; flex-direction: column; gap: 10px">
+        <div><span style="font-family: 'JetBrains Mono', monospace; color: #8A93A6">14:02</span> · 12 блокировок за минуту — tmp-scraper</div>
+        <div><span style="font-family: 'JetBrains Mono', monospace; color: #8A93A6">13:58</span> · DELETE ветки запрещён</div>
+        <div><span style="font-family: 'JetBrains Mono', monospace; color: #8A93A6">13:41</span> · применены 3 файла в ~/src/api</div>
+      </div>
+      <a href="#" style="font-size: 13px; font-weight: 600">Весь журнал →</a>
+    </aside>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

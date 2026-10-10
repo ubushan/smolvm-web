@@ -1,0 +1,28 @@
+<section id="arch" data-transition="fade" style="background:#F5F3EE;color:#1B2333;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:48px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;letter-spacing:3px;text-transform:uppercase;color:#B4521C">Архитектура</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#121A2B">Всё, что выходит из машины, проходит через хост</h2>
+<div style="display:flex;align-items:center;gap:16px">
+<div style="width:420px;background:#FCFBF8;border:2px solid #121A2B;border-radius:16px;padding:36px;display:flex;flex-direction:column;gap:12px">
+<h3 style="font-size:32px;font-weight:600;color:#121A2B">microVM</h3>
+<p style="font-size:26px;line-height:1.4;color:#4A5263">агент, рабочая копия кода, токены-заглушки вместо ключей</p>
+</div>
+<x-connector style="width:72px;color:#121A2B;border-width:3px"></x-connector>
+<div style="flex:1;background:#121A2B;border-radius:16px;padding:36px;display:flex;flex-direction:column;gap:16px">
+<h3 style="font-size:32px;font-weight:600;color:#F2A766">smolvm-web на хосте</h3>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+<p style="font-size:26px;color:#EEF1F6;background:#1E2940;border-radius:10px;padding:14px 18px">Фильтр сети</p>
+<p style="font-size:26px;color:#EEF1F6;background:#1E2940;border-radius:10px;padding:14px 18px">Шлюз секретов</p>
+<p style="font-size:26px;color:#EEF1F6;background:#1E2940;border-radius:10px;padding:14px 18px">Подтверждения</p>
+<p style="font-size:26px;color:#EEF1F6;background:#1E2940;border-radius:10px;padding:14px 18px">Аудит → SIEM</p>
+</div>
+</div>
+<x-connector style="width:72px;color:#121A2B;border-width:3px"></x-connector>
+<div style="width:360px;background:#FCFBF8;border:1px solid #E2DED4;border-radius:16px;padding:36px;display:flex;flex-direction:column;gap:12px">
+<h3 style="font-size:32px;font-weight:600;color:#121A2B">Наружу</h3>
+<p style="font-size:26px;line-height:1.4;color:#4A5263">интернет, API моделей, корп. репозитории</p>
+</div>
+</div>
+<p style="font-size:32px;line-height:1.4;color:#4A5263">Поэтому любое обращение можно <b style="color:#121A2B">остановить, записать или отправить человеку на подтверждение</b>. Веб-интерфейс слушает только 127.0.0.1.</p>
+<p style="position:absolute;left:128px;bottom:64px;width:1664px;font-size:24px;color:#6B7280">smolvm-web · изоляция ИИ-агентов · 4</p>
+<aside>smolvm — открытый проект микро-виртуальных машин (KVM на Linux, Hypervisor.framework на macOS, WHP на Windows). smolvm-web — наш интерфейс поверх его локального API, на Node.js без внешних зависимостей. Внутри машины агент получает адрес фильтрующего прокси со своим токеном и токен шлюза вместо реального ключа API. Реальные ключи хранятся зашифрованными на хосте.</aside>
+</section>

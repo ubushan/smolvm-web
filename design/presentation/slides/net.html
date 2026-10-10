@@ -1,0 +1,26 @@
+<section id="net" data-transition="fade" style="background:#F5F3EE;color:#1B2333;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:48px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;letter-spacing:3px;text-transform:uppercase;color:#B4521C">Слой 2 · Сеть</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#121A2B">Машина ходит только туда, куда разрешено</h2>
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:32px">
+<div style="display:flex;flex-direction:column;gap:28px">
+<div style="display:flex;flex-direction:column;gap:6px;border-left:4px solid #B4521C;padding:4px 0 4px 28px">
+<h3 style="font-size:32px;font-weight:600;color:#121A2B">Allow list на каждую машину</h3>
+<p style="font-size:28px;line-height:1.4;color:#4A5263">Домены, поддомены, IP/CIDR, порты; готовые списки: PyPI, npm, GitHub, API моделей</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:6px;border-left:4px solid #B4521C;padding:4px 0 4px 28px">
+<h3 style="font-size:32px;font-weight:600;color:#121A2B">Режим записи адресов</h3>
+<p style="font-size:28px;line-height:1.4;color:#4A5263">Агент работает как обычно, записанные адреса превращаются в правила одной кнопкой</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:6px;border-left:4px solid #B4521C;padding:4px 0 4px 28px">
+<h3 style="font-size:32px;font-weight:600;color:#121A2B">Защита хоста и внутренней сети</h3>
+<p style="font-size:28px;line-height:1.4;color:#4A5263">Localhost, metadata 169.254.x и частные сети — только по явному правилу; каждое соединение в журнале</p>
+</div>
+</div>
+<div style="background:#121A2B;border-radius:16px;padding:40px;display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;letter-spacing:2px;text-transform:uppercase;color:#F2A766">Зачем</p>
+<p style="font-size:32px;line-height:1.4;color:#EEF1F6">Закрывает канал утечки из триады и разведку внутренней сети. Работает через корпоративный прокси с Kerberos/NTLM.</p>
+</div>
+</div>
+<p style="position:absolute;left:128px;bottom:64px;width:1664px;font-size:24px;color:#6B7280">smolvm-web · изоляция ИИ-агентов · 6</p>
+<aside>Фильтр — HTTP(S)-прокси на хосте с токеном на каждую машину. Правила применяются сразу, без перезапуска. Ограничение: HTTPS не расшифровывается, фильтр видит хост и порт, но не путь. Есть режим «Спрашивать о незнакомых адресах» — о нём на слайде про человека в контуре.</aside>
+</section>

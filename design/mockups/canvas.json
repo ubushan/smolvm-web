@@ -1,0 +1,33 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-10-10T10:00:00Z" },
+  "title": "Песочницы: варианты интерфейса",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 1280, "h": 820, "title": "A · Одна кнопка" },
+    "Workspaces.dc.html": { "x": 1360, "y": 0, "w": 1280, "h": 820, "title": "B · Рабочие места" },
+    "Session.dc.html": { "x": 2720, "y": 0, "w": 1280, "h": 820, "title": "C · Сеанс как рабочий экран" },
+    "Machines.dc.html": { "x": 0, "y": 1180, "w": 1280, "h": 820, "title": "Машины" },
+    "Network.dc.html": { "x": 1360, "y": 1180, "w": 1280, "h": 820, "title": "Сеть" },
+    "Audit.dc.html": { "x": 2720, "y": 1180, "w": 1280, "h": 820, "title": "Аудит" },
+    "Profile.dc.html": { "x": 0, "y": 2360, "w": 1280, "h": 820, "title": "Профиль агента" },
+    "Review.dc.html": { "x": 1360, "y": 2360, "w": 1280, "h": 820, "title": "Проверка изменений" },
+    "Settings.dc.html": { "x": 2720, "y": 2360, "w": 1280, "h": 820, "title": "Настройки" },
+    "Feed.dc.html": { "x": 0, "y": 3540, "w": 1280, "h": 820, "title": "D · Лента: агент и контроль в одном потоке" },
+    "Console.dc.html": { "x": 1360, "y": 3540, "w": 1280, "h": 820, "title": "D · Пульт ИБ" },
+    "Board.dc.html": { "x": 0, "y": 4720, "w": 1280, "h": 820, "title": "E · Доска задач" },
+    "Palette.dc.html": { "x": 1360, "y": 4720, "w": 1280, "h": 820, "title": "F · Командная строка" },
+    "Map.dc.html": { "x": 2720, "y": 4720, "w": 1280, "h": 820, "title": "G · Карта связей" },
+    "Wizard.dc.html": { "x": 4080, "y": 4720, "w": 1280, "h": 820, "title": "H · Мастер по шагам" }
+  },
+  "order": ["Main.dc.html", "Workspaces.dc.html", "Session.dc.html", "Machines.dc.html", "Network.dc.html", "Audit.dc.html", "Profile.dc.html", "Review.dc.html", "Settings.dc.html", "Feed.dc.html", "Console.dc.html", "Board.dc.html", "Palette.dc.html", "Map.dc.html", "Wizard.dc.html"],
+  "notes": {
+    "t1": { "x": 0, "y": -260, "text": "Три варианта страницы «Песочницы»", "kind": "title1", "maxW": 4000 },
+    "t2": { "x": 0, "y": 920, "text": "Остальные разделы", "kind": "title1", "maxW": 4000 },
+    "t3": { "x": 0, "y": 2100, "text": "Профили, ревью и настройки", "kind": "title1", "maxW": 4000 },
+    "t4": { "x": 0, "y": 3280, "text": "Вариант D: лента событий и пульт ИБ", "kind": "title1", "maxW": 2640 },
+    "t5": { "x": 0, "y": 4460, "text": "Ещё четыре разных подхода к главному экрану", "kind": "title1", "maxW": 5360 }
+  },
+  "designSystems": []
+}

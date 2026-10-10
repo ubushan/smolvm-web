@@ -1,0 +1,24 @@
+<section id="problem" data-transition="fade" style="background:#F5F3EE;color:#1B2333;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:48px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;letter-spacing:3px;text-transform:uppercase;color:#B4521C">Проблема</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#121A2B">ИИ-агент — это недоверенный исполнитель с правами разработчика</h2>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+<div style="background:#FCFBF8;border:1px solid #E2DED4;border-radius:16px;padding:40px;display:flex;flex-direction:column;gap:12px">
+<h3 style="font-size:32px;font-weight:600;color:#121A2B">Утечка секретов</h3>
+<p style="font-size:28px;line-height:1.4;color:#4A5263">Агент видит токены, ключи API и переменные окружения и может отправить их наружу</p>
+</div>
+<div style="background:#FCFBF8;border:1px solid #E2DED4;border-radius:16px;padding:40px;display:flex;flex-direction:column;gap:12px">
+<h3 style="font-size:32px;font-weight:600;color:#121A2B">Prompt injection</h3>
+<p style="font-size:28px;line-height:1.4;color:#4A5263">Чужая веб-страница, issue или README может дать агенту команду, о которой пользователь не знает</p>
+</div>
+<div style="background:#FCFBF8;border:1px solid #E2DED4;border-radius:16px;padding:40px;display:flex;flex-direction:column;gap:12px">
+<h3 style="font-size:32px;font-weight:600;color:#121A2B">Необратимые действия</h3>
+<p style="font-size:28px;line-height:1.4;color:#4A5263">Удаление репозитория, merge, релиз, деплой — одним вызовом API</p>
+</div>
+<div style="background:#FCFBF8;border:1px solid #E2DED4;border-radius:16px;padding:40px;display:flex;flex-direction:column;gap:12px">
+<h3 style="font-size:32px;font-weight:600;color:#121A2B">Нет следов</h3>
+<p style="font-size:28px;line-height:1.4;color:#4A5263">На рабочей машине действия агента не отличить от действий человека</p>
+</div>
+</div>
+<p style="position:absolute;left:128px;bottom:64px;width:1664px;font-size:24px;color:#6B7280">smolvm-web · изоляция ИИ-агентов · 2</p>
+<aside>Агенты вроде Claude Code, Codex, OpenCode выполняют команды сами. Если запускать их на рабочем ноутбуке, у агента те же права, что у разработчика: доступ к ~/.ssh, токенам, корпоративной сети. При этом агент читает недоверенный контент из интернета — и может быть им перехвачен.</aside>
+</section>

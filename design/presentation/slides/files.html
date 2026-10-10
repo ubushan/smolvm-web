@@ -1,0 +1,26 @@
+<section id="files" data-transition="fade" style="background:#F5F3EE;color:#1B2333;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:48px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;letter-spacing:3px;text-transform:uppercase;color:#B4521C">Слой 4 · Файлы</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#121A2B">Минимум доступа к данным и ревью каждой правки</h2>
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:32px">
+<div style="display:flex;flex-direction:column;gap:28px">
+<div style="display:flex;flex-direction:column;gap:6px;border-left:4px solid #B4521C;padding:4px 0 4px 28px">
+<h3 style="font-size:32px;font-weight:600;color:#121A2B">Реестр разрешённых папок</h3>
+<p style="font-size:28px;line-height:1.4;color:#4A5263">~/.ssh, ~/.aws, системные пути и корень диска подключить нельзя; потолок прав задаётся на хосте</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:6px;border-left:4px solid #B4521C;padding:4px 0 4px 28px">
+<h3 style="font-size:32px;font-weight:600;color:#121A2B">Права внутри машины</h3>
+<p style="font-size:28px;line-height:1.4;color:#4A5263">Матрица «папка × пользователь»: запись, чтение или нет доступа — с проверкой фактических прав</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:6px;border-left:4px solid #B4521C;padding:4px 0 4px 28px">
+<h3 style="font-size:32px;font-weight:600;color:#121A2B">Рабочая копия и diff</h3>
+<p style="font-size:28px;line-height:1.4;color:#4A5263">Агент правит копию; на хост изменения попадают только после просмотра и «Применить»</p>
+</div>
+</div>
+<div style="background:#121A2B;border-radius:16px;padding:40px;display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;letter-spacing:2px;text-transform:uppercase;color:#F2A766">Зачем</p>
+<p style="font-size:32px;line-height:1.4;color:#EEF1F6">Агент не может тихо испортить или подменить код в репозитории: каждый изменённый файл проходит через человека.</p>
+</div>
+</div>
+<p style="position:absolute;left:128px;bottom:64px;width:1664px;font-size:24px;color:#6B7280">smolvm-web · изоляция ИИ-агентов · 8</p>
+<aside>Конфликты (файл изменился и в машине, и на хосте) подсвечиваются. Запись на хост атомарная, только внутри выбранной папки, symlink и «..» отклоняются. Read-only обеспечивает хост: даже root в машине не запишет в папку с потолком «только чтение».</aside>
+</section>

@@ -1,0 +1,19 @@
+<section id="checklist" data-transition="fade" style="background:#F5F3EE;color:#1B2333;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:48px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;letter-spacing:3px;text-transform:uppercase;color:#B4521C">Итог</p>
+<h2 style="font-size:64px;font-weight:600;line-height:1.15;color:#121A2B">Покрытие чек-листа безопасности агентов</h2>
+<table style="font-size:24px;color:#1B2333;font-family:'IBM Plex Sans', Arial, sans-serif">
+<tr style="background:#121A2B"><th style="width:30%;color:#EEF1F6">Требование</th><th style="width:55%;color:#EEF1F6">Как закрыто</th><th style="width:15%;color:#EEF1F6">Статус</th></tr>
+<tr><td>Изоляция среды</td><td>microVM, одноразовые песочницы</td><td style="color:#1F6B45">Есть</td></tr>
+<tr style="background:#EDEAE2"><td>Контроль сети</td><td>Allow list, жёсткая изоляция, журнал</td><td style="color:#1F6B45">Есть</td></tr>
+<tr><td>Секреты вне песочницы</td><td>Шлюз секретов, ключ не попадает в машину</td><td style="color:#1F6B45">Есть</td></tr>
+<tr style="background:#EDEAE2"><td>Минимум доступа к файлам</td><td>Реестр папок, права, ревью diff</td><td style="color:#1F6B45">Есть</td></tr>
+<tr><td>Подтверждение человеком</td><td>Правила для API, вопрос о незнакомых адресах</td><td style="color:#1F6B45">Есть</td></tr>
+<tr style="background:#EDEAE2"><td>Аудит</td><td>Цепочка HMAC, SIEM, оповещения</td><td style="color:#1F6B45">Есть</td></tr>
+<tr><td>Kill switch</td><td>«Изолировать», «Остановить всех агентов»</td><td style="color:#1F6B45">Есть</td></tr>
+<tr style="background:#EDEAE2"><td>Лимиты</td><td>Процессы, время агента, API в день; CPU и RAM — ресурсы ВМ</td><td style="color:#1F6B45">Есть</td></tr>
+<tr><td>Изоляция сессий</td><td>Чистая песочница на каждый сеанс</td><td style="color:#1F6B45">Есть</td></tr>
+<tr style="background:#EDEAE2"><td>Откат состояния</td><td>Снимки машин убраны; вместо них — одноразовые песочницы</td><td style="color:#A34A12">Частично</td></tr>
+</table>
+<p style="position:absolute;left:128px;bottom:64px;width:1664px;font-size:24px;color:#6B7280">smolvm-web · изоляция ИИ-агентов · 11</p>
+<aside>Чек-лист — типовые требования к безопасному запуску агентов: изоляция, контроль сети, секреты вне песочницы, минимальный доступ к файлам, подтверждение человеком, аудит, лимиты, kill switch, изоляция сессий. Откат: функция снимков была, но убрана в последнем редизайне; риск закрыт тем, что машина одноразовая, а изменения файлов идут через ревью.</aside>
+</section>

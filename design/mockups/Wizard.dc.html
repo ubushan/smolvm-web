@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Мастер запуска агента</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&amp;family=Nunito+Sans:wght@400;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#8C3F1F}a:hover{color:#6A2E15}
+</style>
+</helmet>
+<div style="width: 1280px; height: 820px; box-sizing: border-box; background: #F7F1E8; color: #2A211B; font-family: 'Nunito Sans', system-ui, sans-serif; display: flex; flex-direction: column; align-items: center">
+  <header style="width: 100%; box-sizing: border-box; height: 64px; padding: 0 40px; display: flex; align-items: center; gap: 16px">
+    <div style="font-family: 'Lora', Georgia, serif; font-weight: 700; font-size: 20px">smolvm web</div>
+    <div style="flex: 1"></div>
+    <a href="#" style="font-size: 14px; color: #6F6156; text-decoration: none">Мои сеансы (2)</a>
+    <a href="#" style="font-size: 14px; color: #6F6156; text-decoration: none">Для администратора</a>
+  </header>
+
+  <ol style="list-style: none; margin: 16px 0 0; padding: 0; display: flex; gap: 12px; align-items: center; font-size: 14px">
+    <li style="display: flex; align-items: center; gap: 8px; color: #6F6156"><span style="width: 28px; height: 28px; border-radius: 50%; background: #2A211B; color: #F7F1E8; display: flex; align-items: center; justify-content: center; font-weight: 700">✓</span>Агент</li>
+    <li style="width: 48px; height: 2px; background: #2A211B" aria-hidden="true"></li>
+    <li style="display: flex; align-items: center; gap: 8px; font-weight: 700"><span style="width: 28px; height: 28px; border-radius: 50%; background: #C2582A; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-weight: 700">2</span>Доступы</li>
+    <li style="width: 48px; height: 2px; background: #D8CBB9" aria-hidden="true"></li>
+    <li style="display: flex; align-items: center; gap: 8px; color: #8E8073"><span style="width: 28px; height: 28px; border-radius: 50%; border: 2px solid #D8CBB9; display: flex; align-items: center; justify-content: center; font-weight: 700; box-sizing: border-box">3</span>Запуск</li>
+  </ol>
+
+  <main style="width: 760px; margin-top: 36px; display: flex; flex-direction: column; gap: 22px">
+    <div>
+      <h1 style="margin: 0; font-family: 'Lora', Georgia, serif; font-size: 34px; font-weight: 600">Что можно агенту?</h1>
+      <p style="margin: 8px 0 0; font-size: 16px; color: #6F6156">Выберите вариант для каждого пункта. Безопасные уже отмечены.</p>
+    </div>
+
+    <div style="background: #FFFCF7; border: 1px solid #E6DACA; border-radius: 18px; padding: 22px 24px; display: flex; flex-direction: column; gap: 14px">
+      <div style="font-weight: 700; font-size: 17px">Интернет</div>
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px">
+        <label style="border: 1px solid #E6DACA; border-radius: 12px; padding: 12px 14px; display: flex; gap: 10px; font-size: 14px"><input type="radio" name="net"><span><b>Без интернета</b><br><span style="color: #6F6156">самое безопасное</span></span></label>
+        <label style="border: 2px solid #C2582A; background: #FBEDE4; border-radius: 12px; padding: 12px 14px; display: flex; gap: 10px; font-size: 14px"><input type="radio" name="net" checked><span><b>Только нужное</b><br><span style="color: #6F6156">GitHub, npm, модель</span></span></label>
+        <label style="border: 1px solid #E6DACA; border-radius: 12px; padding: 12px 14px; display: flex; gap: 10px; font-size: 14px"><input type="radio" name="net"><span><b>Весь интернет</b><br><span style="color: #9B3B26">риск утечки</span></span></label>
+      </div>
+    </div>
+
+    <div style="background: #FFFCF7; border: 1px solid #E6DACA; border-radius: 18px; padding: 22px 24px; display: flex; flex-direction: column; gap: 14px">
+      <div style="font-weight: 700; font-size: 17px">Ваши файлы</div>
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px">
+        <label style="border: 1px solid #E6DACA; border-radius: 12px; padding: 12px 14px; display: flex; gap: 10px; font-size: 14px"><input type="radio" name="files"><span><b>Никаких</b><br><span style="color: #6F6156">пустая папка</span></span></label>
+        <label style="border: 2px solid #C2582A; background: #FBEDE4; border-radius: 12px; padding: 12px 14px; display: flex; gap: 10px; font-size: 14px"><input type="radio" name="files" checked><span><b>Копия ~/src/api</b><br><span style="color: #6F6156">правки — после проверки</span></span></label>
+        <label style="border: 1px solid #E6DACA; border-radius: 12px; padding: 12px 14px; display: flex; gap: 10px; font-size: 14px"><input type="radio" name="files"><span><b>Папка напрямую</b><br><span style="color: #9B3B26">без проверки</span></span></label>
+      </div>
+    </div>
+
+    <div style="background: #FFFCF7; border: 1px solid #E6DACA; border-radius: 18px; padding: 18px 24px; display: flex; align-items: center; gap: 14px">
+      <div style="flex: 1"><b style="font-size: 17px">Опасные действия</b><div style="font-size: 14px; color: #6F6156">удаление, merge, деплой — спрашивать меня</div></div>
+      <span style="width: 48px; height: 28px; border-radius: 999px; background: #C2582A; display: flex; align-items: center; justify-content: flex-end; padding: 3px; box-sizing: border-box" role="img" aria-label="Включено"><span style="width: 22px; height: 22px; border-radius: 50%; background: #FFFFFF"></span></span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 14px">
+      <a href="#" style="font-size: 15px">← Назад</a>
+      <div style="flex: 1; text-align: right; font-size: 14px; color: #3E7A55; font-weight: 700">Риск утечки: низкий</div>
+      <button style="height: 50px; padding: 0 28px; border-radius: 12px; border: 0; background: #2A211B; color: #F7F1E8; font: 700 16px 'Nunito Sans', sans-serif; cursor: pointer">Дальше</button>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Командная строка</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#C6B8FF}a:hover{color:#E2DAFF}
+</style>
+</helmet>
+<div style="width: 1280px; height: 820px; box-sizing: border-box; background: #0D0D12; color: #ECEAF4; font-family: 'Space Grotesk', system-ui, sans-serif; display: flex; flex-direction: column; align-items: center">
+  <div style="width: 100%; box-sizing: border-box; padding: 20px 32px; display: flex; align-items: center; gap: 16px; font-size: 13px; color: #8C89A0">
+    <span style="font-weight: 600; color: #ECEAF4; font-size: 15px">smolvm</span>
+    <div style="flex: 1"></div>
+    <span>2 агента работают</span>
+    <span style="color: #F0B868">1 ждёт решения</span>
+    <span style="color: #8CD9A8">журнал цел</span>
+  </div>
+
+  <div style="flex: 1; width: 720px; display: flex; flex-direction: column; justify-content: center; gap: 28px; padding-bottom: 60px">
+    <h1 style="margin: 0; font-size: 40px; font-weight: 600; letter-spacing: -.5px">Что сделать?</h1>
+
+    <div style="background: #17161F; border: 1px solid #2E2C3B; border-radius: 18px; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,.5)">
+      <div style="height: 64px; box-sizing: border-box; padding: 0 22px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #2E2C3B">
+        <label for="cmd" style="position: absolute; left: -9999px">Команда</label>
+        <input id="cmd" value="открыть бэк" style="flex: 1; border: 0; outline: none; background: transparent; color: #ECEAF4; font: 500 20px 'Space Grotesk', sans-serif">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #8C89A0; border: 1px solid #3A3848; border-radius: 6px; padding: 3px 7px">Ctrl K</span>
+      </div>
+      <div style="padding: 8px">
+        <div style="padding: 14px 16px; border-radius: 12px; background: #262438; display: flex; align-items: center; gap: 14px">
+          <span style="width: 34px; height: 34px; border-radius: 9px; background: #7C5CFF; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px">CC</span>
+          <span style="flex: 1; display: flex; flex-direction: column"><b style="font-size: 16px; font-weight: 600">Открыть «Бэкенд-разработка»</b><span style="font-size: 13px; color: #A19DB8">Claude Code · новая чистая песочница</span></span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #A19DB8">Enter</span>
+        </div>
+        <div style="padding: 14px 16px; border-radius: 12px; display: flex; align-items: center; gap: 14px">
+          <span style="width: 34px; height: 34px; border-radius: 9px; background: #23212F; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #A19DB8">→</span>
+          <span style="flex: 1; display: flex; flex-direction: column"><b style="font-size: 16px; font-weight: 600">Перейти к открытой sbx-backend-3f2a</b><span style="font-size: 13px; color: #A19DB8">работает 42 мин</span></span>
+        </div>
+        <div style="padding: 14px 16px; border-radius: 12px; display: flex; align-items: center; gap: 14px">
+          <span style="width: 34px; height: 34px; border-radius: 9px; background: #23212F; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #A19DB8">✎</span>
+          <span style="flex: 1; display: flex; flex-direction: column"><b style="font-size: 16px; font-weight: 600">Изменить профиль «Бэкенд-разработка»</b><span style="font-size: 13px; color: #A19DB8">MCP, skills, CLAUDE.md</span></span>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 10px">
+      <div style="font-size: 12px; color: #8C89A0; text-transform: uppercase; letter-spacing: 1px">Требует внимания</div>
+      <div style="background: #221B10; border: 1px solid #5A4520; border-radius: 14px; padding: 14px 18px; display: flex; align-items: center; gap: 14px">
+        <span style="flex: 1; font-size: 15px">sbx-backend-3f2a хочет выполнить <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px">PUT …/merge</span></span>
+        <button style="height: 36px; padding: 0 14px; border-radius: 9px; border: 0; background: #ECEAF4; color: #0D0D12; font: 600 13px 'Space Grotesk', sans-serif; cursor: pointer">Разрешить  A</button>
+        <button style="height: 36px; padding: 0 14px; border-radius: 9px; border: 1px solid #6A2E24; background: transparent; color: #FFB0A0; font: 600 13px 'Space Grotesk', sans-serif; cursor: pointer">Запретить  D</button>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 18px; font-size: 13px; color: #8C89A0">
+      <span>Попробуйте: «новая песочница hermes», «изолировать всё», «журнал за час», «сеть sbx…»</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

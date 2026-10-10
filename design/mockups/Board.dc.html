@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Доска задач агентов</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#17694A}a:hover{color:#0E4A33}
+</style>
+</helmet>
+<div style="width: 1280px; height: 820px; box-sizing: border-box; background: #EEF1EC; color: #18221C; font-family: 'Golos Text', system-ui, sans-serif; display: flex; flex-direction: column">
+  <header style="height: 64px; box-sizing: border-box; padding: 0 32px; display: flex; align-items: center; gap: 20px">
+    <div style="font-weight: 700; font-size: 18px">smolvm web</div>
+    <div style="flex: 1"></div>
+    <a href="#" style="font-size: 14px; color: #4B5A50; text-decoration: none">Сеть</a>
+    <a href="#" style="font-size: 14px; color: #4B5A50; text-decoration: none">Аудит</a>
+    <a href="#" style="font-size: 14px; color: #4B5A50; text-decoration: none">Настройки</a>
+    <button style="height: 42px; padding: 0 18px; border-radius: 999px; border: 0; background: #17694A; color: #FFFFFF; font: 600 14px 'Golos Text', sans-serif; cursor: pointer">+ Новая задача агенту</button>
+  </header>
+
+  <main style="flex: 1; padding: 8px 32px 28px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; min-height: 0">
+    <section style="background: #E2E7E0; border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; justify-content: space-between; padding: 4px 6px; font-weight: 600; font-size: 14px"><span>Работает</span><span style="color: #4B5A50">2</span></div>
+      <article style="background: #FFFFFF; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 1px 2px rgba(0,0,0,.06)">
+        <div style="font-weight: 600; font-size: 15px">Эндпоинт /health и тесты</div>
+        <div style="font-size: 13px; color: #4B5A50">Claude Code · Бэкенд · 42 мин</div>
+        <div style="height: 6px; border-radius: 3px; background: #E2E7E0"><div style="width: 60%; height: 6px; border-radius: 3px; background: #17694A"></div></div>
+      </article>
+      <article style="background: #FFFFFF; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 1px 2px rgba(0,0,0,.06)">
+        <div style="font-weight: 600; font-size: 15px">Обзор статей по RAG</div>
+        <div style="font-size: 13px; color: #4B5A50">Hermes · Исследования · 5 мин</div>
+        <div style="height: 6px; border-radius: 3px; background: #E2E7E0"><div style="width: 20%; height: 6px; border-radius: 3px; background: #17694A"></div></div>
+      </article>
+    </section>
+
+    <section style="background: #F3E6D2; border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; justify-content: space-between; padding: 4px 6px; font-weight: 600; font-size: 14px; color: #6E4210"><span>Ждёт вашего решения</span><span>2</span></div>
+      <article style="background: #FFFFFF; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; border: 2px solid #E0A65A">
+        <div style="font-weight: 600; font-size: 15px">Merge в main</div>
+        <div style="font-size: 13px; color: #6E4210">Эндпоинт /health · вызов GitHub API</div>
+        <div style="display: flex; gap: 8px">
+          <button style="flex: 1; height: 38px; border-radius: 10px; border: 0; background: #18221C; color: #FFFFFF; font: 600 13px 'Golos Text', sans-serif; cursor: pointer">Разрешить</button>
+          <button style="flex: 1; height: 38px; border-radius: 10px; border: 1px solid #D9B9A9; background: #FFFFFF; color: #9B2F1C; font: 600 13px 'Golos Text', sans-serif; cursor: pointer">Запретить</button>
+        </div>
+      </article>
+      <article style="background: #FFFFFF; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; border: 2px solid #E0A65A">
+        <div style="font-weight: 600; font-size: 15px">Доступ к arxiv.org</div>
+        <div style="font-size: 13px; color: #6E4210">Обзор статей по RAG · новый адрес</div>
+        <div style="display: flex; gap: 8px">
+          <button style="flex: 1; height: 38px; border-radius: 10px; border: 0; background: #18221C; color: #FFFFFF; font: 600 13px 'Golos Text', sans-serif; cursor: pointer">Разрешить</button>
+          <button style="flex: 1; height: 38px; border-radius: 10px; border: 1px solid #D9B9A9; background: #FFFFFF; color: #9B2F1C; font: 600 13px 'Golos Text', sans-serif; cursor: pointer">Запретить</button>
+        </div>
+      </article>
+    </section>
+
+    <section style="background: #E2E7E0; border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; justify-content: space-between; padding: 4px 6px; font-weight: 600; font-size: 14px"><span>Готово к проверке</span><span style="color: #4B5A50">1</span></div>
+      <article style="background: #FFFFFF; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 1px 2px rgba(0,0,0,.06)">
+        <div style="font-weight: 600; font-size: 15px">Миграция users → accounts</div>
+        <div style="font-size: 13px; color: #4B5A50">4 файла в ~/src/api · новый skill в профиле</div>
+        <div style="display: flex; gap: 8px">
+          <a href="#" style="flex: 1; height: 38px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: #17694A; color: #FFFFFF; font-weight: 600; font-size: 13px; text-decoration: none">Проверить</a>
+        </div>
+      </article>
+    </section>
+
+    <section style="background: #E2E7E0; border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; justify-content: space-between; padding: 4px 6px; font-weight: 600; font-size: 14px"><span>Закрыто сегодня</span><span style="color: #4B5A50">3</span></div>
+      <article style="background: #F7F9F6; border-radius: 14px; padding: 12px 14px; font-size: 14px; color: #4B5A50">Рефакторинг логгера · применено</article>
+      <article style="background: #F7F9F6; border-radius: 14px; padding: 12px 14px; font-size: 14px; color: #4B5A50">Парсер прайсов · изолировано, удалено</article>
+      <article style="background: #F7F9F6; border-radius: 14px; padding: 12px 14px; font-size: 14px; color: #4B5A50">README для SDK · отклонено</article>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

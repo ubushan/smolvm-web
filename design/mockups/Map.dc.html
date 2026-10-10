@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Карта связей</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#1D5FD1}a:hover{color:#14449A}
+</style>
+</helmet>
+<div style="width: 1280px; height: 820px; box-sizing: border-box; background: #F2F6FB; color: #142033; font-family: 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column">
+  <header style="height: 60px; box-sizing: border-box; padding: 0 32px; display: flex; align-items: center; gap: 24px; background: #FFFFFF; border-bottom: 1px solid #DCE4EF">
+    <div style="font-weight: 700; font-size: 17px">smolvm web</div>
+    <div style="display: flex; gap: 4px; background: #EDF2F8; border-radius: 10px; padding: 4px">
+      <span style="padding: 6px 14px; border-radius: 8px; background: #FFFFFF; font-size: 13px; font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08)">Карта</span>
+      <span style="padding: 6px 14px; font-size: 13px; color: #55657C">Список</span>
+    </div>
+    <div style="flex: 1"></div>
+    <span style="font-size: 13px; color: #55657C">за последние 15 минут</span>
+    <button style="height: 40px; padding: 0 16px; border-radius: 10px; border: 0; background: #1D5FD1; color: #FFFFFF; font: 600 14px 'IBM Plex Sans', sans-serif; cursor: pointer">+ Песочница</button>
+  </header>
+
+  <div style="flex: 1; position: relative">
+    <svg aria-hidden="true" width="1280" height="760" style="position: absolute; left: 0; top: 0">
+      <path d="M 330 150 C 430 150, 430 330, 520 330" stroke="#7FA6E8" stroke-width="3" fill="none"/>
+      <path d="M 330 330 C 430 330, 430 360, 520 360" stroke="#7FA6E8" stroke-width="3" fill="none"/>
+      <path d="M 330 510 C 430 510, 430 390, 520 390" stroke="#E2725B" stroke-width="3" fill="none" stroke-dasharray="6 6"/>
+      <path d="M 760 340 C 840 340, 840 170, 920 170" stroke="#3E9E6E" stroke-width="3" fill="none"/>
+      <path d="M 760 350 C 840 350, 840 290, 920 290" stroke="#3E9E6E" stroke-width="3" fill="none"/>
+      <path d="M 760 370 C 840 370, 840 470, 920 470" stroke="#C0563F" stroke-width="3" fill="none" stroke-dasharray="4 6"/>
+      <path d="M 760 380 C 840 380, 840 590, 920 590" stroke="#C0563F" stroke-width="3" fill="none" stroke-dasharray="4 6"/>
+    </svg>
+
+    <div style="position: absolute; left: 40px; top: 40px; font-size: 12px; font-weight: 600; color: #55657C; text-transform: uppercase; letter-spacing: 1px">Машины</div>
+    <div style="position: absolute; left: 40px; top: 100px; width: 290px; box-sizing: border-box; background: #FFFFFF; border: 2px solid #7FA6E8; border-radius: 14px; padding: 14px 16px">
+      <div style="font-weight: 600">sbx-backend-3f2a</div>
+      <div style="font-size: 13px; color: #55657C">Claude Code · 2 секрета</div>
+    </div>
+    <div style="position: absolute; left: 40px; top: 280px; width: 290px; box-sizing: border-box; background: #FFFFFF; border: 2px solid #7FA6E8; border-radius: 14px; padding: 14px 16px">
+      <div style="font-weight: 600">research-hermes</div>
+      <div style="font-size: 13px; color: #55657C">Hermes · без секретов</div>
+    </div>
+    <div style="position: absolute; left: 40px; top: 460px; width: 290px; box-sizing: border-box; background: #FDF0EC; border: 2px solid #E2725B; border-radius: 14px; padding: 14px 16px">
+      <div style="font-weight: 600">agent-opencode</div>
+      <div style="font-size: 13px; color: #9B3B26">секреты + ~/src + фильтр выключен</div>
+      <a href="#" style="font-size: 13px; font-weight: 600; color: #9B3B26">Разорвать связь</a>
+    </div>
+    <div style="position: absolute; left: 40px; top: 620px; width: 290px; box-sizing: border-box; background: #EDF0F4; border: 2px dashed #A9B4C4; border-radius: 14px; padding: 14px 16px">
+      <div style="font-weight: 600; color: #55657C">tmp-scraper</div>
+      <div style="font-size: 13px; color: #55657C">изолирована — связей нет</div>
+    </div>
+
+    <div style="position: absolute; left: 520px; top: 270px; width: 240px; height: 180px; box-sizing: border-box; background: #142033; color: #FFFFFF; border-radius: 20px; padding: 20px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 12px 32px rgba(20,32,51,.25)">
+      <div style="font-size: 12px; color: #9FB3D1; text-transform: uppercase; letter-spacing: 1px">Контроль на хосте</div>
+      <div style="font-weight: 700; font-size: 18px">smolvm-web</div>
+      <div style="font-size: 13px; color: #C9D5E8">фильтр · шлюз секретов · подтверждения · аудит</div>
+    </div>
+
+    <div style="position: absolute; left: 920px; top: 40px; font-size: 12px; font-weight: 600; color: #55657C; text-transform: uppercase; letter-spacing: 1px">Куда ходят</div>
+    <div style="position: absolute; left: 920px; top: 130px; width: 320px; box-sizing: border-box; background: #EAF6EF; border: 1px solid #B9DFC9; border-radius: 12px; padding: 12px 16px">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 14px">api.github.com</div>
+      <div style="font-size: 12px; color: #2E6B4C">разрешено · 84 запроса · ключ подставлен шлюзом</div>
+    </div>
+    <div style="position: absolute; left: 920px; top: 250px; width: 320px; box-sizing: border-box; background: #EAF6EF; border: 1px solid #B9DFC9; border-radius: 12px; padding: 12px 16px">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 14px">registry.npmjs.org</div>
+      <div style="font-size: 12px; color: #2E6B4C">разрешено · 31 запрос</div>
+    </div>
+    <div style="position: absolute; left: 920px; top: 430px; width: 320px; box-sizing: border-box; background: #FDF0EC; border: 1px solid #EFC4B8; border-radius: 12px; padding: 12px 16px">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 14px">paste.example.net</div>
+      <div style="font-size: 12px; color: #9B3B26">заблокировано · 6 попыток</div>
+    </div>
+    <div style="position: absolute; left: 920px; top: 550px; width: 320px; box-sizing: border-box; background: #FDF0EC; border: 1px solid #EFC4B8; border-radius: 12px; padding: 12px 16px">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 14px">10.0.12.5 (внутр. сеть)</div>
+      <div style="font-size: 12px; color: #9B3B26">заблокировано · 2 попытки</div>
+    </div>
+
+    <div style="position: absolute; left: 520px; top: 640px; width: 380px; font-size: 13px; color: #55657C; display: flex; flex-direction: column; gap: 6px">
+      <span><span style="color: #3E9E6E; font-weight: 700">———</span> разрешено   <span style="color: #C0563F; font-weight: 700">- - -</span> заблокировано</span>
+      <span>Нажмите на линию, чтобы увидеть запросы и правило.</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

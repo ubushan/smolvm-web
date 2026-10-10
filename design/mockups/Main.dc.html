@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Песочницы — одна кнопка</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#2849B0}a:hover{color:#1B347F}
+</style>
+</helmet>
+<div style="width: 1280px; height: 820px; box-sizing: border-box; background: #F4F2EE; color: #1A2130; font-family: 'Manrope', system-ui, sans-serif; display: flex; flex-direction: column">
+  <header style="height: 60px; box-sizing: border-box; padding: 0 32px; display: flex; align-items: center; gap: 28px; border-bottom: 1px solid #E2DED6; background: #FBFAF7">
+    <div style="font-weight: 700; font-size: 17px">smolvm web</div>
+    <nav style="display: flex; gap: 22px; font-size: 14px; color: #5A6273">
+      <a href="#" style="color: #1A2130; text-decoration: none; font-weight: 600">Рабочие места</a>
+      <a href="#" style="color: #5A6273; text-decoration: none">Машины</a>
+      <a href="#" style="color: #5A6273; text-decoration: none">Сеть</a>
+      <a href="#" style="color: #5A6273; text-decoration: none">Аудит</a>
+    </nav>
+    <div style="flex: 1"></div>
+    <a href="#" style="font-size: 14px; color: #5A6273; text-decoration: none">Настройки</a>
+  </header>
+
+  <main style="flex: 1; display: flex; flex-direction: column; align-items: center; padding: 56px 32px 32px; gap: 28px">
+    <section style="width: 640px; background: #FFFFFF; border: 1px solid #E2DED6; border-radius: 20px; padding: 36px; box-sizing: border-box; display: flex; flex-direction: column; gap: 24px; box-shadow: 0 1px 2px rgba(26,33,48,.04), 0 8px 24px rgba(26,33,48,.06)">
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <h1 style="margin: 0; font-size: 26px; font-weight: 700">Новая песочница</h1>
+        <p style="margin: 0; font-size: 15px; color: #5A6273">Чистая машина за несколько секунд. Настройки агента подтянутся из профиля.</p>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 10px">
+        <div style="font-size: 13px; font-weight: 600; color: #5A6273">Агент</div>
+        <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px">
+          <button style="height: 64px; border-radius: 12px; border: 2px solid #2F5BD3; background: #EEF2FC; font: 600 14px 'Manrope', sans-serif; color: #1A2130; cursor: pointer">Claude Code</button>
+          <button style="height: 64px; border-radius: 12px; border: 1px solid #E2DED6; background: #FFFFFF; font: 500 14px 'Manrope', sans-serif; color: #1A2130; cursor: pointer">Hermes</button>
+          <button style="height: 64px; border-radius: 12px; border: 1px solid #E2DED6; background: #FFFFFF; font: 500 14px 'Manrope', sans-serif; color: #1A2130; cursor: pointer">OpenCode</button>
+          <button style="height: 64px; border-radius: 12px; border: 1px solid #E2DED6; background: #FFFFFF; font: 500 14px 'Manrope', sans-serif; color: #1A2130; cursor: pointer">Codex</button>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <label for="prof" style="font-size: 13px; font-weight: 600; color: #5A6273">Профиль</label>
+        <div id="prof" style="height: 48px; border: 1px solid #D5D0C6; border-radius: 10px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; font-size: 15px">
+          <span>Бэкенд-разработка</span>
+          <span style="font-size: 13px; color: #5A6273">3 MCP · 6 skills · память</span>
+        </div>
+      </div>
+
+      <button style="height: 52px; border-radius: 12px; border: 0; background: #2F5BD3; color: #FFFFFF; font: 600 16px 'Manrope', sans-serif; cursor: pointer">Открыть песочницу</button>
+      <div style="font-size: 13px; color: #5A6273; text-align: center">Сеть: только разрешённое · закроется сама через 8 ч · <a href="#">изменить</a></div>
+    </section>
+
+    <section style="width: 640px; display: flex; flex-direction: column; gap: 10px">
+      <div style="font-size: 13px; font-weight: 600; color: #5A6273">Открыто сейчас</div>
+      <div style="background: #FFFFFF; border: 1px solid #E2DED6; border-radius: 14px; padding: 14px 18px; display: flex; align-items: center; gap: 14px">
+        <span style="width: 10px; height: 10px; border-radius: 50%; background: #2E8B57" aria-hidden="true"></span>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 2px">
+          <div style="font-weight: 600; font-size: 15px">Claude Code · Бэкенд-разработка</div>
+          <div style="font-size: 13px; color: #5A6273">работает 42 мин</div>
+        </div>
+        <a href="#" style="height: 40px; padding: 0 16px; display: flex; align-items: center; border-radius: 10px; background: #EEF2FC; color: #2849B0; font-weight: 600; font-size: 14px; text-decoration: none">Перейти</a>
+        <button style="height: 40px; padding: 0 16px; border-radius: 10px; border: 1px solid #D5D0C6; background: #FFFFFF; font: 600 14px 'Manrope', sans-serif; color: #1A2130; cursor: pointer">Закрыть</button>
+      </div>
+      <div style="background: #FDF3EA; border: 1px solid #F0D3B8; border-radius: 14px; padding: 14px 18px; display: flex; align-items: center; gap: 14px">
+        <div style="flex: 1; font-size: 14px; color: #6B3A12"><b>2 изменения профиля</b> ждут проверки: новый skill и запись в памяти</div>
+        <a href="#" style="font-weight: 600; font-size: 14px; color: #8A4614">Проверить</a>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

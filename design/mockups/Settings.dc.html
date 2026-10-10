@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Настройки</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#2849B0}a:hover{color:#1B347F}
+</style>
+</helmet>
+<div style="width: 1280px; height: 820px; box-sizing: border-box; background: #F4F2EE; color: #1A2130; font-family: 'Manrope', system-ui, sans-serif; display: flex; flex-direction: column">
+  <header style="height: 60px; box-sizing: border-box; padding: 0 32px; display: flex; align-items: center; gap: 28px; border-bottom: 1px solid #E2DED6; background: #FBFAF7">
+    <div style="font-weight: 700; font-size: 17px">smolvm web</div>
+    <nav style="display: flex; gap: 22px; font-size: 14px">
+      <a href="#" style="color: #5A6273; text-decoration: none">Рабочие места</a>
+      <a href="#" style="color: #5A6273; text-decoration: none">Машины</a>
+      <a href="#" style="color: #5A6273; text-decoration: none">Сеть</a>
+      <a href="#" style="color: #5A6273; text-decoration: none">Аудит</a>
+    </nav>
+    <div style="flex: 1"></div>
+    <a href="#" style="font-size: 14px; color: #1A2130; font-weight: 600; text-decoration: none">Настройки</a>
+  </header>
+
+  <div style="flex: 1; display: flex; min-height: 0">
+    <aside style="width: 260px; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid #E2DED6; background: #FBFAF7; display: flex; flex-direction: column; gap: 4px">
+      <a href="#" style="padding: 10px 12px; border-radius: 10px; background: #EEF2FC; color: #1A2130; font-weight: 600; font-size: 14px; text-decoration: none">Политика по умолчанию</a>
+      <a href="#" style="padding: 10px 12px; border-radius: 10px; color: #3E4656; font-size: 14px; text-decoration: none">Секреты</a>
+      <a href="#" style="padding: 10px 12px; border-radius: 10px; color: #3E4656; font-size: 14px; text-decoration: none">Прокси и сертификаты</a>
+      <a href="#" style="padding: 10px 12px; border-radius: 10px; color: #3E4656; font-size: 14px; text-decoration: none">Репозитории</a>
+      <a href="#" style="padding: 10px 12px; border-radius: 10px; color: #3E4656; font-size: 14px; text-decoration: none">Аудит и SIEM</a>
+      <a href="#" style="padding: 10px 12px; border-radius: 10px; color: #3E4656; font-size: 14px; text-decoration: none">Виртуализация</a>
+    </aside>
+
+    <section style="flex: 1; padding: 28px 40px; display: flex; flex-direction: column; gap: 18px; max-width: 860px">
+      <div>
+        <h1 style="margin: 0; font-size: 26px; font-weight: 700">Политика по умолчанию</h1>
+        <div style="font-size: 14px; color: #5A6273">Что получает каждая новая песочница. Можно изменить для отдельного рабочего места.</div>
+      </div>
+
+      <div style="background: #FFFFFF; border: 1px solid #E2DED6; border-radius: 16px; overflow: hidden">
+        <div style="padding: 18px 22px; display: flex; align-items: center; gap: 16px">
+          <div style="flex: 1"><b style="font-size: 15px">Сеть</b><div style="font-size: 13px; color: #5A6273">Новые адреса — спрашивать меня</div></div>
+          <div style="display: flex; gap: 4px; background: #F1EFEA; border-radius: 10px; padding: 4px">
+            <span style="padding: 6px 12px; border-radius: 8px; font-size: 13px; color: #5A6273">Блокировать</span>
+            <span style="padding: 6px 12px; border-radius: 8px; font-size: 13px; background: #FFFFFF; font-weight: 600">Спрашивать</span>
+          </div>
+        </div>
+        <div style="padding: 18px 22px; display: flex; align-items: center; gap: 16px; border-top: 1px solid #EEEAE3">
+          <div style="flex: 1"><b style="font-size: 15px">Срок жизни песочницы</b><div style="font-size: 13px; color: #5A6273">Потом закрывается, изменения профиля — на проверку</div></div>
+          <div style="height: 40px; box-sizing: border-box; border: 1px solid #D5D0C6; border-radius: 10px; padding: 0 14px; display: flex; align-items: center; font-size: 14px; min-width: 120px">8 часов</div>
+        </div>
+        <div style="padding: 18px 22px; display: flex; align-items: center; gap: 16px; border-top: 1px solid #EEEAE3">
+          <div style="flex: 1"><b style="font-size: 15px">Закрывать при простое</b><div style="font-size: 13px; color: #5A6273">Если агент не делает запросов</div></div>
+          <div style="height: 40px; box-sizing: border-box; border: 1px solid #D5D0C6; border-radius: 10px; padding: 0 14px; display: flex; align-items: center; font-size: 14px; min-width: 120px">60 минут</div>
+        </div>
+        <div style="padding: 18px 22px; display: flex; align-items: center; gap: 16px; border-top: 1px solid #EEEAE3">
+          <div style="flex: 1"><b style="font-size: 15px">Подтверждать опасные вызовы API</b><div style="font-size: 13px; color: #5A6273">DELETE, merge, релизы, деплои</div></div>
+          <span style="width: 48px; height: 28px; border-radius: 999px; background: #2F5BD3; display: flex; align-items: center; justify-content: flex-end; padding: 3px; box-sizing: border-box" role="img" aria-label="Включено"><span style="width: 22px; height: 22px; border-radius: 50%; background: #FFFFFF"></span></span>
+        </div>
+        <div style="padding: 18px 22px; display: flex; align-items: center; gap: 16px; border-top: 1px solid #EEEAE3">
+          <div style="flex: 1"><b style="font-size: 15px">Лимит запросов к API в день</b><div style="font-size: 13px; color: #5A6273">Сверх лимита агент получает отказ</div></div>
+          <div style="height: 40px; box-sizing: border-box; border: 1px solid #D5D0C6; border-radius: 10px; padding: 0 14px; display: flex; align-items: center; font-size: 14px; min-width: 120px">2 000</div>
+        </div>
+        <div style="padding: 18px 22px; display: flex; align-items: center; gap: 16px; border-top: 1px solid #EEEAE3">
+          <div style="flex: 1"><b style="font-size: 15px">Проверять изменения профиля</b><div style="font-size: 13px; color: #5A6273">Skills, MCP и хуки — всегда, даже если выключено</div></div>
+          <span style="width: 48px; height: 28px; border-radius: 999px; background: #2F5BD3; display: flex; align-items: center; justify-content: flex-end; padding: 3px; box-sizing: border-box" role="img" aria-label="Включено"><span style="width: 22px; height: 22px; border-radius: 50%; background: #FFFFFF"></span></span>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 12px">
+        <button style="height: 44px; padding: 0 18px; border-radius: 10px; border: 0; background: #2F5BD3; color: #FFFFFF; font: 600 14px 'Manrope', sans-serif; cursor: pointer">Сохранить</button>
+        <button style="height: 44px; padding: 0 18px; border-radius: 10px; border: 1px solid #D5D0C6; background: #FFFFFF; font: 600 14px 'Manrope', sans-serif; color: #1A2130; cursor: pointer">Сбросить</button>
+      </div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

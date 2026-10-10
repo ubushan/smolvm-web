@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Сеть</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#2849B0}a:hover{color:#1B347F}
+</style>
+</helmet>
+<div style="width: 1280px; height: 820px; box-sizing: border-box; background: #F4F2EE; color: #1A2130; font-family: 'Manrope', system-ui, sans-serif; display: flex; flex-direction: column">
+  <header style="height: 60px; box-sizing: border-box; padding: 0 32px; display: flex; align-items: center; gap: 28px; border-bottom: 1px solid #E2DED6; background: #FBFAF7">
+    <div style="font-weight: 700; font-size: 17px">smolvm web</div>
+    <nav style="display: flex; gap: 22px; font-size: 14px">
+      <a href="#" style="color: #5A6273; text-decoration: none">Рабочие места</a>
+      <a href="#" style="color: #5A6273; text-decoration: none">Машины</a>
+      <a href="#" style="color: #1A2130; text-decoration: none; font-weight: 600">Сеть</a>
+      <a href="#" style="color: #5A6273; text-decoration: none">Аудит</a>
+    </nav>
+    <div style="flex: 1"></div>
+    <a href="#" style="font-size: 14px; color: #5A6273; text-decoration: none">Настройки</a>
+  </header>
+
+  <main style="flex: 1; padding: 28px 48px; display: flex; flex-direction: column; gap: 20px">
+    <div style="display: flex; align-items: flex-end; gap: 16px">
+      <div style="flex: 1">
+        <h1 style="margin: 0; font-size: 26px; font-weight: 700">Сеть</h1>
+        <div style="font-size: 14px; color: #5A6273">Куда машинам можно ходить. Всё остальное блокируется.</div>
+      </div>
+      <a href="#" style="font-size: 14px; font-weight: 600">Списки правил</a>
+      <a href="#" style="font-size: 14px; font-weight: 600">Журнал</a>
+    </div>
+
+    <div style="background: #FDF3EA; border: 1px solid #F0D3B8; border-radius: 14px; padding: 16px 20px; display: flex; align-items: center; gap: 16px">
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 2px">
+        <div style="font-size: 14px; color: #6B3A12"><b>sbx-backend-3f2a</b> хочет подключиться к <span style="font-family: 'JetBrains Mono', monospace">files.pythonhosted.org:443</span></div>
+        <div style="font-size: 12px; color: #8A4614">ждёт ответа · 1:34</div>
+      </div>
+      <button style="height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid #E8C4A2; background: #FFFFFF; font: 600 14px 'Manrope', sans-serif; color: #6B3A12; cursor: pointer">На 10 минут</button>
+      <button style="height: 40px; padding: 0 14px; border-radius: 10px; border: 0; background: #1A2130; color: #FFFFFF; font: 600 14px 'Manrope', sans-serif; cursor: pointer">Всегда</button>
+      <button style="height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid #E3B3A8; background: #FFFFFF; color: #A1321C; font: 600 14px 'Manrope', sans-serif; cursor: pointer">Запретить</button>
+    </div>
+
+    <div style="background: #FFFFFF; border: 1px solid #E2DED6; border-radius: 16px; overflow: hidden">
+      <div style="display: grid; grid-template-columns: 260px 1fr 300px 160px; padding: 12px 20px; font-size: 12px; font-weight: 600; color: #5A6273; text-transform: uppercase; letter-spacing: .5px; background: #F8F6F2">
+        <div>Машина</div><div>Режим</div><div>Разрешено</div><div>Заблокировано</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 260px 1fr 300px 160px; padding: 16px 20px; align-items: center; border-top: 1px solid #EEEAE3; font-size: 14px">
+        <b>dev-base</b>
+        <div style="display: flex; gap: 4px; background: #F1EFEA; border-radius: 10px; padding: 4px; width: max-content">
+          <span style="padding: 6px 12px; border-radius: 8px; color: #5A6273">Без ограничений</span>
+          <span style="padding: 6px 12px; border-radius: 8px; background: #FFFFFF; font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08)">Только разрешённое</span>
+          <span style="padding: 6px 12px; border-radius: 8px; color: #5A6273">Запись адресов</span>
+        </div>
+        <div style="color: #3E4656">GitHub, npm, Anthropic +2</div>
+        <div style="color: #5A6273">0</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 260px 1fr 300px 160px; padding: 16px 20px; align-items: center; border-top: 1px solid #EEEAE3; font-size: 14px">
+        <b>sbx-backend-3f2a</b>
+        <div style="display: flex; gap: 4px; background: #F1EFEA; border-radius: 10px; padding: 4px; width: max-content">
+          <span style="padding: 6px 12px; border-radius: 8px; color: #5A6273">Без ограничений</span>
+          <span style="padding: 6px 12px; border-radius: 8px; background: #FFFFFF; font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08)">Только разрешённое</span>
+          <span style="padding: 6px 12px; border-radius: 8px; color: #5A6273">Запись адресов</span>
+        </div>
+        <div style="color: #3E4656">как в шаблоне · спрашивать о новых</div>
+        <div style="color: #A1321C; font-weight: 600">3 · <a href="#" style="color: #A1321C">разобрать</a></div>
+      </div>
+      <div style="display: grid; grid-template-columns: 260px 1fr 300px 160px; padding: 16px 20px; align-items: center; border-top: 1px solid #EEEAE3; font-size: 14px">
+        <b>research-hermes</b>
+        <div style="display: flex; gap: 4px; background: #F1EFEA; border-radius: 10px; padding: 4px; width: max-content">
+          <span style="padding: 6px 12px; border-radius: 8px; color: #5A6273">Без ограничений</span>
+          <span style="padding: 6px 12px; border-radius: 8px; color: #5A6273">Только разрешённое</span>
+          <span style="padding: 6px 12px; border-radius: 8px; background: #FFFFFF; font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08)">Запись адресов</span>
+        </div>
+        <div style="color: #3E4656">записано 37 адресов · <a href="#">сделать правилами</a></div>
+        <div style="color: #5A6273">—</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 260px 1fr 300px 160px; padding: 16px 20px; align-items: center; border-top: 1px solid #EEEAE3; font-size: 14px; background: #FCF1EE">
+        <b>tmp-scraper</b>
+        <div style="color: #A1321C; font-weight: 600">Изолирована — сеть закрыта</div>
+        <div style="color: #5A6273">—</div>
+        <div><a href="#" style="color: #A1321C">Снять изоляцию</a></div>
+      </div>
+    </div>
+
+    <div style="font-size: 13px; color: #5A6273">Адреса этого компьютера и внутренней сети открываются только явным правилом — даже в режиме «Без ограничений».</div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
