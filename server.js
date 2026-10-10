@@ -29,7 +29,7 @@ const agents = require('./lib/agents');
 const agentproxy = require('./lib/agentproxy');
 const smolfile = require('./lib/smolfile');
 const review = require('./lib/review');
-const snapshots = require('./lib/snapshots');
+const sandbox = require('./lib/sandbox');
 const audit = require('./lib/audit');
 const egress = require('./lib/egress');
 const winhost = require('./lib/winhost');
@@ -165,21 +165,23 @@ const AUDIT_LABELS = [
   [/^POST \/ui\/machines\/[^/]+\/review\/[\w.-]+\/reject$/, 'ревью: отклонено'],
   [/^POST \/ui\/machines\/[^/]+\/review\/[\w.-]+\/(pull|copy)$/, 'рабочая копия: обновление с хоста'],
   [/^DELETE \/ui\/machines\/[^/]+\/review\//, 'рабочая копия: удаление'],
-  [/^POST \/ui\/machines\/[^/]+\/snapshots$/, 'снимок'],
-  [/^POST \/ui\/machines\/[^/]+\/snapshots\/[\w.-]+\/rollback$/, 'откат к снимку'],
-  [/^DELETE \/ui\/machines\/[^/]+\/snapshots\//, 'удаление снимка'],
-  [/^PUT \/ui\/machines\/[^/]+\/snapshots\/settings$/, 'снимки: настройки'],
   [/^POST \/ui\/egress\/machines\/[^/]+\/learn\/finish$/, 'обучение: список создан'],
   [/^PUT \/ui\/machines\/[^/]+\/agents\/vendor$/, 'сервер вендора: разрешён/отозван'],
   [/^PUT \/ui\/vault\//, 'секрет: сохранён'],
   [/^DELETE \/ui\/vault\//, 'секрет: удалён'],
   [/^PUT \/ui\/machines\/[^/]+\/secrets$/, 'секреты машины'],
-  [/^(PUT|POST|DELETE) \/ui\/egress/, 'доступ в сеть: изменение'],
+  [/^(PUT|POST|DELETE) \/ui\/egress/, 'сеть: изменение'],
   [/^(PUT|POST|DELETE) \/ui\/dirs/, 'директории: изменение'],
   [/^PUT \/ui\/machines\/[^/]+\/limits$/, 'лимиты машины'],
+  [/^POST \/ui\/machines\/[^/]+\/folders$/, 'доступ к папке: выдан'],
+  [/^DELETE \/ui\/machines\/[^/]+\/folders\//, 'доступ к папке: отозван'],
   [/^PUT \/ui\/settings$/, 'настройки прокси/сертификатов'],
   [/^POST \/ui\/host\/repair-rootfs$/, 'починка rootfs smolvm (Windows)'],
   [/^PUT \/ui\/audit\/settings$/, 'настройки аудита'],
+  [/^(PUT|POST|DELETE) \/ui\/sandbox\/profiles/, 'песочницы: профиль агента'],
+  [/^POST \/ui\/sandbox\/pending\/[^/]+\/apply$/, 'песочницы: изменения профиля применены'],
+  [/^DELETE \/ui\/sandbox\/pending\//, 'песочницы: изменения профиля отклонены'],
+  [/^DELETE \/ui\/sandbox\/templates\//, 'песочницы: шаблон удалён'],
 ];
 
 function auditRequest(req, res, url) {
@@ -220,7 +222,7 @@ function explainPullForbidden(name, message) {
   const filter = egress.pullAllowed(name, host);
   let hint;
   if (filter === false) {
-    hint = `Его заблокировал фильтр «Доступ в сеть» smolvm-web: ${host} нет среди реестров образов. Добавьте его на странице «Доступ в сеть» → «Настройки» → «Реестры образов» (или кнопкой «Разрешить» на странице «Журнал») и запустите машину снова.`;
+    hint = `Его заблокировал фильтр «Сеть» smolvm-web: ${host} нет среди реестров образов. Добавьте его в «Сеть» → «Списки» → «Реестры образов» (или кнопкой «Разрешить» во вкладке «Журнал») и запустите машину снова.`;
   } else {
     hint = `Его запретил корпоративный прокси (политика доступа к ${host}). Попросите ИТ открыть ${host} (CDN Docker Hub) или возьмите образ из зеркала — в поле «Образ» при создании машины: mirror.gcr.io/library/<образ> или public.ecr.aws/docker/library/<образ>, либо корпоративный Nexus/Artifactory.`;
   }
@@ -273,16 +275,12 @@ async function startMachine(name, opts) {
 function preparing() {
   const out = {};
   for (const n of starting) out[n] = { label: 'запуск', step: 'запуск машины и настройка' };
-  for (const j of snapshots.running()) out[j.name] = { label: j.step === 'откат' ? 'откат' : 'снимок', step: j.step };
   for (const j of review.running()) out[j.name] = { label: 'подготовка', step: j.step };
   return out;
 }
 
 async function startMachineInner(name, { apiPath, body = {}, branchable = false }) {
   const fail = (status, error, code) => Object.assign(new Error(error), { status, code });
-  // Agent machines and machines with snapshots enabled start branchable, so a
-  // snapshot (smolvm checkpoint) can be taken at any time (required on macOS).
-  if (!branchable && (agents.get(name) || snapshots.wantsBranchable(name))) branchable = true;
   if (branchable && !/[?&](branchable|forkable)=/.test(apiPath)) apiPath += `${apiPath.includes('?') ? '&' : '?'}branchable=true`;
   let prepared;
   try { prepared = await mc.prepareStart(name); } catch (e) { throw fail(400, `подготовка к запуску: ${e.message}`, 'PREPARE_FAILED'); }
@@ -308,7 +306,6 @@ async function startMachineInner(name, { apiPath, body = {}, branchable = false 
     if (e.body) throw e;
     throw fail(e.status || 500, `${viaCli ? 'запуск через smolvm CLI' : 'запуск'}: ${e.message}`, 'START_FAILED');
   }
-  if (branchable) snapshots.markBranchableRun(name, info.pid);
   if (plan.warnings.length) info._webWarnings = plan.warnings;
   if (prepared.length) info._webPrepared = prepared;
   try {
@@ -392,6 +389,39 @@ setInterval(async () => {
   }
 }, 30000).unref();
 
+// Host folders for the path field of «Дать доступ к папке»: subfolders of what was typed.
+const norm = (p) => (process.platform === 'win32' || process.platform === 'darwin' ? String(p).toLowerCase() : String(p));
+function suggestFolders(q) {
+  const home = require('os').homedir();
+  let input = String(q || '').trim();
+  if (!input) input = home + path.sep;
+  if (input.startsWith('~')) input = home + input.slice(1);
+  if (!path.isAbsolute(input)) return [];
+  const dir = /[\\/]$/.test(input) ? input : path.dirname(input);
+  const prefix = /[\\/]$/.test(input) ? '' : path.basename(input).toLowerCase();
+  let entries = [];
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
+  return entries.filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name.toLowerCase().startsWith(prefix))
+    .map((e) => path.join(dir, e.name)).sort().slice(0, 30);
+}
+
+// Everything smolvm-web keeps about a machine that is gone.
+async function forgetMachine(name) {
+  cfg.forgetMachine(name); await vault.forgetMachine(name); egress.forgetMachine(name); dirs.forgetMachine(name); agents.forget(name);
+  agentproxy.closeFor(`${name}/`); smolfile.forget(name); review.forget(name); sandbox.forget(name);
+  limits.forget(name); isolation.set(name, null);
+}
+async function deleteMachine(name) {
+  const r = await up.request('DELETE', `/api/v1/machines/${encodeURIComponent(name)}?force=true`);
+  if (r.status !== 200 && r.status !== 404) throw new Error(`удаление машины ${name}: ${r.data?.error || `HTTP ${r.status}`}`);
+  await forgetMachine(name);
+}
+// Hooks the sandboxes need from the server.
+const sandboxHooks = {
+  startMachine: (name, o = {}) => startMachine(name, { apiPath: `/api/v1/machines/${encodeURIComponent(name)}/start`, branchable: !!o.branchable }),
+  deleteMachine,
+};
+
 async function machineState(name) {
   const r = await up.request('GET', `/api/v1/machines/${encodeURIComponent(name)}`);
   return r.status === 200 ? r.data.state : null;
@@ -408,6 +438,11 @@ const ROUTES = [
     const secretNames = Array.isArray(body._webSecrets) ? body._webSecrets.map(String) : [];
     const eg = body._webEgress && typeof body._webEgress === 'object' ? body._webEgress : null;
     const dirIds = Array.isArray(body._webDirs) ? body._webDirs.map(String) : [];
+    // «Папки» of the create dialog: mounted (ro/rw) or review copies made at first start.
+    const folderList = (Array.isArray(body._webFolders) ? body._webFolders : []).map((f) => ({ hostPath: String(f?.hostPath || ''), mode: String(f?.mode || ''), guestPath: f?.guestPath ? String(f.guestPath) : undefined }));
+    const mountFolders = folderList.filter((f) => f.mode === 'ro' || f.mode === 'rw').map((f) => ({ ...f, level: f.mode }));
+    const reviewFolders = folderList.filter((f) => f.mode === 'review');
+    delete body._webFolders;
     const profileId = typeof body._webProfile === 'string' && agents.PROFILES[body._webProfile] ? body._webProfile : null;
     const sfMeta = body._webSmolfile && typeof body._webSmolfile === 'object' ? body._webSmolfile : null;
     delete body._webSecrets; delete body._webEgress; delete body._webDirs; delete body._webProfile; delete body._webSmolfile;
@@ -429,7 +464,7 @@ const ROUTES = [
     }
     try { dirs.checkFreeMounts(body.mounts); } catch (e) { return sendJson(res, 400, { error: e.message, code: 'BAD_MOUNT' }); }
 
-    if (secretNames.length || eg?.enabled || dirIds.length) {
+    if (secretNames.length || eg?.enabled || dirIds.length || folderList.length) {
       if (!body.name) return sendJson(res, 400, { error: 'Для машины с секретами, директориями или egress-фильтром укажите имя', code: 'BAD_REQUEST' });
       const exists = await up.request('GET', `/api/v1/machines/${encodeURIComponent(body.name)}`);
       if (exists.status === 200) return sendJson(res, 409, { error: `Машина ${body.name} уже существует`, code: 'CONFLICT' });
@@ -438,7 +473,7 @@ const ROUTES = [
       if (profileId) agents.forget(body.name);
       if (secretNames.length) await vault.forgetMachine(body.name);
       if (eg?.enabled) egress.forgetMachine(body.name);
-      if (dirIds.length) dirs.forgetMachine(body.name);
+      if (dirIds.length || mountFolders.length) dirs.forgetMachine(body.name);
     };
 
     if (eg?.enabled) {
@@ -476,8 +511,8 @@ const ROUTES = [
       catch (e) { await cleanup(); return sendJson(res, 400, { error: `сертификаты для скачивания образа: ${e.message}`, code: 'BAD_CA' }); }
     }
     let dirMounts = [];
-    if (dirIds.length) {
-      try { dirMounts = dirs.attachAtCreate(body.name, dirIds); } catch (e) { await cleanup(); return sendJson(res, 400, { error: e.message, code: 'BAD_DIR' }); }
+    if (dirIds.length || mountFolders.length) {
+      try { dirMounts = dirs.attachFoldersAtCreate(body.name, mountFolders, dirIds); } catch (e) { await cleanup(); return sendJson(res, 400, { error: e.message, code: 'BAD_DIR' }); }
       body.mounts = [...(Array.isArray(body.mounts) ? body.mounts : []), ...dirMounts];
     }
     if (secretNames.length) {
@@ -488,7 +523,7 @@ const ROUTES = [
       // it — under the strict egress floor, which walls off the host and the LAN:
       // the egress filter, the corporate proxy and the secret gateway all live there.
       const viaHost = [
-        eg?.enabled && 'фильтр «Доступ в сеть»',
+        eg?.enabled && 'фильтр «Сеть»',
         useProxy && (await mc.effectiveProxy(null).catch(() => null)) && 'корпоративный прокси',
         bound.some((x) => x.mode === 'gateway') && 'секреты в режиме «Шлюз»',
       ].filter(Boolean);
@@ -516,9 +551,8 @@ const ROUTES = [
       body.env = px.mergeEnv(body.env, await mc.secretEnv(body.name));
       if (bound.some((x) => x.mode === 'gateway')) await gateway.start();
     }
-    // Pin the network backend smolvm serve would pick anyway: a checkpoint of a
-    // machine with an implicit backend restores with a different network device
-    // (TSI instead of virtio-net) and fails to boot.
+    // Pin the network backend smolvm serve would pick anyway, so the machine
+    // behaves the same whether it is started through the API or the CLI.
     if (body.network && !body.networkBackend && !body.from && !body.registryRef) body.networkBackend = 'virtio-net';
     url.searchParams.delete('webProxy');
     req.url = url.pathname + (url.search || '');
@@ -537,6 +571,12 @@ const ROUTES = [
       smolfile.forget(r.data.name);
       if (sfMeta) smolfile.remember(r.data.name, { init: sfMeta.init, env: sfMeta.env, workdir: body.workdir, baseDir: sfMeta.baseDir });
     } else await cleanup();
+    if (r.status === 200 && r.data?.name && reviewFolders.length) {
+      review.forget(r.data.name);
+      const errors = [];
+      for (const f of reviewFolders) { try { await review.add(r.data.name, { hostPath: f.hostPath, guestPath: f.guestPath || `/work/${path.basename(f.hostPath)}` }); } catch (e) { errors.push(`${f.hostPath}: ${e.message}`); } }
+      if (errors.length) r.data._webFolderErrors = errors;
+    }
     if (r.status !== 200 && profileId && !secretNames.length && !eg?.enabled && !dirIds.length) agents.forget(body.name);
     sendJson(res, r.status, r.data);
   }],
@@ -601,7 +641,7 @@ const ROUTES = [
   ['DELETE', new RegExp(`^${M}$`), async (req, res, m) => {
     const name = decodeURIComponent(m[1]);
     const r = await up.request('DELETE', req.url);
-    if (r.status === 200) { cfg.forgetMachine(name); await vault.forgetMachine(name); egress.forgetMachine(name); dirs.forgetMachine(name); agents.forget(name); agentproxy.closeFor(`${name}/`); smolfile.forget(name); review.forget(name); snapshots.forget(name); limits.forget(name); isolation.set(name, null); }
+    if (r.status === 200) await forgetMachine(name);
     sendJson(res, r.status, r.data);
   }],
 
@@ -628,7 +668,6 @@ function publicSettings() {
 
 const AG = '^/ui/machines/([^/]+)/agents';
 const RV = '^/ui/machines/([^/]+)/review';
-const SN = '^/ui/machines/([^/]+)/snapshots';
 const err = (res, e) => sendJson(res, e.status || 500, { error: e.message });
 const UI = [
   // ---- audit ----
@@ -683,32 +722,77 @@ const UI = [
       sendJson(res, 200, r);
     } catch (e) { err(res, e); }
   }],
-  // ---- snapshots ----
-  ['GET', new RegExp(`${SN}$`), async (req, res, m) => sendJson(res, 200, await snapshots.status(decodeURIComponent(m[1])))],
-  ['POST', new RegExp(`${SN}$`), async (req, res, m) => {
-    const body = await readJson(req);
-    try { sendJson(res, 200, await snapshots.create(decodeURIComponent(m[1]), { label: body.label, reason: 'вручную' })); } catch (e) { err(res, e); }
-  }],
-  ['PUT', new RegExp(`${SN}/settings$`), async (req, res, m) => {
-    const body = await readJson(req);
-    if (typeof body.branchable === 'boolean') snapshots.setWantsBranchable(decodeURIComponent(m[1]), body.branchable);
-    if (body.keep) snapshots.setKeep(body.keep);
-    sendJson(res, 200, await snapshots.status(decodeURIComponent(m[1])));
-  }],
-  ['DELETE', new RegExp(`${SN}/([\\w.-]+)$`), (req, res, m) => {
-    try { snapshots.remove(decodeURIComponent(m[1]), m[2]); sendJson(res, 200, { removed: true }); } catch (e) { err(res, e); }
-  }],
-  ['POST', new RegExp(`${SN}/([\\w.-]+)/rollback$`), async (req, res, m) => {
-    const name = decodeURIComponent(m[1]);
-    try {
-      sendJson(res, 200, await snapshots.rollback(name, m[2], (n) => startMachine(n, { apiPath: `/api/v1/machines/${encodeURIComponent(n)}/start`, branchable: true })));
-    } catch (e) { err(res, e); }
-  }],
   ['GET', /^\/ui\/preparing$/, (req, res) => {
     const out = preparing();
     for (const j of smolfile.runningInits()) out[j.name] = { label: 'подготовка', step: j.step };
     for (const j of agents.runningJobs()) out[j.name] = { label: 'подготовка', step: `установка агентов: ${j.step}` };
+    for (const j of sandbox.templateJobs()) out[j.name] = { label: 'шаблон', step: `шаблон песочницы: ${j.step}` };
+    for (const j of sandbox.opening()) out[j.name] = { label: 'песочница', step: j.step };
     sendJson(res, 200, out);
+  }],
+  ['GET', /^\/ui\/machines\/marks$/, (req, res) => {
+    const out = agents.marks();
+    for (const n of Object.keys(out)) if (sandbox.isSandbox(n)) out[n].sandbox = true;
+    sendJson(res, 200, out);
+  }],
+
+  // ---- sandboxes ----
+  ['GET', /^\/ui\/sandbox$/, async (req, res) => sendJson(res, 200, await sandbox.overview())],
+  ['POST', /^\/ui\/sandbox\/templates$/, async (req, res) => {
+    const b = await readJson(req);
+    res.auditDone = true;
+    try { const r = await sandbox.createTemplate({ source: String(b.source || ''), title: b.title, id: b.id }, sandboxHooks.startMachine); sendJson(res, 200, r); } catch (e) { err(res, e); }
+  }],
+  ['DELETE', /^\/ui\/sandbox\/templates\/([\w-]+)$/, (req, res, m) => {
+    try { sandbox.deleteTemplate(m[1]); sendJson(res, 200, { ok: true }); } catch (e) { err(res, e); }
+  }],
+  ['POST', /^\/ui\/sandbox\/open$/, async (req, res) => {
+    const b = await readJson(req);
+    res.auditDone = true;
+    try { sendJson(res, 200, await sandbox.open({ template: String(b.template || ''), profile: b.profile ? String(b.profile) : null, agent: b.agent ? String(b.agent) : null }, sandboxHooks)); } catch (e) { err(res, e); }
+  }],
+  ['POST', /^\/ui\/sandbox\/machines\/([^/]+)\/close$/, async (req, res, m) => {
+    const b = await readJson(req);
+    res.auditDone = true;
+    try { sendJson(res, 200, await sandbox.close(decodeURIComponent(m[1]), { save: b.save !== false }, sandboxHooks)); } catch (e) { err(res, e); }
+  }],
+  ['POST', /^\/ui\/sandbox\/profiles$/, async (req, res) => {
+    const b = await readJson(req);
+    try { sendJson(res, 200, await sandbox.createProfile({ name: b.name, from: b.from ? String(b.from) : null })); } catch (e) { err(res, e); }
+  }],
+  ['PUT', /^\/ui\/sandbox\/profiles\/([\w-]+)$/, async (req, res, m) => {
+    const b = await readJson(req);
+    try { sendJson(res, 200, sandbox.updateProfile(m[1], b)); } catch (e) { err(res, e); }
+  }],
+  ['DELETE', /^\/ui\/sandbox\/profiles\/([\w-]+)$/, (req, res, m) => {
+    try { sandbox.deleteProfile(m[1]); sendJson(res, 200, { ok: true }); } catch (e) { err(res, e); }
+  }],
+  ['GET', /^\/ui\/sandbox\/profiles\/([\w-]+)\/files$/, (req, res, m) => {
+    try { sendJson(res, 200, { files: sandbox.profileFiles(m[1]) }); } catch (e) { err(res, e); }
+  }],
+  ['GET', /^\/ui\/sandbox\/profiles\/([\w-]+)\/file$/, (req, res, m, url) => {
+    try { sendJson(res, 200, sandbox.profileFile(m[1], url.searchParams.get('path'))); } catch (e) { err(res, e); }
+  }],
+  ['PUT', /^\/ui\/sandbox\/profiles\/([\w-]+)\/file$/, async (req, res, m, url) => {
+    const b = await readJson(req);
+    try { sandbox.putProfileFile(m[1], url.searchParams.get('path'), b.text); sendJson(res, 200, { ok: true }); } catch (e) { err(res, e); }
+  }],
+  ['DELETE', /^\/ui\/sandbox\/profiles\/([\w-]+)\/file$/, (req, res, m, url) => {
+    try { sandbox.deleteProfileFile(m[1], url.searchParams.get('path')); sendJson(res, 200, { ok: true }); } catch (e) { err(res, e); }
+  }],
+  ['GET', /^\/ui\/sandbox\/pending\/([\w.-]+)$/, (req, res, m) => {
+    try { sendJson(res, 200, sandbox.pendingSummary(m[1])); } catch (e) { err(res, e); }
+  }],
+  ['GET', /^\/ui\/sandbox\/pending\/([\w.-]+)\/diff$/, (req, res, m, url) => {
+    try { sendJson(res, 200, sandbox.pendingDiff(m[1], url.searchParams.get('path'))); } catch (e) { err(res, e); }
+  }],
+  ['POST', /^\/ui\/sandbox\/pending\/([\w.-]+)\/apply$/, async (req, res, m) => {
+    const b = await readJson(req);
+    try { sendJson(res, 200, sandbox.applyPending(m[1], Array.isArray(b.paths) ? b.paths.map(String) : [])); } catch (e) { err(res, e); }
+  }],
+  ['DELETE', /^\/ui\/sandbox\/pending\/([\w.-]+)$/, async (req, res, m, url) => {
+    const paths = url.searchParams.getAll('path');
+    try { sendJson(res, 200, sandbox.dropPending(m[1], paths)); } catch (e) { err(res, e); }
   }],
   // Smolfile -> API create request (+ init, warnings); see lib/smolfile.js.
   ['POST', /^\/ui\/smolfile\/parse$/, async (req, res) => {
@@ -727,6 +811,13 @@ const UI = [
     await agents.declare(name, ids);
     const st = await machineState(name);
     sendJson(res, 200, { restartNeeded: st === 'running', ...(await agents.status(name)) });
+  }],
+  // Vendor servers ("Провайдеры") of every machine with agents — no guest exec, for the «Сеть» page.
+  ['GET', /^\/ui\/agents\/vendors$/, async (req, res) => {
+    // Only machines that still exist (records can outlive a machine deleted outside smolvm-web).
+    const r = await up.request('GET', '/api/v1/machines').catch(() => null);
+    const exists = new Set((r?.data?.machines || []).map((m) => m.name));
+    sendJson(res, 200, { machines: agents.names().filter((n) => exists.has(n)).map((n) => ({ name: n, vendor: agents.vendorEndpoints(n), filter: { enabled: !!egress.getMachine(n)?.enabled } })).filter((x) => x.vendor.length) });
   }],
   // Allow or revoke a vendor server of the machine's agents (egress filter rule, live).
   ['PUT', new RegExp(`${AG}/vendor$`), async (req, res, m) => {
@@ -748,10 +839,8 @@ const UI = [
   ['POST', new RegExp(`${AG}/([\\w-]+)/start$`), async (req, res, m) => {
     const name = decodeURIComponent(m[1]);
     const body = await readJson(req);
-    let snap = null;
-    if (body.snapshot) { try { snap = { ok: true, ...(await snapshots.create(name, { reason: `перед запуском ${agents.AGENTS[m[2]]?.title || m[2]}` })) }; } catch (e) { snap = { ok: false, error: e.message }; } }
-    try { sendJson(res, 200, { ...(await agents.start(name, m[2], { autonomous: !!body.autonomous })), _webSnapshot: snap }); }
-    catch (e) { sendJson(res, 400, { error: e.message, _webSnapshot: snap }); }
+    try { sendJson(res, 200, await agents.start(name, m[2], { autonomous: !!body.autonomous })); }
+    catch (e) { sendJson(res, 400, { error: e.message }); }
   }],
   ['POST', new RegExp(`${AG}/([\\w-]+)/stop$`), async (req, res, m) => {
     try { await agents.stop(decodeURIComponent(m[1]), m[2]); sendJson(res, 200, { stopped: true }); }
@@ -805,7 +894,7 @@ const UI = [
     sendJson(res, 200, {
       version: VERSION,
       build: { ...buildInfo.RUNNING, disk: buildInfo.current() },
-      platform: process.platform,
+      platform: process.platform, home: require("os").homedir(),
       upstream: up.UPSTREAM,
       listen: up.listenArg(),
       configDir: cfg.DIR,
@@ -1047,6 +1136,72 @@ const UI = [
   }],
   ['DELETE', /^\/ui\/dirs\/([^/]+)$/, async (req, res, m) => {
     try { dirs.deleteDir(decodeURIComponent(m[1])); sendJson(res, 200, { deleted: true }); } catch (e) { sendJson(res, 400, { error: e.message }); }
+  }],
+  // ---- «Дать доступ к папке»: one call registers, attaches and applies ----
+  ['GET', /^\/ui\/folders\/check$/, (req, res, _m, url) => sendJson(res, 200, dirs.checkFolder(url.searchParams.get('path')))],
+  ['GET', /^\/ui\/folders\/suggest$/, (req, res, _m, url) => sendJson(res, 200, { paths: suggestFolders(url.searchParams.get('q') || '') })],
+  ['GET', /^\/ui\/machines\/([^/]+)\/folders$/, async (req, res, m) => {
+    const name = decodeURIComponent(m[1]);
+    const state = await machineState(name).catch(() => null);
+    const copies = review.list(name).map((d) => ({ kind: 'review', id: d.id, hostPath: d.hostPath, guestPath: d.guestPath, level: 'review', state: d.state, error: d.error || null }));
+    // smolvm volumes set at create (Smolfile `volumes`, the «Тома smolvm» field): shown, not managed.
+    const info = await up.request('GET', `/api/v1/machines/${encodeURIComponent(name)}`).catch(() => null);
+    const volumes = (info?.data?.mounts || []).filter((x) => !String(x.target).startsWith(`${dirs.BASE}/`) && x.target !== px.GUEST_TRUST_DIR)
+      .map((x) => ({ kind: 'volume', id: x.tag || x.target, hostPath: x.source, guestPath: x.target, level: x.readonly ? 'ro' : 'rw' }));
+    sendJson(res, 200, { state, agent: !!agents.get(name), agentUser: dirs.AGENT_USER, folders: [...dirs.folders(name), ...copies, ...volumes] });
+  }],
+  ['POST', /^\/ui\/machines\/([^/]+)\/folders$/, async (req, res, m) => {
+    const name = decodeURIComponent(m[1]);
+    const b = await readJson(req);
+    const mode = String(b.mode || '');
+    const state = await machineState(name).catch(() => null);
+    if (!state) return sendJson(res, 404, { error: `машина ${name} не найдена` });
+    const c = dirs.checkFolder(b.hostPath);
+    if (!c.ok) return sendJson(res, 400, { error: `${c.real || b.hostPath}: ${c.error}` });
+    const guestPath = String(b.guestPath || '').trim() || `/work/${path.basename(c.real)}`;
+    // One guest path, one folder: mounted folders and review copies must not overlap.
+    const clash = (p, q) => p === q || p.startsWith(`${q}/`) || q.startsWith(`${p}/`);
+    const others = [...dirs.folders(name).filter((f) => f.guestPath && norm(f.hostPath) !== norm(c.real)), ...review.list(name).filter((d) => norm(d.hostPath) !== norm(c.real))];
+    const hit = others.find((f) => clash(f.guestPath, guestPath));
+    if (hit) return sendJson(res, 400, { error: `Путь в машине ${guestPath} уже занят папкой ${hit.hostPath}` });
+    try {
+      // Switching between a mount and a review copy of the same folder: drop the other kind.
+      const sameDir = dirs.folders(name).find((f) => f.hostPath && norm(f.hostPath) === norm(c.real) && !f.removed);
+      const sameCopy = review.list(name).find((d) => norm(d.hostPath) === norm(c.real));
+      let out;
+      if (mode === 'review') {
+        if (sameDir) {
+          dirs.revoke(name, sameDir.id);
+          // Close the gate and drop the link before the copy takes its path.
+          if (state === 'running') await mc.provisionDirs(name).catch(() => null);
+        }
+        if (sameCopy) await review.remove(name, sameCopy.id, { deleteCopy: true });
+        const d = await review.add(name, { hostPath: c.real, guestPath });
+        out = { kind: 'review', id: d.id, guestPath: d.guestPath };
+      } else if (mode === 'ro' || mode === 'rw') {
+        // The copy (and its unapplied changes — the UI asks first) gives way to the link.
+        if (sameCopy) await review.remove(name, sameCopy.id, { deleteCopy: true });
+        out = { kind: 'dir', ...dirs.grant(name, { hostPath: c.real, level: mode, guestPath }) };
+      } else return sendJson(res, 400, { error: 'Режим: ro, rw или review' });
+      let report = null;
+      if (out.kind === 'dir' && state === 'running') {
+        try { report = await mc.provisionDirs(name); } catch (e) { report = { errors: [e.message], warnings: [], users: [] }; }
+      }
+      const pending = dirs.mountDiff(name);
+      res.auditDetail = { hostPath: c.real, mode, guestPath: out.guestPath };
+      sendJson(res, 200, { ...out, state, report, needsRestart: state === 'running' && (pending.add.length + pending.remove.length) > 0 });
+    } catch (e) { sendJson(res, 400, { error: e.message }); }
+  }],
+  ['DELETE', /^\/ui\/machines\/([^/]+)\/folders\/(dir|review)\/([\w.-]+)$/, async (req, res, m) => {
+    const name = decodeURIComponent(m[1]);
+    try {
+      if (m[2] === 'review') await review.remove(name, m[3], {});
+      else {
+        dirs.revoke(name, m[3]);
+        if ((await machineState(name).catch(() => null)) === 'running') await mc.provisionDirs(name).catch(() => null);
+      }
+      sendJson(res, 200, { ok: true });
+    } catch (e) { sendJson(res, 400, { error: e.message }); }
   }],
   ['GET', /^\/ui\/machines\/([^/]+)\/dirs$/, (req, res, m) => sendJson(res, 200, dirs.machineView(decodeURIComponent(m[1])))],
   ['PUT', /^\/ui\/machines\/([^/]+)\/dirs$/, async (req, res, m) => {
