@@ -37,7 +37,7 @@
 | Linux | x86_64 или aarch64, аппаратная виртуализация (KVM, `/dev/kvm`); в виртуалке или облаке — вложенная виртуализация. |
 | Windows | Windows 10/11 x64 с Windows Hypervisor Platform (включается администратором). Работает от обычного пользователя, если есть право на символические ссылки или rootfs smolvm уже распакован — см. [documentation.md](documentation.md#особенности-windows). ARM-Windows не поддерживается. |
 
-Плюс Node.js ≥ 18 (для сертификатов из хранилища ОС — ≥ 22.15). По умолчанию машине выделяется 8 ГиБ памяти (память эластичная, хост отдаёт только то, что гость использует); на слабом хосте задавайте меньше.
+Плюс Node.js ≥ 22. По умолчанию машине выделяется 8 ГиБ памяти (память эластичная, хост отдаёт только то, что гость использует); на слабом хосте задавайте меньше.
 
 ## Установка smolvm
 
@@ -96,21 +96,7 @@ sudo usermod -aG kvm "$USER"         # затем перелогиньтесь �
 
 ### Windows
 
-PowerShell от администратора:
-
-```powershell
-# Windows Hypervisor Platform (нужна перезагрузка)
-Enable-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform
-Restart-Computer
-
-# smolvm: актуальная версия — https://github.com/smol-machines/smolvm/releases
-$v = '1.23.7'
-Invoke-WebRequest "https://github.com/smol-machines/smolvm/releases/download/v$v/smolvm-$v-windows-x86_64.zip" -OutFile $env:TEMP\smolvm.zip
-Expand-Archive $env:TEMP\smolvm.zip C:\smolvm
-[Environment]::SetEnvironmentVariable('Path', $env:Path + ";C:\smolvm\smolvm-$v-windows-x86_64", 'Machine')
-```
-
-Также включите «Режим разработчика» (Параметры → Система → Для разработчиков). Подробности и частые ошибки — в [INSTALL.md](INSTALL.md).
+Пять шагов без командной строки: включить «Платформу низкоуровневой оболочки Windows» и «Режим разработчика», установить Node.js, распаковать smolvm в `C:\smolvm` и smolvm-web в `C:\smolvm-web`, запустить `start.cmd`. Подробно — [INSTALL.md](INSTALL.md#windows-за-5-шагов).
 
 ### За корпоративным прокси
 
@@ -188,10 +174,6 @@ smolvm serve start --listen unix:///tmp/smolvm.sock    # Windows: --listen 127.0
 node server.js
 ```
 
-Автозапуск при входе в Windows:
-
-```powershell
-schtasks /Create /TN "smolvm-web" /SC ONLOGON /RL HIGHEST /TR "C:\smolvm-web\start.cmd"
-```
+Автозапуск при входе в Windows — в [INSTALL.md](INSTALL.md#дополнительно-windows).
 
 Все переменные окружения и настройки — в [documentation.md](documentation.md#параметры-запуска).

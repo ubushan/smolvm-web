@@ -5,14 +5,21 @@ setlocal
 cd /d "%~dp0"
 if not defined PORT set PORT=7777
 
-where node >nul 2>nul || (echo [smolvm-web] Node.js 18+ is required: winget install OpenJS.NodeJS.LTS & exit /b 1)
+where node >nul 2>nul || (echo [smolvm-web] Node.js is required: winget install OpenJS.NodeJS.LTS & pause & exit /b 1)
+
+rem smolvm.exe: SMOLVM_BIN, else PATH, else unpacked anywhere under C:\smolvm.
 if not defined SMOLVM_BIN (
-  where smolvm >nul 2>nul || (echo [smolvm-web] smolvm.exe not found in PATH. Set SMOLVM_BIN=C:\path\to\smolvm.exe & exit /b 1)
+  where smolvm >nul 2>nul || (
+    for /r "C:\smolvm" %%F in (smolvm.exe) do if exist "%%F" if not defined SMOLVM_BIN set "SMOLVM_BIN=%%F"
+  )
+)
+if not defined SMOLVM_BIN (
+  where smolvm >nul 2>nul || (echo [smolvm-web] smolvm.exe not found: unpack smolvm into C:\smolvm or set SMOLVM_BIN & pause & exit /b 1)
 )
 rem Administrator rights are not required: only the symlink right for smolvm's first rootfs
 rem extraction (Developer Mode, the "Create symbolic links" right, or one elevated first run).
 rem smolvm-web checks it at startup and in the UI.
 
-rem Open the browser a few seconds later, once the server is listening.
-start "" /b powershell -NoProfile -WindowStyle Hidden -Command "Start-Sleep 3; Start-Process 'http://127.0.0.1:%PORT%'"
+rem Open the browser a few seconds later, once the server is listening (no PowerShell).
+start "" /b cmd /c "ping -n 4 127.0.0.1 >nul & start "" http://127.0.0.1:%PORT%"
 node server.js --autostart %*
