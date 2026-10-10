@@ -35,6 +35,28 @@
   async function load() {
     const [d, v, dn] = await Promise.all([api('GET', '/ui/egress'), api('GET', '/ui/agents/vendors').catch(() => ({ machines: [] })), api('GET', '/ui/egress/denied').catch(() => ({ denied: [] }))]);
     data = d; vendors = v.machines || []; denied = dn.denied || [];
+    try { asks = ((await api('GET', '/ui/live')).approvals || []).filter((a) => a.kind === 'net'); } catch { asks = []; }
+  }
+  let asks = []; // network requests waiting for a person («Спрашивать о незнакомых адресах»)
+
+  // «Ждут ответа»: the same decisions as the cards in the corner, where the network is managed.
+  function asksBlock() {
+    if (!asks.length) return null;
+    const decide = async (a, decision) => {
+      try { await api('POST', `/ui/approvals/${enc(a.id)}`, { decision }); } catch (e) { toast(e.message, 'err'); }
+      if (typeof pollLive === 'function') pollLive();
+      await load(); render();
+    };
+    return h('div', { class: 'net-asks' }, ...asks.map((a) => {
+      const left = Math.max(0, Math.round((a.expiresAt - Date.now()) / 1000));
+      const target = a.detail?.host ? `${a.detail.host}:${a.detail.port}` : a.title;
+      return h('div', { class: 'ws-notice net-ask' },
+        h('span', {}, h('b', { class: 'mono' }, a.machine), ' хочет подключиться к ', h('b', { class: 'mono' }, target),
+          h('span', { class: 'muted small' }, ` · ждёт ответа ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`)),
+        h('button', { class: 'btn small-btn', onclick: () => decide(a, 'once') }, 'На 10 минут'),
+        h('button', { class: 'btn small-btn primary', onclick: () => decide(a, 'always') }, 'Всегда'),
+        h('button', { class: 'btn small-btn danger-outline', onclick: () => decide(a, 'deny') }, 'Запретить'));
+    }));
   }
 
   function card(title, ...children) {
@@ -130,7 +152,7 @@
   function machinesCard() {
     const names = state.machines.map((m) => m.name);
     if (!names.length) return h('section', { class: 'card' }, h('p', { class: 'muted' }, 'Машин пока нет.'));
-    return names.map(machineNetCard);
+    return [asksBlock(), ...names.map(machineNetCard)].filter(Boolean);
   }
 
   // A segmented control: options [[value, label, title]], current value, onChange.
@@ -168,7 +190,7 @@
     const head = h('div', { class: 'net-head' },
       mark(mk?.mark || 'vm', true),
       h('div', { class: 'net-title' },
-        h('div', { class: 'row' }, h('b', { class: 'mono' }, name), mach ? h('span', { class: `badge ${mach.state}` }, mach.state) : null),
+        h('div', { class: 'row' }, h('b', { class: 'mono' }, name), mach ? h('span', { class: `badge ${mach.state}` }, stateLabel(mach.state)) : null),
         h('div', { class: 'muted small' }, MODES[mode][1])),
       h('span', { class: 'spacer' }), seg);
     const parts = [head];
@@ -459,7 +481,7 @@
       waiting.length > 12 ? h('div', { class: 'muted small' }, `и ещё ${waiting.length - 12} — уточните фильтр`) : null) : null;
 
     // The feed
-    const fmtTime = (ts) => new Date(ts).toLocaleTimeString();
+    const fmtTime = (ts) => new Date(ts).toLocaleTimeString('ru-RU');
     const feed = entries.length ? h('div', { class: 'log-feed' },
       h('div', { class: 'log-row log-head' }, h('span', {}, 'Время'), h('span', {}, ''), h('span', {}, 'Машина'), h('span', {}, 'Куда'), h('span', {}, 'Правило или причина'), h('span', { class: 'right' }, 'Трафик')),
       ...entries.map((e) => h('div', { class: `log-row ${e.allow ? 'ok' : 'bad'}` },
@@ -588,7 +610,18 @@
       if (!SECTIONS.some(([id]) => id === section)) section = 'machines';
       fill(el, h('p', { class: 'muted' }, 'Загрузка…'));
       load().then(render).catch((e) => fill(el, h('div', { class: 'error' }, e.message)));
-      return () => { clearInterval(logTimer); logRoot = null; root = null; };
+      // New «ask» requests show up without a reload (the cards in the corner do the same).
+      let askSig = '';
+      const askTimer = setInterval(async () => {
+        if (!root || section !== 'machines' || document.hidden) return;
+        let list;
+        try { list = ((await api('GET', '/ui/live')).approvals || []).filter((a) => a.kind === 'net'); } catch { return; }
+        const sig = list.map((a) => a.id).join(',');
+        if (sig === askSig) return;
+        askSig = sig; asks = list;
+        if (!root.querySelector('input:focus, select:focus, textarea:focus')) render();
+      }, 3000);
+      return () => { clearInterval(logTimer); clearInterval(askTimer); logRoot = null; root = null; };
     },
   };
 

@@ -909,3 +909,16 @@ details.card[open] > summary { margin-bottom: 10px; }
 .rv-pad { padding: 14px 16px; }
 .rv-warn { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--warn-soft); color: var(--text); font-size: 13px; }
 @media (max-width: 900px) { .rv-body { grid-template-columns: 1fr; } }
+
+/* ---------- stage 3: machines, network, audit ---------- */
+.risk-line { border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent); background: var(--ok-soft); border-radius: 12px; padding: 10px 14px; font-size: 14px; }
+.risk-line summary { cursor: pointer; list-style: none; display: flex; gap: 4px; flex-wrap: wrap; align-items: baseline; }
+.risk-line summary::-webkit-details-marker { display: none; }
+.risk-line summary b { color: var(--ok); }
+.risk-more { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--ok); }
+.risk-line[open] .risk-more { visibility: hidden; }
+.risk-rows { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; }
+.net-asks { display: flex; flex-direction: column; gap: 8px; }
+.net-ask .btn { min-height: 34px; }
+.ss-pill[id] { border: 1px solid transparent; }
+.ss-pill:empty { display: none; }

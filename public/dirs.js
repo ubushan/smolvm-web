@@ -130,7 +130,7 @@
         h('div', { class: 'net-head' },
           mark(mk?.mark || 'vm', true),
           h('div', { class: 'net-title' },
-            h('div', { class: 'row' }, h('b', { class: 'mono' }, m.name), h('span', { class: `badge ${m.state}` }, m.state), mk?.sandbox ? h('span', { class: 'tag sbx' }, 'песочница') : null),
+            h('div', { class: 'row' }, h('b', { class: 'mono' }, m.name), h('span', { class: `badge ${m.state}` }, stateLabel(m.state)), mk?.sandbox ? h('span', { class: 'tag sbx' }, 'песочница') : null),
             h('div', { class: 'muted small' }, mk?.title ? `пресет ${mk.title}` : 'машина без пресета')),
           h('span', { class: 'spacer' }),
           h('button', { class: 'btn small-btn', onclick: () => openFolderDialog({ machine: m.name, onDone: () => { list.refresh(); renderReview(); } }) }, ic('plus'), 'Дать доступ к папке')),

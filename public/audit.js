@@ -96,7 +96,7 @@
       if (dl !== lastDay) { rows.push(h('div', { class: 'aud-day' }, dl)); lastDay = dl; }
       const k = KIND[e.type] || { icon: 'list', label: e.type, cls: '' };
       rows.push(h('div', { class: `aud-row ${e.type === 'alert' ? 'bad' : ''}` },
-        h('span', { class: 'mono small muted' }, new Date(e.ts).toLocaleTimeString()),
+        h('span', { class: 'mono small muted' }, new Date(e.ts).toLocaleTimeString('ru-RU')),
         h('span', { class: `aud-kind ${k.cls}`, title: k.label }, ic(k.icon)),
         h('div', { class: 'aud-what small' }, ...what(e)),
         h('span', { class: 'mono small ellipsis', title: e.machine || '' }, e.machine || (e.detail?.machines?.join(', ') || h('span', { class: 'muted' }, '—'))),
@@ -186,10 +186,37 @@
             h('li', {}, 'Ревью (какие файлы применены на хост или отклонены), снимки и откаты, изменения секретов (без значений), доступа в сеть, директорий и настроек.'),
             h('li', {}, 'Изменения файлов в папках хоста, подключённых к работающим машинам на запись. Источник изменения (машина или человек на хосте) по файловой системе не различить — в записи перечислены машины с доступом на запись.'),
             h('li', {}, 'Команды, которые агент выполняет внутри машины сам (без exec через smolvm-web), сюда не попадают: smolvm их не сообщает. Их след — сетевой журнал и изменения файлов.'))),
-        h('span', { class: 'spacer' }), h('a', { class: 'btn small-btn ghost', href: '#/egress?tab=log' }, ic('globe'), 'Сетевой журнал →')),
+        h('span', { class: 'spacer' }), h('span', { id: 'aud-integrity', class: 'ss-pill' }, 'Проверка журнала…'), h('span', { id: 'aud-siem', class: 'ss-pill' }),
+        h('a', { class: 'btn small-btn ghost', href: '#/egress?tab=log' }, ic('globe'), 'Сетевой журнал →')),
         h('p', { class: 'muted small' }, 'Кто что делал с машинами: команды, запуски и остановки, ревью, изменения настроек и файлов. За последние сутки:')),
       h('section', { class: 'card', id: 'audit-log' }, h('p', { class: 'muted' }, 'Загрузка…')));
     renderLog();
+    headerStatus();
+  }
+
+  // The two things a security person checks first: is the log intact, does it reach the SIEM.
+  async function headerStatus() {
+    const integ = root?.querySelector('#aud-integrity');
+    const siem = root?.querySelector('#aud-siem');
+    try {
+      const r = await api('GET', '/ui/audit/verify');
+      if (!integ) return;
+      integ.className = `ss-pill ${r.ok ? 'ok' : 'bad'}`;
+      integ.textContent = r.ok ? `Журнал цел · проверено ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}` : 'Журнал изменён!';
+      integ.title = r.ok ? `${r.signed} подписанных записей${r.unsigned ? `, ${r.unsigned} старых без подписи` : ''}. Нажмите, чтобы проверить снова.` : `${r.broken.reason} — запись №${r.broken.id ?? '?'}, строка ${r.broken.line} в ${r.broken.file}`;
+      integ.onclick = () => { verifyLog(); headerStatus(); };
+      integ.style.cursor = 'pointer';
+    } catch (e) { if (integ) { integ.className = 'ss-pill warn'; integ.textContent = 'Журнал не проверен'; integ.title = e.message; } }
+    try {
+      const st = await api('GET', '/ui/audit/settings');
+      if (!siem) return;
+      const on = [st.siem.syslog.enabled && 'syslog', st.siem.http.enabled && 'HTTP'].filter(Boolean);
+      siem.className = `ss-pill ${on.length ? 'ok' : 'warn'}`;
+      siem.textContent = on.length ? `SIEM: ${on.join(' и ')}` : 'SIEM не подключён';
+      siem.title = on.length ? 'Журнал уходит в SIEM — копия вне этого компьютера' : 'Настройки → «Аудит и SIEM». Без SIEM журнал хранится только на этом компьютере.';
+      siem.onclick = () => openSettings('audit');
+      siem.style.cursor = 'pointer';
+    } catch {}
   }
 
   window.auditSettingsCards = settingsCards;

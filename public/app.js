@@ -231,7 +231,7 @@ function stateBadge(m) {
   return `<span class="badge ${esc(m.state)}">${esc(stateLabel(m.state))}</span>`;
 }
 function stateLabel(s) {
-  return { running: 'running', stopped: 'stopped', created: 'created', paused: 'paused' }[s] || s;
+  return { running: 'работает', stopped: 'остановлена', created: 'создана', paused: 'на паузе', failed: 'сбой', missing: 'машины нет' }[s] || s;
 }
 
 function renderList() {
@@ -618,6 +618,21 @@ function trifectaBlock(m, tri) {
   });
 }
 
+// Risk of a leak in one line when the triad is broken; the three links on demand.
+function riskLine(tri) {
+  const why = !tri.privateData.length ? 'нет секретов и папок этого компьютера'
+    : !tri.untrusted ? `есть ${tri.privateData.length > 1 ? 'приватные данные' : tri.privateData[0]}, но сеть выключена`
+    : `есть ${tri.privateData.length > 1 ? 'приватные данные' : tri.privateData[0]}, но ${tri.exfilWhy}`;
+  const row = (bad, label, text) => h('div', {}, h('span', { class: bad ? 'badc' : 'okc' }, bad ? '● ' : '○ '), h('b', {}, label), h('span', { class: 'muted' }, ` — ${text}`));
+  return h('details', { class: 'risk-line' },
+    h('summary', {}, h('b', {}, 'Риск утечки низкий. '), why, h('span', { class: 'risk-more' }, 'Подробнее')),
+    h('div', { class: 'risk-rows small' },
+      row(tri.privateData.length > 0, 'Приватные данные', tri.privateData.length ? tri.privateData.slice(0, 4).join(', ') : 'нет'),
+      row(tri.untrusted, 'Недоверенный контент', tri.untrusted ? 'машина читает интернет' : 'сеть выключена'),
+      row(tri.exfil, 'Выход наружу', tri.exfilWhy),
+      h('div', { class: 'muted' }, 'Утечка возможна, только когда есть все три звена сразу («смертельная триада»).')));
+}
+
 // Limits on what the agent may consume.
 function limitsBlock(m, data) {
   const L = data.limits;
@@ -682,10 +697,11 @@ async function tabOverview(body, m) {
   }
   const tri = riskR.value?.trifecta;
   if (tri?.lethal) body.append(trifectaBanner(m, tri));
+  else if (tri) body.append(riskLine(tri));
   body.append(h('div', { class: 'kv' }, kv.map(([k, v]) => h('div', {}, h('div', { class: 'k' }, k), h('div', { class: 'v' }, String(v))))));
 
   const blocks = [];
-  if (tri) blocks.push(trifectaBlock(m, tri));
+  if (tri?.lethal) blocks.push(trifectaBlock(m, tri));
   if (limR.value) blocks.push(limitsBlock(m, limR.value));
 
   // Ports

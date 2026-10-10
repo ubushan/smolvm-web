@@ -132,7 +132,7 @@
             h('a', { href: '#/', class: 'mono', onclick: (e) => { e.preventDefault(); location.hash = '#/'; setTimeout(() => select(x.name), 0); } }, x.name),
             h('div', { class: 'muted small' }, `открыта ${ago(x.createdAt)}`)),
           h('span', { class: 'spacer' }),
-          busy ? h('span', { class: 'badge prep' }, h('i', { class: 'spin' }), busy) : h('span', { class: `badge ${x.state}` }, x.state === 'missing' ? 'машины нет' : x.state)),
+          busy ? h('span', { class: 'badge prep' }, h('i', { class: 'spin' }), busy) : h('span', { class: `badge ${x.state}` }, stateLabel(x.state))),
         h('div', { class: 'sbx-facts' },
           h('div', {}, h('span', { class: 'muted small' }, 'Шаблон'), h('div', {}, tplTitle(x.template))),
           h('div', {}, h('span', { class: 'muted small' }, 'Профиль'), h('div', {}, x.profile ? profName(x.profile) : h('span', { class: 'muted' }, 'без профиля')))),
