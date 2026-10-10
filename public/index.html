@@ -57,16 +57,19 @@
       <div id="health" class="health"><span class="dot"></span><span></span></div>
     </div>
     <nav class="pagenav" id="pagenav">
+      <a href="#/agents" data-page="agents" data-simple title="Ваши агенты: что каждый видит, куда ходит и какие ключи у него есть"><svg class="ic"><use href="#i-bot"/></svg>Агенты</a>
+      <a href="#/decisions" data-page="decisions" data-simple title="Всё, что агенты не могут сделать без вас"><svg class="ic"><use href="#i-list"/></svg>Решения<span class="nav-badge" id="nav-decisions" hidden></span></a>
       <a href="#/work" data-page="work" title="Агенты с настройками, MCP и памятью — каждый раз в чистой машине"><svg class="ic"><use href="#i-users"/></svg>Рабочие места</a>
       <a href="#/sandbox" data-page="sandbox" title="Песочницы: шаблоны, профили, открытые песочницы и ревью изменений"><svg class="ic"><use href="#i-box"/></svg>Песочница</a>
       <a href="#/" data-page="machines"><svg class="ic"><use href="#i-server"/></svg>Машины</a>
       <a href="#/egress" data-page="egress" title="Allow list ресурсов интернета для машин"><svg class="ic"><use href="#i-globe"/></svg>Сеть</a>
       <a href="#/secrets" data-page="secrets" title="Хранилище API-ключей и токенов"><svg class="ic"><use href="#i-key"/></svg>Секреты</a>
-      <a href="#/audit" data-page="audit" title="Журнал действий: команды, изменения файлов, экспорт в SIEM, оповещения"><svg class="ic"><use href="#i-shield"/></svg>Аудит</a>
+      <a href="#/audit" data-page="audit" data-simple data-simple-label="История" title="Журнал действий: команды, изменения файлов, экспорт в SIEM, оповещения"><svg class="ic"><use href="#i-shield"/></svg>Аудит</a>
       <a href="#/dirs" data-page="dirs" title="Разрешённые директории хоста и права пользователей"><svg class="ic"><use href="#i-folder"/></svg>Директории</a>
     </nav>
     <button id="proxy-chip" class="chip" hidden title="Настройки сети и прокси"></button>
     <div class="spacer"></div>
+    <button id="btn-mode" class="btn ghost mode-btn" type="button" aria-pressed="false" title="Режим эксперта: машины, сеть, секреты, директории и все настройки">Режим эксперта</button>
     <button id="btn-settings" class="btn ghost icon" title="Настройки: прокси, сертификаты, репозитории, секреты, smolvm" aria-label="Настройки"><svg class="ic"><use href="#i-gear"/></svg></button>
     <button id="btn-theme" class="btn ghost icon" title="Тема: светлая, тёмная или как в системе" aria-label="Тема" aria-haspopup="menu"><svg class="ic"><use href="#i-contrast"/></svg></button>
     <button id="btn-create" class="btn primary" title="Создать машину"><svg class="ic"><use href="#i-plus"/></svg>Создать</button>
@@ -100,6 +103,8 @@
     </section>
   </main>
 
+  <main class="page" id="page-agents" hidden></main>
+  <main class="page" id="page-decisions" hidden></main>
   <main class="page" id="page-work" hidden></main>
   <main class="page" id="page-session" hidden></main>
   <main class="page" id="page-review" hidden></main>
@@ -432,5 +437,7 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
   <script src="/session.js"></script>
   <script src="/review.js"></script>
   <script src="/profile.js"></script>
+  <script src="/agents.js"></script>
+  <script src="/decisions.js"></script>
 </body>
 </html>

@@ -146,7 +146,8 @@
   }
 
   // «Новое место»: a profile with its template and agent.
-  function newWorkspace() {
+  function newWorkspace(onDone) {
+    if (!data) { load().then(() => newWorkspace(onDone)); return; }
     const tpls = ready();
     if (!tpls.length) { location.hash = '#/sandbox?tab=templates'; return; }
     let tpl = tpls[0].id;
@@ -165,7 +166,7 @@
     tplSel.addEventListener('change', () => { tpl = tplSel.value; drawAgents(); });
     drawAgents();
     const save = h('button', { class: 'btn primary' }, 'Создать');
-    const dlg = dialog('Новое рабочее место', [
+    const dlg = dialog(expertMode() ? 'Новое рабочее место' : 'Нанять агента', [
       h('p', { class: 'muted' }, 'Агент со своими инструкциями, MCP-серверами, skills и памятью. Открывается всегда в чистой машине из шаблона.'),
       h('label', { class: 'ws-field', for: 'ws-n-name' }, 'Название', name),
       h('div', { class: 'ws-field' }, h('div', { class: 'label-like' }, 'Агент'), agentsBox),
@@ -182,6 +183,7 @@
         dlg.close();
       } catch (e) { toast(e.message, 'err', 10000); save.disabled = false; return; }
       await load(); render();
+      if (typeof onDone === 'function') onDone();
     });
     setTimeout(() => name.focus(), 0);
   }
@@ -228,7 +230,7 @@
         h('h1', {}, 'Рабочие места'),
         h('p', { class: 'muted' }, 'Каждое место — агент со своими инструкциями, MCP и памятью. Открывается всегда в чистой машине.')),
       h('button', { class: 'btn', onclick: () => launcher() }, ic('box'), 'Разовая песочница'),
-      h('button', { class: 'btn primary', onclick: newWorkspace }, ic('plus'), 'Новое место'));
+      h('button', { class: 'btn primary', onclick: () => newWorkspace() }, ic('plus'), 'Новое место'));
 
     const tpls = ready();
     const jobs = data.templates.filter((t) => t.job?.status === 'running');
@@ -248,7 +250,7 @@
     const grid = cards.length ? h('div', { class: 'ws-grid' }, ...cards)
       : h('section', { class: 'card ws-empty' }, ic('users'), h('h3', {}, 'Рабочих мест пока нет'),
         h('p', { class: 'muted' }, 'Создайте место для задачи — например «Бэкенд-разработка» с Claude Code — или откройте разовую песочницу.'),
-        h('button', { class: 'btn primary', onclick: newWorkspace }, ic('plus'), 'Новое место'));
+        h('button', { class: 'btn primary', onclick: () => newWorkspace() }, ic('plus'), 'Новое место'));
 
     const pending = data.pending.map((x) => {
       const p = data.profiles.find((y) => y.id === x.profile);
@@ -280,6 +282,7 @@
     render();
   }
 
+  window.workActions = { newWorkspace };
   pages.work = {
     render(el) {
       root = el;

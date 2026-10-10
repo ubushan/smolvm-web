@@ -1984,6 +1984,16 @@ function agentTab() {
   }
   return w;
 }
+// The agent of a sandbox opened in its own browser tab: the session screen then does not
+// embed it too (ttyd starts the agent once per connection).
+function agentInTab(name, on) {
+  const k = `smolvm.agentTab.${name}`;
+  try {
+    if (on === undefined) return localStorage.getItem(k) === '1';
+    if (on) localStorage.setItem(k, '1'); else localStorage.removeItem(k);
+  } catch {}
+  return !!on;
+}
 function agentUrl(url) {
   // Same host name as this page: localhost and 127.0.0.1 are different sites,
   // and agent cookies (dsh) are SameSite=Strict.
@@ -2148,10 +2158,50 @@ pages.secrets = {
   render() { $('#form-secret').hidden = true; renderVault(); return null; },
 };
 let pageCleanup = null;
+
+// Simple mode (default): «Агенты · Решения · История». Expert mode: every page and setting.
+const MODE_KEY = 'smolvm.mode';
+function expertMode() { try { return localStorage.getItem(MODE_KEY) === 'expert'; } catch { return false; } }
+function applyMode() {
+  const on = expertMode();
+  document.body.classList.toggle('simple', !on);
+  $('#btn-mode').setAttribute('aria-pressed', String(on));
+  $('#btn-mode').textContent = on ? 'Простой режим' : 'Режим эксперта';
+  $('#btn-mode').title = on ? 'Только агенты, решения и история' : 'Режим эксперта: машины, сеть, секреты, директории и все настройки';
+  document.querySelectorAll('#pagenav a').forEach((a) => {
+    a.hidden = !on && !('simple' in a.dataset);
+    if (a.dataset.simpleLabel) {
+      a.dataset.expertLabel ||= a.lastChild.textContent;
+      a.lastChild.textContent = on ? a.dataset.expertLabel : a.dataset.simpleLabel;
+    }
+  });
+}
+$('#btn-mode').addEventListener('click', () => {
+  const on = !expertMode();
+  try { localStorage.setItem(MODE_KEY, on ? 'expert' : 'simple'); } catch {}
+  applyMode();
+  // Pages only the expert sees: back to the agents.
+  if (!on && !['agents', 'decisions', 'audit', 'session', 'review', 'profile'].includes(state.page)) location.hash = '#/agents';
+});
+applyMode();
+
+// «Решения» badge: requests waiting for a person and profile changes waiting for review.
+let pendingReviews = 0;
+function setDecisionsBadge(approvals) {
+  const n = approvals + pendingReviews;
+  const b = $('#nav-decisions');
+  b.hidden = !n; b.textContent = n;
+}
+async function refreshPendingReviews() {
+  try { pendingReviews = ((await api('GET', '/ui/sandbox')).pending || []).length; } catch {}
+}
+refreshPendingReviews();
+setInterval(() => { if (!document.hidden) refreshPendingReviews(); }, 15000);
+
 function routeParams() {
   const m = location.hash.match(/^#\/(\w*)(?:\?(.*))?$/);
-  // No hash at all: the start page is «Рабочие места»; «#/» stays the machines list.
-  if (!location.hash || location.hash === '#') return { page: 'work', params: new URLSearchParams() };
+  // No hash at all: the start page is «Агенты» (simple) or «Рабочие места» (expert); «#/» stays the machines list.
+  if (!location.hash || location.hash === '#') return { page: expertMode() ? 'work' : 'agents', params: new URLSearchParams() };
   return { page: (m && m[1]) || 'machines', params: new URLSearchParams((m && m[2]) || '') };
 }
 function route() {
@@ -2162,7 +2212,8 @@ function route() {
   $('#page-machines').hidden = id !== 'machines';
   for (const k of Object.keys(pages)) $(`#page-${k}`).hidden = k !== id;
   // The session, profile and review screens belong to «Рабочие места»; «Песочница» has its own link.
-  const navId = ['session', 'review', 'profile'].includes(id) ? 'work' : id === 'log' ? 'egress' : id;
+  document.body.dataset.page = id;
+  const navId = ['session', 'review', 'profile'].includes(id) ? (expertMode() ? 'work' : 'agents') : id === 'log' ? 'egress' : id;
   document.querySelectorAll('#pagenav a').forEach((a) => a.classList.toggle('active', a.dataset.page === navId));
   if (id !== 'machines') pageCleanup = pages[id].render($(`#page-${id}`), params) || null;
 }
@@ -2194,6 +2245,7 @@ async function pollLive() {
     const changed = isoSig !== JSON.stringify(Object.keys(state.isolated || {}).sort());
     state.isolated = r.isolated || {};
     renderApprovals(r.approvals || []);
+    setDecisionsBadge((r.approvals || []).length);
     if (changed) { renderList(); const m = current(); if (m) updateDetailHead(m); }
   } catch {} finally { liveBusy = false; }
 }

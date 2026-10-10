@@ -814,7 +814,8 @@ const UI = [
   ['POST', /^\/ui\/sandbox\/open$/, async (req, res) => {
     const b = await readJson(req);
     res.auditDone = true;
-    try { sendJson(res, 200, await sandbox.open({ template: String(b.template || ''), profile: b.profile ? String(b.profile) : null, agent: b.agent ? String(b.agent) : null }, sandboxHooks)); } catch (e) { err(res, e); }
+    try { sendJson(res, 200, await sandbox.open({ template: String(b.template || ''), profile: b.profile ? String(b.profile) : null, agent: b.agent ? String(b.agent) : null,
+      trust: b.trust ? String(b.trust) : null, task: b.task ? String(b.task) : null, folder: b.folder ? String(b.folder) : null }, sandboxHooks)); } catch (e) { err(res, e); }
   }],
   ['POST', /^\/ui\/sandbox\/machines\/([^/]+)\/close$/, async (req, res, m) => {
     const b = await readJson(req);
