@@ -13,20 +13,41 @@
   const machineNames = () => [...new Set([...state.machines.map((m) => m.name), ...Object.keys(data?.machines || {})])].sort();
   const stateOf = (name) => state.machines.find((m) => m.name === name)?.state;
 
-  // Sections of the page: a bar on top, one section at a time (like «Директории»).
-  const SECTIONS = [
-    ['machines', 'server', 'Машины', 'Куда может ходить каждая машина: режим, что разрешено, что недавно заблокировано.'],
-    ['lists', 'shield', 'Белые списки', 'Наборы разрешённых адресов (PyPI, npm, GitHub…), которые подключаются к машинам. Реестры образов — в «Настройки» → «Виртуализация», режим для новых машин — в «Настройки» → «Сеть».'],
-    ['log', 'list', 'Журнал', 'Все соединения машин: что разрешено, что заблокировано и почему. Заблокированное можно разрешить одной кнопкой.'],
-  ];
-  let section = 'machines';
-  const goSection = (id) => {
-    section = id;
-    if (id === 'log' && logFilter.machine) params.set('machine', logFilter.machine);
-    const q = new URLSearchParams(params); q.set('tab', id); q.delete('focus');
-    history.replaceState(null, '', `#/egress?${q}`);
-    render();
+  // The page: the connection log and the white lists on the left, the chosen one on the right.
+  // A machine's own network is its tab «Сеть» on «Машины» (window.machineNetTab).
+  let sel = ''; // 'list:<id>' | 'list:new' | 'log' | 'lists' (the first list)
+  const usersOf = (l) => Object.entries(data.machines).filter(([, m]) => m.lists.includes(l.id)).map(([n]) => n);
+  const syncHash = () => {
+    const q = new URLSearchParams();
+    if (sel === 'log') { q.set('tab', 'log'); if (logFilter.machine) q.set('machine', logFilter.machine); }
+    else if (sel.startsWith('list:') && sel !== 'list:new') q.set('list', sel.slice(5));
+    const want = `#/egress${q.toString() ? `?${q}` : ''}`;
+    if (location.hash !== want) history.replaceState(null, '', want);
   };
+  // Old entry points: 'machines' | 'lists' | 'log'.
+  const goSection = (id) => {
+    // From a machine's tab: the page itself.
+    if (!root) { location.hash = id === 'log' ? `#/egress?tab=log${logFilter.machine ? `&machine=${enc(logFilter.machine)}` : ''}` : '#/egress'; return; }
+    sel = id === 'machines' ? '' : id; render();
+  };
+  const choose = (key) => { sel = key; render(); };
+  const validSel = () => sel === 'log' || sel === 'list:new' || (sel.startsWith('list:') && data.lists.some((l) => `list:${l.id}` === sel));
+  const defaultSel = () => (sel === 'lists' ? (data.lists[0] ? `list:${data.lists[0].id}` : 'list:new') : 'log');
+
+  // A machine's tab «Сеть» (on «Машины»): its mode, lists, rules, servers of its agents, what was blocked.
+  let netTab = null; // { el, name }
+  window.machineNetTab = async (el, name) => {
+    netTab = { el, name };
+    fill(el, h('p', { class: 'muted' }, 'Загрузка…'));
+    try { await load(); } catch (e) { fill(el, h('div', { class: 'error' }, e.message)); return; }
+    drawNetTab();
+  };
+  function drawNetTab() {
+    if (!netTab?.el.isConnected) { netTab = null; return; }
+    const mode = modeOf(data.machines[netTab.name]);
+    fill(netTab.el, h('p', { class: 'muted small' }, `${MODES[mode][0]} — ${MODES[mode][1]} Белые списки — ⚙ → «Сеть».`),
+      asksBlock(asks.filter((a) => a.machine === netTab.name)), machineNetCard(netTab.name));
+  }
 
   let vendors = [];
   let denied = [];     // GET /ui/egress/denied: recent blocks, all machines     // GET /ui/agents/vendors: «Провайдеры» per machine
@@ -39,14 +60,14 @@
   let asks = []; // network requests waiting for a person («Спрашивать о незнакомых адресах»)
 
   // «Ждут ответа»: the same decisions as the cards in the corner, where the network is managed.
-  function asksBlock() {
-    if (!asks.length) return null;
+  function asksBlock(list = asks) {
+    if (!list.length) return null;
     const decide = async (a, decision) => {
       try { await api('POST', `/ui/approvals/${enc(a.id)}`, { decision }); } catch (e) { toast(e.message, 'err'); }
       if (typeof pollLive === 'function') pollLive();
       await load(); render();
     };
-    return h('div', { class: 'net-asks' }, ...asks.map((a) => {
+    return h('div', { class: 'net-asks' }, ...list.map((a) => {
       const left = Math.max(0, Math.round((a.expiresAt - Date.now()) / 1000));
       const target = a.detail?.host ? `${a.detail.host}:${a.detail.port}` : a.title;
       return h('div', { class: 'ws-notice net-ask' },
@@ -117,21 +138,18 @@
   }
 
   // ---------- sections ----------
-  function intro() {
-    return h('section', { class: 'card intro' },
-      h('div', { class: 'row' }, h('h2', { class: 'h-ic' }, ic('globe'), 'Сеть'), helpButton('Как работает фильтр «Сеть»',
+  function netHelp() {
+    return helpButton('Как работает фильтр «Сеть»',
         h('p', { class: 'small' }, 'Машине с включённым фильтром в HTTP_PROXY/HTTPS_PROXY подставляется прокси smolvm-web на хосте со своим токеном. Каждое соединение (CONNECT для HTTPS, обычные HTTP-запросы) сверяется с allow list машины: подключёнными списками и её собственными правилами. Разрешённое уходит в интернет хоста — через корпоративный прокси, если он настроен. Всё остальное получает 403 и попадает в журнал, откуда его можно разрешить одной кнопкой. Изменения правил действуют сразу, без перезапуска машины.'),
         h('ul', { class: 'small' },
           h('li', {}, h('code', {}, 'api.example.com'), ' — ровно этот хост; ', h('code', {}, '.example.com'), ' — хост и все поддомены; ', h('code', {}, '*.example.com'), ' — только поддомены; ', h('code', {}, '10.0.0.0/8'), ', ', h('code', {}, '192.0.2.10'), ' — IP-адреса; ', h('code', {}, '*'), ' — любой хост.'),
           h('li', {}, 'Порты: ', h('code', {}, '443'), ', ', h('code', {}, '443,80'), ', ', h('code', {}, '8000-8100'), ', ', h('code', {}, '*'), '. Путь внутри HTTPS не виден (TLS не расшифровывается) — фильтр работает по хосту и порту.'),
           h('li', {}, 'Адреса хоста, loopback, link-local (169.254.x — metadata) и частных сетей доступны только по явному правилу IP/CIDR — даже если разрешённое имя на них резолвится. ', h('code', {}, '*'), ' их не открывает.'),
           h('li', {}, h('b', {}, 'Жёсткая изоляция'), ': smolvm получает egress-политику «только IP хоста», так что программы, игнорирующие HTTP_PROXY, не выйдут в сеть в обход фильтра. Применяется при запуске через smolvm-web (машина должна быть остановлена). Учтите: машине станут доступны и другие сервисы хоста, слушающие внешний интерфейс.'),
-          h('li', {}, 'Образы при старте скачиваются отдельным токеном, которому дополнительно разрешены реестры образов («Настройки» → «Виртуализация»).'))), h('span', { class: 'spacer' })),
-      h('nav', { class: 'section-nav' }, SECTIONS.map(([id, icon, title]) => h('button', { type: 'button', class: id === section ? 'active' : '', onclick: () => goSection(id) }, ic(icon), title))),
-      h('p', { class: 'muted small section-about' }, SECTIONS.find(([id]) => id === section)[3]));
+          h('li', {}, 'Образы при старте скачиваются отдельным токеном, которому дополнительно разрешены реестры образов («Настройки» → «Виртуализация»).')));
   }
 
-  // ---------- «Машины»: one card per machine ----------
+  // ---------- a machine's network ----------
   // A machine's network mode, from the filter record.
   const MODES = {
     off: ['Без ограничений', 'Машина ходит в интернет как этот компьютер.'],
@@ -147,12 +165,6 @@
     record: { learn: true },
   };
   const openParts = new Set(); // `${machine}:rules|vendors` expanded
-
-  function machinesCard() {
-    const names = state.machines.map((m) => m.name);
-    if (!names.length) return h('section', { class: 'card' }, h('p', { class: 'muted' }, 'Машин пока нет.'));
-    return [asksBlock(), h('div', { class: 'net-cards' }, ...names.map(machineNetCard))].filter(Boolean);
-  }
 
   // A segmented control: options [[value, label, title]], current value, onChange.
   function segmented(options, value, onChange) {
@@ -259,7 +271,7 @@
       mode !== 'record' ? h('button', { class: 'btn ghost small-btn', title: MODES.soft[1], onclick: () => save(MODE_PATCH[mode === 'soft' ? 'strict' : 'soft'], true) },
         mode === 'soft' ? 'Включить изоляцию' : 'Без изоляции…') : null));
     const wide = ['rules', 'vendors', 'check'].some(isOpen);
-    return h('section', { class: `card machine-net${wide ? ' wide' : ''}${params.get('machine') === name ? ' hl' : ''}`, id: `net-${name}` }, ...parts);
+    return h('section', { class: `card machine-net${wide ? ' wide' : ''}${params?.get('machine') === name ? ' hl' : ''}`, id: `net-${name}` }, ...parts);
   }
 
   // A blocked destination with one-click allow (exact host, or the domain with subdomains).
@@ -394,7 +406,8 @@
     await load(); redrawPicker();
   };
 
-  function listEditor(l, users) {
+  // standalone: the list on the right of the page (no «close»); else a card among others.
+  function listEditor(l, users, standalone = false) {
     const name = h('input', { class: 'input', value: l.name, maxlength: 64 });
     const def = h('input', { type: 'checkbox', checked: l.default });
     return h('div', { class: 'lst-card lst-edit' },
@@ -402,13 +415,13 @@
         h('label', { class: 'lst-name' }, 'Название', name),
         h('label', { class: 'check small' }, def, ' подключать к новым машинам'),
         h('span', { class: 'spacer' }),
-        h('button', { class: 'btn ghost icon', title: 'Закрыть без сохранения', onclick: () => { editingList = null; render(); } }, ic('x'))),
+        standalone ? null : h('button', { class: 'btn ghost icon', title: 'Закрыть без сохранения', onclick: () => { editingList = null; render(); } }, ic('x'))),
       users.length ? h('div', { class: 'muted small' }, `Подключён к машинам: ${users.join(', ')} — изменения действуют сразу.`) : null,
       rulesEditor(l.rules, {
         extra: [h('button', { type: 'button', class: 'btn ghost danger', onclick: async () => {
           const r = await confirmDialog('Удалить список?', `«${l.name}» будет отключён от машин${users.length ? `: ${users.join(', ')}` : ''}.`);
           if (!r.ok) return;
-          await api('DELETE', `/ui/egress/lists/${enc(l.id)}`); editingList = null; await load(); render();
+          await api('DELETE', `/ui/egress/lists/${enc(l.id)}`); editingList = null; if (sel === `list:${l.id}`) sel = 'lists'; await load(); render();
         } }, 'Удалить список')],
         onSave: async (rules) => {
           await api('PUT', `/ui/egress/lists/${enc(l.id)}`, { name: name.value, default: def.checked, rules });
@@ -428,14 +441,16 @@
       try {
         const r = await api('PUT', '/ui/egress/lists/new', { name: nm, default: false, rules: t ? t.rules.map((x) => ({ ...x, note: t.name })) : [] });
         if (r?.id && pickerHost?.isConnected) pickerOpts?.onToggle(r.id, true);
-        editingList = r?.id || null; await load(); render();
+        editingList = r?.id || null;
+        if (sel === 'list:new' && r?.id) sel = `list:${r.id}`;
+        await load(); render();
       } catch (e) { toast(e.message, 'err'); }
     };
     name.addEventListener('keydown', (e) => { if (e.key === 'Enter') create(); });
     requestAnimationFrame(() => name.focus());
     return h('div', { class: 'lst-card lst-edit' },
       h('div', { class: 'lst-head' }, h('span', { class: 'mark m-icon' }, ic('plus')), h('b', {}, 'Новый список'), h('span', { class: 'spacer' }),
-        h('button', { class: 'btn ghost icon', title: 'Закрыть', onclick: () => { editingList = null; render(); } }, ic('x'))),
+        sel === 'list:new' ? null : h('button', { class: 'btn ghost icon', title: 'Закрыть', onclick: () => { editingList = null; render(); } }, ic('x'))),
       h('div', { class: 'grid2' }, h('label', {}, 'Название', name), h('label', {}, 'Начать с шаблона', tpl)),
       h('div', { class: 'row' }, h('span', { class: 'spacer' }), h('button', { class: 'btn primary', onclick: create }, 'Создать')));
   }
@@ -583,36 +598,72 @@
       names.length ? body : h('p', { class: 'muted small' }, 'Машин пока нет.'));
   }
 
+  function side() {
+    const item = (key, icon, name, sub, pill, cls = '') => h('a', { class: `machine ag-item sb-item${sel === key ? ' active' : ''} ${cls}`, href: '#', onclick: (e) => { e.preventDefault(); choose(key); } },
+      icon, h('div', { class: 'name' }, name), pill || h('span'), h('div', { class: 'meta' }, sub || ''));
+    const pill = (tone, text) => h('span', { class: `ag-pill ${tone}` }, text);
+    return h('section', { class: 'panel list-panel' },
+      h('div', { class: 'panel-head' }, h('h2', { class: 'h-ic' }, ic('globe'), 'Сеть'), netHelp()),
+      h('div', { class: 'machines' },
+        item('log', h('span', { class: 'mark m-icon m-list' }, ic('list')), 'Журнал соединений', 'что разрешено и заблокировано', denied.length ? h('span', { class: 'nav-count attn', title: 'Недавно заблокированных адресов' }, String(denied.length)) : null),
+        h('div', { class: 'sb-group' }, 'Белые списки', h('span', { class: 'muted' }, String(data.lists.length))),
+        ...data.lists.map((l) => item(`list:${l.id}`, h('span', { class: 'mark m-icon m-list' }, ic('shield')), l.name,
+          `${plural3(l.rules.length, 'адрес', 'адреса', 'адресов')}${usersOf(l).length ? ` · ${plural3(usersOf(l).length, 'машина', 'машины', 'машин')}` : ''}`, l.default ? pill('neutral', 'для новых') : null)),
+        item('list:new', h('span', { class: 'mark m-icon m-list' }, ic('plus')), 'Новый список', 'пустой или из шаблона', null, 'sb-add')));
+  }
+
+  function detail() {
+    const head = (icon, title, sub) => h('div', { class: 'detail-head' }, icon, h('div', { class: 'ag-title' }, h('h2', {}, title), sub ? h('span', { class: 'muted small' }, sub) : null));
+    const panel = (hd, ...body) => h('section', { class: 'panel detail-panel' }, hd, h('div', { class: 'tab-body' }, ...body.flat().filter(Boolean)));
+    if (sel === 'log') {
+      return panel(head(h('span', { class: 'mark m-icon' }, ic('list')), 'Журнал соединений', 'Все соединения машин: что разрешено, что заблокировано и почему. Заблокированное можно разрешить одной кнопкой; всё вместе с действиями — в разделе «Журнал».'),
+        logSection());
+    }
+    if (sel === 'list:new') return panel(head(h('span', { class: 'mark m-icon' }, ic('plus')), 'Новый список', 'Набор разрешённых адресов, который подключается к машинам и агентам: пустой или из шаблона — PyPI, npm, GitHub, Hugging Face…'), newListForm());
+    if (sel.startsWith('list:')) {
+      const l = data.lists.find((x) => `list:${x.id}` === sel);
+      const users = usersOf(l);
+      return panel(head(h('span', { class: 'mark m-icon' }, ic('shield')), l.name, users.length ? `Подключён: ${users.join(', ')} — изменения действуют сразу` : 'Не подключён ни к одной машине'), listEditor(l, users, true));
+    }
+    return null;
+  }
+
   function render() {
     redrawPicker();
+    drawNetTab();
     if (!root || !data) return;
-    const y = root.scrollTop;
     clearInterval(logTimer); logRoot = null;
-    const body = { machines: machinesCard, log: logSection, lists: listsCard }[section]();
-    fill(root, intro(), body);
-    if (section === 'log') startLog();
-    root.scrollTop = y;
+    if (!validSel()) sel = defaultSel();
+    syncHash();
+    const scroll = root.querySelector('.tab-body')?.scrollTop || 0;
+    fill(root, h('div', { class: 'layout ag-layout' }, side(), detail()));
+    if (sel === 'log') startLog();
+    const tb = root.querySelector('.tab-body');
+    if (tb) tb.scrollTop = scroll;
   }
 
   pages.egress = {
     render(el, p) {
       root = el; params = p;
+      el.classList.add('page-agents');
       // Old links: ?focus=providers / tab=providers|check → the machine cards; tab=blocks → the log.
-      section = { providers: 'machines', check: 'machines', blocks: 'log' }[p.get('tab') || p.get('focus')] || p.get('tab') || 'machines';
+      const tab = { providers: 'machines', check: 'machines', blocks: 'log' }[p.get('tab') || p.get('focus')] || p.get('tab') || '';
+      // A machine's own network lives on its tab now.
+      if (p.get('machine') && tab !== 'log') { location.replace(`#/?machine=${enc(p.get('machine'))}&tab=net`); return null; }
+      sel = tab === 'log' ? 'log' : p.get('list') ? `list:${p.get('list')}` : tab === 'lists' ? 'lists' : '';
       logFilter.machine = p.get('machine') || '';
       if (p.get('decision')) logFilter.decision = p.get('decision');
       if (p.get('machine') && p.get('tab') !== 'log') {
         const k = p.get('focus') === 'providers' || p.get('tab') === 'providers' ? 'vendors' : null;
         if (k) openParts.add(`${p.get('machine')}:${k}`);
       }
-      if (section === 'settings') { section = 'machines'; setTimeout(() => openSettings('net'), 0); } // moved to the settings dialog
-      if (!SECTIONS.some(([id]) => id === section)) section = 'machines';
+      if (tab === 'settings') setTimeout(() => openSettings('net'), 0); // moved to the settings dialog
       fill(el, h('p', { class: 'muted' }, 'Загрузка…'));
       load().then(render).catch((e) => fill(el, h('div', { class: 'error' }, e.message)));
       // New «ask» requests show up without a reload (the cards in the corner do the same).
       let askSig = '';
       const askTimer = setInterval(async () => {
-        if (!root || section !== 'machines' || document.hidden) return;
+        if (!root || sel === 'log' || document.hidden) return;
         let list;
         try { list = ((await api('GET', '/ui/live')).approvals || []).filter((a) => a.kind === 'net'); } catch { return; }
         const sig = list.map((a) => a.id).join(',');
@@ -620,7 +671,7 @@
         askSig = sig; asks = list;
         if (!root.querySelector('input:focus, select:focus, textarea:focus')) render();
       }, 3000);
-      return () => { clearInterval(logTimer); clearInterval(askTimer); logRoot = null; root = null; };
+      return () => { clearInterval(logTimer); clearInterval(askTimer); logRoot = null; root = null; el.classList.remove('page-agents'); };
     },
   };
 

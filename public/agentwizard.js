@@ -1,13 +1,13 @@
 'use strict';
-// «Создать агента» / настройки агента: one wide window, step by step:
-//   Программа → Изоляция → Директории → Секреты → Доверие → Агент
+// «Создать агента» / настройки агента: one wide window of a fixed height, step by step:
+//   Программа → Изоляция → Папки → Секреты → Доверие → Агент
 // The program is an agent preset. smolvm-web keeps one image per preset (with or without
 // hard isolation) and prepares it once, in the background; every task opens a clean copy
 // of it. The agent's own network, directories and secrets are applied to each copy.
 // A template made from your own machine can be chosen instead of a preset.
 
 (() => {
-  const TITLES = { program: 'Программа', net: 'Изоляция', dirs: 'Директории', secrets: 'Секреты', trust: 'Доверие', task: 'Агент' };
+  const TITLES = { program: 'Программа', net: 'Изоляция', dirs: 'Папки', secrets: 'Секреты', trust: 'Доверие', task: 'Агент' };
   const STEPS = ['program', 'net', 'dirs', 'secrets', 'trust', 'task'];
   const NET_MODES = [
     ['strict', 'Только разрешённое', 'Всё, чего нет в белых списках, блокируется. Обойти фильтр нельзя: копия изолирована на уровне smolvm. Рекомендуется для агентов.'],
@@ -25,6 +25,11 @@
       h('span', { class: 'aw-tile-text' }, h('b', { class: mono ? 'mono' : '' }, name), sub ? h('span', { class: 'muted small' }, sub) : null, note || null),
       extra || null);
   }
+  // A titled card, the same as on the pages: title, actions on the right, content.
+  function card(title, actions, ...body) {
+    return h('section', { class: 'card aw-card-box' }, h('div', { class: 'card-head' }, h('h3', {}, title), h('span', { class: 'spacer' }), ...[].concat(actions || [])), ...body);
+  }
+
   // «+»: make a new one of the kind.
   function plusTile(name, sub, onclick, disabled) {
     return h('button', { type: 'button', class: 'aw-tile aw-plus', disabled: !!disabled, onclick },
@@ -223,36 +228,36 @@
         body: [
           h('p', { class: 'muted' }, 'Куда копия агента сможет ходить в интернет. Действует на каждую задачу агента.'), cards,
           st.preset && !fixed ? h('div', { class: 'muted small' }, 'С жёсткой изоляцией и без неё у программы разные образы — нужный подготовится сам.') : null,
-          st.net === 'off' ? null : h('div', { class: 'ws-field' }, h('div', { class: 'label-like' }, 'Белые списки'), lists,
-            h('span', { class: 'muted small' }, 'Серверы самого агента (API модели, вход по подписке) разрешаются автоматически.')),
+          st.net === 'off' ? null : card('Белые списки', null, h('p', { class: 'muted small' }, 'Что ещё агенту можно, кроме серверов самой программы (API модели, вход по подписке) — они разрешаются автоматически.'), lists),
         ],
         foot: [back(), h('span', { class: 'spacer' }), ...saveBtns(), next()],
       };
     }
 
-    // ---------- 3. Директории ----------
+    // ---------- 3. Папки ----------
     function dirsStep() {
-      const tiles = st.dirs.map((f) => tile({
-        on: true, icon: ic('folder'), name: base(f.hostPath), title: f.hostPath,
-        sub: f.hostPath.replace(state.info?.home || '\u0000', '~'),
-        note: h('span', { class: 'tag' }, DIR_MODES[f.mode] || f.mode),
-        extra: h('span', { class: 'aw-tile-x', role: 'button', tabindex: '0', title: 'Убрать', 'aria-label': `Убрать ${base(f.hostPath)}`,
-          onclick: (e) => { e.stopPropagation(); st.dirs = st.dirs.filter((x) => x !== f); draw(); } }, ic('x')),
-        onclick: () => openFolderDialog({ fixedMachine: '__new', sandbox: true, hostPath: f.hostPath, mode: f.mode,
-          onDone: (b) => { Object.assign(f, { hostPath: b.hostPath, mode: b.mode === 'ro' ? 'ro' : 'review' }); draw(); } }),
-      }));
-      const add = plusTile('Дать доступ к папке', 'выбрать папку компьютера и режим', () => openFolderDialog({
-        fixedMachine: '__new', sandbox: true, mode: 'review',
-        onDone: (b) => { st.dirs = st.dirs.filter((x) => x.hostPath !== b.hostPath).concat([{ hostPath: b.hostPath, mode: b.mode === 'ro' ? 'ro' : 'review' }]); draw(); },
-      }));
+      const home = state.info?.home || '\u0000';
+      const add = () => openFolderDialog({ fixedMachine: '__new', sandbox: true, mode: 'review',
+        onDone: (b) => { st.dirs = st.dirs.filter((x) => x.hostPath !== b.hostPath).concat([{ hostPath: b.hostPath, mode: b.mode === 'ro' ? 'ro' : 'review' }]); draw(); } });
+      const rows = st.dirs.map((f) => h('div', { class: 'aw-row' },
+        h('span', { class: 'mark m-icon' }, ic('folder')),
+        h('div', { class: 'aw-row-text' }, h('b', { class: 'mono ellipsis', title: f.hostPath }, f.hostPath.replace(home, '~')),
+          h('span', { class: 'muted small' }, f.mode === 'ro' ? 'агент видит копию; на компьютер ничего не записывается' : 'git-репозиторий — результат веткой; папка без git — копия, изменения после проверки')),
+        h('span', { class: `tag ${f.mode === 'ro' ? 'ok' : 'accent'}` }, DIR_MODES[f.mode] || f.mode),
+        h('button', { type: 'button', class: 'btn ghost small-btn', onclick: () => openFolderDialog({ fixedMachine: '__new', sandbox: true, hostPath: f.hostPath, mode: f.mode,
+          onDone: (b) => { Object.assign(f, { hostPath: b.hostPath, mode: b.mode === 'ro' ? 'ro' : 'review' }); draw(); } }) }, 'Изменить'),
+        h('button', { type: 'button', class: 'btn ghost icon danger', title: 'Убрать', 'aria-label': `Убрать ${base(f.hostPath)}`, onclick: () => { st.dirs = st.dirs.filter((x) => x !== f); draw(); } }, ic('x'))));
       return {
         body: [
-          h('p', { class: 'muted' }, 'Какие папки компьютера получает агент. В каждой задаче — свежая копия папки; ваши файлы меняются только после проверки.'),
-          h('div', { class: 'aw-tiles' }, ...tiles, add),
-          h('ul', { class: 'small muted aw-hints' },
-            h('li', {}, h('b', {}, 'Копия с проверкой'), ' — агент правит копию; на диск попадёт только то, что вы примете в «Решениях».'),
-            h('li', {}, h('b', {}, 'Только чтение'), ' — агент видит копию; на компьютер из неё ничего не записывается.'),
-            h('li', {}, 'Прямой доступ «Чтение и запись» в песочнице невозможен: smolvm не подключает папки к копии из образа.')),
+          h('p', { class: 'muted' }, 'Какие папки компьютера агент получает в каждой задаче. Папку можно дать и в самой задаче, а для репозитория удобнее «Проекты».'),
+          card('Папки агента', h('button', { type: 'button', class: 'btn small-btn', onclick: add }, ic('plus'), 'Дать доступ к папке'),
+            rows.length ? h('div', { class: 'aw-rows' }, ...rows) : h('p', { class: 'muted small' }, 'Пока ни одной: агент получит только чистую машину.')),
+          card('Как агент получает папку', null,
+            h('ul', { class: 'small aw-hints' },
+              h('li', {}, h('b', {}, 'Git-репозиторий'), ' — текущий код без истории; работа агента возвращается веткой, ваша папка не меняется, пока вы не нажмёте «Влить».'),
+              h('li', {}, h('b', {}, 'Копия с проверкой'), ' — для папки без git: агент правит копию, на диск попадёт только то, что вы примете.'),
+              h('li', {}, h('b', {}, 'Только чтение'), ' — агент видит копию; на компьютер из неё ничего не записывается.'),
+              h('li', { class: 'muted' }, 'Прямой доступ «Чтение и запись» в задаче невозможен: smolvm не подключает папки к машине из образа.'))),
         ],
         foot: [back(), h('span', { class: 'spacer' }), ...saveBtns(), next()],
       };
@@ -385,18 +390,20 @@
         ic('play'), edit ? 'Сохранить и запустить' : 'Создать и запустить');
       return {
         body: [
-          h('div', { class: 'aw-col aw-narrow' },
-            h('label', { class: 'ws-field', for: 'aw-name' }, 'Имя агента', name),
-            program ? h('div', { class: 'ws-field' }, h('div', { class: 'label-like' }, 'Интерфейс агента'), program) : null,
-            from ? h('label', { class: 'ws-field', for: 'aw-from' }, 'Память агента', from) : null,
-            h('label', { class: 'ag-check', for: 'aw-review' }, review, h('span', {}, 'Проверять, что агент запоминает', h('span', { class: 'muted small' }, ' — skills, MCP и настройки сохранятся только после вашего «да»'))),
+          h('p', { class: 'muted' }, 'Как агента зовут, через какой интерфейс он работает и что запоминает между задачами.'),
+          h('div', { class: 'aw-grid2' },
+            card('Агент', null,
+              h('label', { class: 'ws-field', for: 'aw-name' }, 'Имя', name),
+              program ? h('div', { class: 'ws-field' }, h('div', { class: 'label-like' }, 'Интерфейс'), program) : null),
+            card('Память', edit ? h('a', { class: 'small', href: `#/profile?id=${enc(prof.id)}`, onclick: () => dlg.close() }, 'инструкции, MCP, skills →') : null,
+              from ? h('label', { class: 'ws-field', for: 'aw-from' }, 'С чего начать', from) : null,
+              h('label', { class: 'ag-check', for: 'aw-review' }, review, h('span', {}, 'Проверять, что агент запоминает', h('span', { class: 'muted small' }, ' — skills, MCP и настройки сохранятся только после вашего «да»'))))),
+          card('Запуск', null,
             h('label', { class: 'ag-check', for: 'aw-tab' }, inTab, h('span', {}, 'Открывать агента в отдельной вкладке браузера')),
             img && !img.ready ? h('div', { class: 'ag-prep' }, h('b', {}, 'Образ программы готовится'), imageNote(img),
-              h('span', { class: 'small' }, 'Агента можно создать уже сейчас; «Создать и запустить» включится, когда образ будет готов. Окно можно закрыть.')) : null,
-            edit ? h('a', { href: `#/profile?id=${enc(prof.id)}`, onclick: () => dlg.close() }, 'Память агента: инструкции, MCP, skills →') : null,
-            edit ? h('button', { class: 'btn ghost danger aw-del', onclick: removeAgent }, ic('trash'), 'Удалить агента') : null),
+              h('span', { class: 'small' }, 'Агента можно создать уже сейчас; «Создать и запустить» включится, когда образ будет готов. Окно можно закрыть.')) : null),
         ],
-        foot: [back(), h('span', { class: 'spacer' }), save, run],
+        foot: [back(), edit ? h('button', { class: 'btn ghost danger', onclick: removeAgent }, ic('trash'), 'Удалить агента') : null, h('span', { class: 'spacer' }), save, run],
       };
     }
 

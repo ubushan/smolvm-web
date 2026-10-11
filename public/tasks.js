@@ -210,7 +210,7 @@
     const copies = t.folders.filter((f) => !f.git && f.mode !== 'ro');
     if (copies.length) out.push(h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h3', {}, 'Папки без git')),
       h('p', { class: 'small' }, `${copies.map((f) => base(f.hostPath)).join(', ')} — рабочая копия: изменения проверяются по файлам${isOpen(t) ? '' : ', пока машина была открыта'}.`),
-      isOpen(t) ? h('a', { class: 'btn small-btn', href: `#/dirs?tab=folders&machine=${enc(t.machine)}` }, 'Проверить копию') : null));
+      isOpen(t) ? h('a', { class: 'btn small-btn', href: `#/?machine=${enc(t.machine)}&tab=folders` }, 'Проверить копию') : null));
     if (t.profilePending.length) out.push(h('section', { class: 'card tk-mem' }, h('div', { class: 'card-head' }, h('h3', {}, 'Память агента')),
       h('p', { class: 'small' }, `Агент хочет сохранить ${plural(t.profilePending.reduce((n, p) => n + p.changes, 0), 'изменение', 'изменения', 'изменений')} в свою память (инструкции, skills, MCP).`),
       h('a', { class: 'btn small-btn primary', href: `#/review?id=${enc(t.profilePending[0].id)}` }, 'Проверить')));
@@ -352,6 +352,18 @@
 
   const tabOf = (t) => tab || (t.status === 'waiting' ? 'decisions' : isOpen(t) && !t.result.commits ? 'agent' : 'changes');
 
+  // «?» of the section: what a task is and why work goes this way.
+  function help() {
+    return helpButton('Зачем раздел «Задачи»',
+      h('p', {}, 'Задача — то, что вы поручили агенту, и её результат. Здесь видно, кто сейчас работает, что ждёт вашего решения и чем закончилось раньше.'),
+      h('ul', {},
+        h('li', {}, h('b', {}, 'Каждая задача — чистая машина. '), 'Агент не видит ваш компьютер и другие задачи; куда ему можно ходить в сети и какие ключи он получит, задаёт агент (⚙ → «Агенты») и уровень доверия. Поэтому агенту можно разрешить работать без подтверждений на каждый шаг.'),
+        h('li', {}, h('b', {}, 'Результат — ветка, а не изменённая папка. '), 'Агент получает текущий код без истории, его работа возвращается веткой smolvm/… в вашем репозитории. Ваша рабочая папка не меняется, пока вы не нажмёте «Влить».'),
+        h('li', {}, h('b', {}, 'Проверка перед слиянием. '), 'Во вкладке «Изменения» — коммиты и diff; изменения CI, хуков, зависимостей и подозрительные строки отмечены. «Что делал» — куда агент ходил в сети и что делал.'),
+        h('li', {}, h('b', {}, 'Разовая или постоянная. '), 'Разовая: агент делает и отдаёт результат, машина закрывается по сроку. Постоянная: работаете вместе сколько нужно; «Сбросить» даёт чистую машину, работа продолжается с той же ветки.')),
+      h('p', { class: 'muted small' }, 'Слева: «Ждут вас» — нужен ваш ответ или проверка, «Работают», «История». Повторяющуюся работу над одним репозиторием удобнее вести через «Проекты».'));
+  }
+
   // ---------- the list on the left ----------
   function side(t0) {
     const groups = [
@@ -366,7 +378,7 @@
         mark(MARKS[t.agent] || 'vm', true), h('div', { class: 'name', title: t.text || '' }, t.title), pill(t.status), h('div', { class: 'meta' }, sub));
     };
     return h('section', { class: 'panel list-panel' },
-      h('div', { class: 'panel-head' }, h('h2', { class: 'h-ic' }, ic('list'), 'Задачи'), h('span', { class: 'spacer' }),
+      h('div', { class: 'panel-head' }, h('h2', { class: 'h-ic' }, ic('list'), 'Задачи'), help(), h('span', { class: 'spacer' }),
         h('button', { class: 'btn primary small-btn needs-operator', onclick: () => newTask() }, ic('plus'), 'Новая задача')),
       h('div', { class: 'machines' }, ...groups.flatMap(([title, list]) => (list.length ? [h('div', { class: 'sb-group' }, title, h('span', { class: 'muted' }, String(list.length))), ...list.map(item)] : [])),
         tasks.length ? null : h('div', { class: 'sb-empty muted small' }, 'Задач пока нет.')));

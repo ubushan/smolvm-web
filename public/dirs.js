@@ -1,5 +1,7 @@
 'use strict';
-// Page «Директории»: host folders given to machines, review copies, the allowed list.
+// «Папки» (⚙ → «Папки», #/dirs): which host folders may be given to machines (the mode and
+// the list), and per machine what it got and what the agent changed in review copies —
+// the list on the left, the chosen one on the right.
 // (Per-user access inside a machine is API-only: PUT /ui/machines/:name/dirs.)
 
 (() => {
@@ -8,7 +10,6 @@
   let reg = null;        // GET /ui/dirs
   let root = null;
   let params = null;
-  let selected = null;   // machine name
 
   async function load() { reg = await api('GET', '/ui/dirs'); }
 
@@ -39,152 +40,151 @@
       try {
         await api('PUT', `/ui/dirs/${d ? enc(d.id) : 'new'}`, body);
         toast(`Папка ${body.id} сохранена`, 'ok');
-        editingDir = null; await load(); render();
+        editingDir = null;
+        if (!d) sel = `dir:${body.id}`;
+        await load(); render();
       } catch (ex) { err.textContent = ex.message; err.hidden = false; }
     });
     return f;
   }
 
-  // ---------- «Разрешённые папки»: strict mode, then a grid of folder cards ----------
+  // ---------- what may be given: the mode, one folder of the list ----------
   let editingDir = null; // dir id or 'new'
 
-  function registryCard() {
+  function modeCard() {
     const setStrict = async (on) => {
       if (on === reg.strict) return;
       try { await api('PUT', '/ui/dirs-settings', { strict: on }); toast(on ? 'Строгий режим включён: машинам — только папки из списка' : 'Строгий режим выключен', 'ok'); }
       catch (e) { toast(e.message, 'err'); }
       await load(); render();
     };
-    const modes = h('div', { class: 'set-modes' }, [
-      [false, 'Любые папки', 'Доступ можно дать к любой папке, кроме запрещённых всегда: корень диска, домашняя папка целиком, ~/.ssh, ~/.aws и другие места с ключами, системные пути. Папки попадают в список сами.'],
-      [true, 'Только из списка', 'Машинам — только папки из списка ниже и их подпапки, не шире уровня «Не больше, чем». Новые папки добавляются сюда вручную.'],
-    ].map(([v, t, desc]) => h('button', { type: 'button', class: `set-mode${v === reg.strict ? ' sel' : ''}`, onclick: () => setStrict(v) },
-      h('span', { class: 'set-radio' }), h('div', {}, h('div', { class: 'mode-title' }, t), h('div', { class: 'small muted' }, desc)))));
+    return h('section', { class: 'card' },
+      h('div', { class: 'card-head' }, h('h3', {}, 'Какие папки можно давать машинам')),
+      h('div', { class: 'set-modes' }, [
+        [false, 'Любые папки', 'Доступ можно дать к любой папке, кроме запрещённых всегда: корень диска, домашняя папка целиком, ~/.ssh, ~/.aws и другие места с ключами, системные пути. Папки попадают в список сами.'],
+        [true, 'Только из списка', 'Машинам — только папки из списка и их подпапки, не шире уровня «Не больше, чем». Новые папки добавляются в список вручную.'],
+      ].map(([v, t, desc]) => h('button', { type: 'button', class: `set-mode${v === reg.strict ? ' sel' : ''}`, onclick: () => setStrict(v) },
+        h('span', { class: 'set-radio' }), h('div', {}, h('div', { class: 'mode-title' }, t), h('div', { class: 'small muted' }, desc))))));
+  }
 
-    const cards = reg.dirs.map((d) => {
-      if (editingDir === d.id) return dirEditCard(d);
-      return h('div', { class: 'lst-card' },
-        h('div', { class: 'lst-head' }, h('span', { class: 'mark m-icon' }, ic('folder')),
-          h('div', { class: 'lst-title' }, h('b', { class: 'mono' }, d.id), d.note ? h('div', { class: 'muted small' }, d.note) : null),
-          h('span', { class: 'spacer' }), h('span', { class: `tag ${LEVEL_TAG[d.ceiling]}`, title: 'Не больше, чем' }, LEVEL[d.ceiling])),
-        h('div', { class: 'dir-paths' },
-          h('div', { class: 'mono small ellipsis path-tail', title: d.hostPath }, `‎${d.hostPath.replace(state.info?.home || '\u0000', '~')}‎`),
-          h('div', { class: 'mono small muted' }, `→ ${d.guestPath}`),
-          !d.exists ? h('div', { class: 'small badc' }, 'папка не найдена на компьютере') : d.owner != null ? h('div', { class: 'small muted' }, `владелец: uid ${d.owner}`) : null),
-        h('div', { class: 'lst-foot' },
-          d.machines.length ? h('div', { class: 'chips' }, d.machines.map((n) => h('a', { href: `#/dirs?tab=folders&machine=${enc(n)}`, class: 'lst-host mono' }, n))) : h('span', { class: 'muted small' }, 'Не подключена к машинам'),
-          h('span', { class: 'spacer' }),
-          h('button', { class: 'btn small-btn', onclick: () => { editingDir = d.id; render(); } }, 'Изменить'),
-          h('button', { class: 'btn ghost icon danger', title: 'Убрать из списка', onclick: async () => {
-            const r = await confirmDialog('Убрать папку из списка?', `«${d.id}» (${d.hostPath}) больше нельзя будет давать машинам${reg.strict ? '' : ' в строгом режиме'}. Файлы на компьютере не затрагиваются.`, false, '', 'Убрать');
-            if (!r.ok) return;
-            try { await api('DELETE', `/ui/dirs/${enc(d.id)}`); await load(); render(); } catch (e) { toast(e.message, 'err'); }
-          } }, ic('trash'))));
-    });
-    const add = editingDir === 'new' ? dirEditCard(null) : h('button', { type: 'button', class: 'lst-card lst-add', onclick: () => { editingDir = 'new'; render(); } },
-      h('span', { class: 'lst-add-ic' }, ic('plus')), h('b', {}, 'Добавить папку'), h('span', { class: 'muted small' }, reg.strict ? 'чтобы её можно было давать машинам' : 'нужно только для строгого режима — обычно папки попадают сюда сами'));
-
-    return [
-      h('section', { class: 'card' },
-        h('div', { class: 'card-head' }, h('h3', {}, 'Какие папки можно давать машинам')),
-        modes),
-      h('div', { class: 'lst-section' }, h('div', { class: 'net-col-title' }, 'Список папок'), h('span', { class: 'muted small' }, `${reg.dirs.length} · сюда попадает каждая папка, к которой давали доступ`)),
-      h('div', { class: 'lst-grid' }, ...cards, add),
-    ];
+  function dirCard(d) {
+    if (editingDir === d.id) return dirEditCard(d);
+    const kv = (k, v) => h('div', {}, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v));
+    return h('section', { class: 'card' },
+      h('div', { class: 'card-head' }, h('h3', {}, 'Папка'), h('span', { class: 'spacer' }),
+        h('button', { class: 'btn small-btn', onclick: () => { editingDir = d.id; render(); } }, 'Изменить'),
+        h('button', { class: 'btn ghost icon danger', title: 'Убрать из списка', 'aria-label': 'Убрать из списка', onclick: async () => {
+          const r = await confirmDialog('Убрать папку из списка?', `«${d.id}» (${d.hostPath}) больше нельзя будет давать машинам${reg.strict ? '' : ' в строгом режиме'}. Файлы на компьютере не затрагиваются.`, false, '', 'Убрать');
+          if (!r.ok) return;
+          try { await api('DELETE', `/ui/dirs/${enc(d.id)}`); sel = ''; await load(); render(); } catch (e) { toast(e.message, 'err'); }
+        } }, ic('trash'))),
+      h('div', { class: 'kv' },
+        kv('На компьютере', h('span', { class: 'mono', title: d.hostPath }, d.hostPath.replace(state.info?.home || '\u0000', '~'))),
+        kv('В машине', h('span', { class: 'mono' }, d.guestPath)),
+        kv('Не больше, чем', LEVEL[d.ceiling]),
+        kv('Владелец', d.owner != null ? `uid ${d.owner}` : '—')),
+      !d.exists ? h('p', { class: 'small badc' }, 'Папка не найдена на компьютере.') : null,
+      d.note ? h('p', { class: 'small muted' }, d.note) : null,
+      h('div', { class: 'label-like' }, 'Подключена к машинам'),
+      d.machines.length ? h('div', { class: 'chips' }, d.machines.map((n) => h('a', { href: `#/?machine=${enc(n)}&tab=folders`, class: 'lst-host mono' }, n))) : h('p', { class: 'muted small' }, 'Ни к одной.'));
   }
 
   function dirEditCard(d) {
     const f = dirForm(d);
-    f.querySelector('.btn.ghost')?.addEventListener('click', () => { editingDir = null; render(); });
+    f.querySelector('.btn.ghost')?.addEventListener('click', () => { editingDir = null; if (!d) sel = ''; render(); });
     return h('div', { class: 'lst-card lst-edit' },
       h('div', { class: 'lst-head' }, h('span', { class: 'mark m-icon' }, ic(d ? 'folder' : 'plus')), h('b', {}, d ? `Папка ${d.id}` : 'Новая папка в списке'), h('span', { class: 'spacer' }),
         h('button', { class: 'btn ghost icon', title: 'Закрыть', onclick: () => { editingDir = null; render(); } }, ic('x'))),
       f);
   }
 
-  // One card per machine: its folders in plain terms, and «Дать доступ к папке».
-  function machineFolders() {
-    if (!state.machines.length) return h('section', { class: 'card' }, h('p', { class: 'muted' }, 'Машин пока нет — создайте машину, затем дайте ей доступ к папкам.'));
-    const wanted = params.get('machine');
-    // Compact cards, three in a row; a card with review copies spans the row (diffs need the width).
-    return h('div', { class: 'mf-cards' }, ...state.machines.map((m) => {
-      const changes = h('div', { class: 'mf-changes' });
-      const drawChanges = async () => {
-        let copies = [];
-        try { copies = (await api('GET', `/ui/machines/${enc(m.name)}/review`)).dirs; } catch { copies = []; }
-        changes.closest('.machine-folders')?.classList.toggle('wide', copies.length > 0);
-        if (!copies.length) { changes.replaceChildren(); return; }
-        changes.replaceChildren(h('div', { class: 'net-col-title' }, 'Изменения агента в рабочих копиях'),
-          ...(await Promise.all(copies.map((d) => reviewDir(m, d, drawChanges)))));
-      };
-      const list = folderList(m, { onChange: drawChanges });
-      drawChanges();
-      const mk = state.marks?.[m.name];
-      return h('section', { class: `card machine-folders${wanted === m.name ? ' hl' : ''}`, id: `mf-${m.name}` },
-        h('div', { class: 'net-head' },
-          mark(mk?.mark || 'vm', true),
-          h('div', { class: 'net-title' },
-            h('div', { class: 'row' }, h('b', { class: 'mono' }, m.name), h('span', { class: `badge ${m.state}` }, stateLabel(m.state)), mk?.sandbox ? h('span', { class: 'tag sbx' }, 'песочница') : null),
-            h('div', { class: 'muted small' }, mk?.title ? `пресет ${mk.title}` : 'машина без пресета')),
-          h('button', { class: 'btn small-btn mf-add', title: 'Дать доступ к папке', onclick: () => openFolderDialog({ machine: m.name, onDone: () => { list.refresh(); drawChanges(); } }) }, ic('plus'), 'Дать папку')),
-        list, changes);
-    }));
+  // One machine: its folders in plain terms, «Дать папку», the agent's changes in review copies.
+  function machineFolderCard(m) {
+    const changes = h('div', { class: 'mf-changes' });
+    const drawChanges = async () => {
+      let copies = [];
+      try { copies = (await api('GET', `/ui/machines/${enc(m.name)}/review`)).dirs; } catch { copies = []; }
+      if (!copies.length) { changes.replaceChildren(); return; }
+      changes.replaceChildren(h('div', { class: 'net-col-title' }, 'Изменения агента в рабочих копиях'),
+        ...(await Promise.all(copies.map((d) => reviewDir(m, d, drawChanges)))));
+    };
+    const list = folderList(m, { onChange: drawChanges });
+    drawChanges();
+    return h('section', { class: 'card machine-folders' },
+      h('div', { class: 'card-head' }, h('h3', {}, 'Папки компьютера в машине'), h('span', { class: 'spacer' }),
+        h('button', { class: 'btn small-btn', title: 'Дать доступ к папке', onclick: () => openFolderDialog({ machine: m.name, onDone: () => { list.refresh(); drawChanges(); } }) }, ic('plus'), 'Дать папку')),
+      list, changes);
   }
 
-  // Sections of the page, like the settings window: a bar on top, one section at a time.
-  const SECTIONS = [
-    ['allowed', 'shield', 'Разрешённые папки', 'Какие папки этого компьютера вообще можно давать машинам.'],
-    ['folders', 'folder', 'Папки машин', 'Какие папки видят агенты в каждой машине, в каком режиме, работает ли доступ — и что агент поменял в рабочих копиях.'],
-  ];
-  let section = 'allowed';
+  // ---------- the page ----------
+  let sel = ''; // 'mode' | 'dir:<id>' | 'dir:new'
+  const validSel = () => sel === 'mode' || sel === 'dir:new' || (sel.startsWith('dir:') && reg.dirs.some((d) => `dir:${d.id}` === sel));
+  // A machine's folders are its tab «Папки» on «Машины».
+  window.machineFoldersTab = (el, m) => el.append(machineFolderCard(m));
+  const choose = (key) => { sel = key; editingDir = key === 'dir:new' ? 'new' : null; render(); };
+
+  function help() {
+    return helpButton('Как агент получает доступ к папке',
+      h('p', {}, '«Дать доступ к папке» → выберите папку, машину и режим. Остальное smolvm-web сделает сам: разрешит папку, подключит её к машине, выдаст права пользователю агента (node), при необходимости предложит перезапустить машину и проверит, что агент действительно видит папку.'),
+      h('ul', {},
+        h('li', {}, h('b', {}, 'Только чтение'), ' — папка подключается read-only на уровне компьютера: писать в неё не сможет никто в машине, даже root.'),
+        h('li', {}, h('b', {}, 'Рабочая копия с ревью'), ' — в машину копируется содержимое папки; изменения агента попадают на компьютер только после вашего «Применить». Для задач с git-репозиторием вместо копии — ветка (страница «Задачи»).'),
+        h('li', {}, h('b', {}, 'Чтение и запись'), ' — агент меняет файлы на компьютере напрямую. Компьютер пускает писать только владельца папки, поэтому пользователь агента при запуске машины получает uid владельца — новые файлы будут вашими.'),
+        h('li', {}, 'Новое подключение требует перезапуска машины: smolvm меняет монтирования только при запуске.')),
+      h('p', { class: 'small muted' }, 'Технически папка монтируется в /.smolvm-dirs/<имя>/<ro|rw>/data за каталогом-«шлюзом» с POSIX ACL, а путь в машине — ссылка на него.'));
+  }
+
+  function side() {
+    const item = (key, icon, name, sub, pill, cls = '') => h('a', { class: `machine ag-item sb-item${sel === key ? ' active' : ''} ${cls}`, href: '#', onclick: (e) => { e.preventDefault(); choose(key); } },
+      icon, h('div', { class: 'name' }, name), pill || h('span'), h('div', { class: 'meta' }, sub || ''));
+    const pill = (tone, text) => h('span', { class: `ag-pill ${tone}` }, text);
+    return h('section', { class: 'panel list-panel' },
+      h('div', { class: 'panel-head' }, h('h2', { class: 'h-ic' }, ic('folder'), 'Папки'), help(),
+        h('button', { class: 'btn primary icon', title: 'Дать доступ к папке', 'aria-label': 'Дать доступ к папке',
+          onclick: () => openFolderDialog({ machine: state.machines[0]?.name, onDone: async () => { await load(); render(); } }) }, ic('plus'))),
+      h('div', { class: 'machines' },
+        item('mode', h('span', { class: 'mark m-icon m-list' }, ic('shield')), 'Какие папки можно давать', reg.strict ? 'только из списка' : 'любые, кроме опасных', pill(reg.strict ? 'ok' : 'neutral', reg.strict ? 'строго' : 'свободно')),
+        h('div', { class: 'sb-group' }, 'Список папок', h('span', { class: 'muted' }, String(reg.dirs.length))),
+        ...reg.dirs.map((d) => item(`dir:${d.id}`, h('span', { class: 'mark m-icon m-list' }, ic('folder')), d.id,
+          `${d.hostPath.replace(state.info?.home || '\u0000', '~')}`, d.exists ? pill(LEVEL_TAG[d.ceiling] || 'neutral', LEVEL[d.ceiling]) : pill('bad', 'не найдена'))),
+        item('dir:new', h('span', { class: 'mark m-icon m-list' }, ic('plus')), 'Добавить папку', reg.strict ? 'чтобы её можно было давать' : 'нужно только для строгого режима', null, 'sb-add')),
+      h('p', { class: 'muted small dirs-note' }, 'Какие папки у конкретной машины и что агент поменял в рабочих копиях — вкладка «Папки» машины («Машины»).'));
+  }
+
+  function detail() {
+    const head = (icon, title, sub) => h('div', { class: 'detail-head' }, icon, h('div', { class: 'ag-title' }, h('h2', {}, title), sub ? h('span', { class: 'muted small' }, sub) : null));
+    const panel = (hd, ...body) => h('section', { class: 'panel detail-panel' }, hd, h('div', { class: 'tab-body' }, ...body.flat().filter(Boolean)));
+    if (sel === 'mode') return panel(head(h('span', { class: 'mark m-icon' }, ic('shield')), 'Какие папки можно давать', 'Какие папки этого компьютера вообще можно давать машинам и агентам.'), modeCard());
+    if (sel === 'dir:new') return panel(head(h('span', { class: 'mark m-icon' }, ic('plus')), 'Новая папка в списке', reg.strict ? 'В строгом режиме машинам можно давать только папки из списка.' : 'Обычно папки попадают в список сами, когда к ним дают доступ.'), dirEditCard(null));
+    if (sel.startsWith('dir:')) {
+      const d = reg.dirs.find((x) => `dir:${x.id}` === sel);
+      return panel(head(h('span', { class: 'mark m-icon' }, ic('folder')), d.id, d.note || 'Папка из списка разрешённых'), dirCard(d));
+    }
+    return null;
+  }
 
   async function render() {
     if (!root || !reg) return;
-    const nav = h('nav', { class: 'section-nav' }, SECTIONS.map(([id, icon, title]) => {
-      const b = h('button', { type: 'button', class: id === section ? 'active' : '' }, ic(icon), title);
-      b.addEventListener('click', () => {
-        section = id;
-        const q = new URLSearchParams(params); q.set('tab', id); q.delete('focus');
-        history.replaceState(null, '', `#/dirs?${q}`);
-        render();
-      });
-      return b;
-    }));
-    const [, , , about] = SECTIONS.find(([id]) => id === section);
-    let content;
-    if (section === 'folders') content = machineFolders();
-    else content = registryCard();
-    fill(root,
-      h('section', { class: 'card intro dirs-head' },
-        h('div', { class: 'row' }, h('h2', { class: 'h-ic' }, ic('folder'), 'Папки компьютера для агентов'),
-          helpButton('Как агент получает доступ к папке',
-            h('p', {}, '«Дать доступ к папке» → выберите папку, машину и режим. Остальное smolvm-web сделает сам: разрешит папку, подключит её к машине, выдаст права пользователю агента (node), при необходимости предложит перезапустить машину и проверит, что агент действительно видит папку.'),
-            h('ul', {},
-              h('li', {}, h('b', {}, 'Только чтение'), ' — папка подключается read-only на уровне компьютера: писать в неё не сможет никто в машине, даже root.'),
-              h('li', {}, h('b', {}, 'Рабочая копия с ревью'), ' — в машину копируется содержимое папки; изменения агента попадают на компьютер только после вашего «Применить» (вкладка «Изменения агента»).'),
-              h('li', {}, h('b', {}, 'Чтение и запись'), ' — агент меняет файлы на компьютере напрямую. Компьютер пускает писать только владельца папки, поэтому пользователь агента при запуске машины получает uid владельца — новые файлы будут вашими.'),
-              h('li', {}, 'Новое подключение требует перезапуска машины: smolvm меняет монтирования только при запуске.')),
-            h('p', { class: 'small muted' }, 'Технически папка монтируется в /.smolvm-dirs/<имя>/<ro|rw>/data за каталогом-«шлюзом» с POSIX ACL, а путь в машине — ссылка на него.')),
-          h('span', { class: 'spacer' }),
-          h('button', { class: 'btn primary', onclick: () => openFolderDialog({ machine: params.get('machine') || state.selected || state.machines[0]?.name, onDone: render }) }, ic('plus'), 'Дать доступ к папке')),
-        nav,
-        h('p', { class: 'muted small' }, about)),
-      ...[].concat(content));
-    if (section === 'folders' && params.get('machine')) requestAnimationFrame(() => root?.querySelector(`#mf-${CSS.escape(params.get('machine'))}`)?.scrollIntoView({ behavior: 'smooth' }));
+    if (!validSel()) sel = 'mode';
+    const q = sel === 'mode' ? '' : sel.startsWith('dir:') && sel !== 'dir:new' ? `?dir=${enc(sel.slice(4))}` : '';
+    if (location.hash !== `#/dirs${q}`) history.replaceState(null, '', `#/dirs${q}`);
+    const scroll = root.querySelector('.tab-body')?.scrollTop || 0;
+    fill(root, h('div', { class: 'layout ag-layout' }, side(), detail()));
+    const tb = root.querySelector('.tab-body');
+    if (tb) tb.scrollTop = scroll;
   }
 
   pages.dirs = {
     render(el, p) {
       root = el; params = p;
-      selected = p.get('machine') || selected;
-      // Old links: ?focus=changes, ?advanced=1.
-      // «Разрешённые папки» first; old links (?tab=changes, ?focus=changes, ?machine=) go to the machines.
-      const t = p.get('tab');
-      section = t === 'changes' || p.get('focus') === 'changes' ? 'folders' : t || (p.get('machine') ? 'folders' : 'allowed');
-      if (!SECTIONS.some(([id]) => id === section)) section = 'allowed';
+      el.classList.add('page-agents');
+      // Old links: ?tab=allowed → the mode; ?tab=folders|changes&machine= → that machine.
+      // A machine's folders are its tab now: old links (?machine=, ?tab=folders|changes) lead there.
+      if (p.get('machine')) { location.replace(`#/?machine=${enc(p.get('machine'))}&tab=folders`); return null; }
+      sel = p.get('dir') ? `dir:${p.get('dir')}` : 'mode';
       fill(el, h('p', { class: 'muted' }, 'Загрузка…'));
       load().then(render).catch((e) => fill(el, h('div', { class: 'error' }, e.message)));
-      return () => { root = null; };
+      return () => { root = null; el.classList.remove('page-agents'); };
     },
   };
 })();

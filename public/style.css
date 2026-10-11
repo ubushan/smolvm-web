@@ -1497,3 +1497,60 @@ body[data-merge="no"] .needs-merge { display: none !important; }
 .login-dialog { width: min(380px, calc(100vw - 32px)); }
 .login-dialog .dialog-body { display: flex; flex-direction: column; gap: 12px; }
 @media (max-width: 640px) { .acc-row { grid-template-columns: 1fr auto; } .acc-add { grid-template-columns: 1fr; } }
+/* A machine's network card on the right: the panel's head already names the machine. */
+.detail-panel .machine-net > .net-head > .mark, .detail-panel .machine-net > .net-head > .net-title { display: none; }
+.detail-panel .machine-net > .net-head { justify-content: flex-start; }
+.vault-foot { padding: 10px 14px; border-top: 1px solid var(--border); }
+/* «Входящие»: the side column is a card like the decisions, aligned with them at the top. */
+.page-agents .dc-side { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); padding: 18px 20px; gap: 10px; }
+.page-agents .dc-side .label-like { margin: 0; }
+.page-agents .dc-side .dc-gap { margin-top: 8px; padding-top: 14px; border-top: 1px solid var(--border); }
+.page-agents .dc-side .dc-side-card { background: none; border: 0; border-radius: 0; padding: 0; }
+.page-agents .dc-side .dc-side-card + .dc-side-card { padding-top: 10px; border-top: 1px dashed var(--border); }
+/* Trust levels in the colour of their indicator. */
+.ag-trust-col.careful .ag-trust-title { color: var(--ok); }
+.ag-trust-col.normal .ag-trust-title { color: var(--accent); }
+.ag-trust-col.trusted .ag-trust-title { color: var(--warn); }
+.ag-trust-col.careful:hover { border-color: var(--ok); }
+.ag-trust-col.normal:hover { border-color: var(--accent); }
+.ag-trust-col.trusted:hover { border-color: var(--warn); }
+.ag-trust-col.careful.on { border-color: var(--ok); background: var(--ok-soft); }
+.ag-trust-col.normal.on { border-color: var(--accent); background: var(--accent-soft); }
+.ag-trust-col:disabled { opacity: .45; cursor: not-allowed; }
+/* The agent window: one height for every step; only the content scrolls. */
+.dialog.aw-dialog[open] { height: min(860px, calc(100vh - 40px)); display: flex; flex-direction: column; }
+.aw-dialog > header, .aw-dialog > .aw-steps, .aw-dialog > .aw-foot { flex: none; }
+.aw-dialog .dialog-body { max-height: none; flex: 1; min-height: 0; overflow: auto; }
+.aw-card-box { margin: 0; display: flex; flex-direction: column; gap: 12px; }
+.aw-card-box .card-head { margin: 0; }
+.aw-grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
+.aw-rows { display: flex; flex-direction: column; }
+.aw-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--border); }
+.aw-row:first-child { border-top: 0; padding-top: 0; }
+.aw-row-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.aw-hints { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+@media (max-width: 900px) { .aw-grid2 { grid-template-columns: minmax(0, 1fr); } .aw-row { grid-template-columns: auto minmax(0, 1fr) auto; } .aw-row .tag { display: none; } }
+.dirs-note { margin: 0; padding: 12px 16px; border-top: 1px solid var(--border); }
+/* «Секреты»: the chosen secret's cards apart like on the other pages; the form right under the head. */
+#secret-view { display: flex; flex-direction: column; gap: 16px; }
+#secret-view:empty { display: none; }
+#form-secret.card { margin: 0; }
+#form-secret .lbl .muted { font-weight: 400; }
+#form-secret > .row:last-child { justify-content: flex-end; }
+/* ⚙ → «Доступ»: every part of a card with the same inner padding, the cards apart. */
+#access-settings { display: flex; flex-direction: column; gap: 16px; }
+#access-settings .acc-head { padding: 14px 16px; }
+#access-settings .acc-row { padding: 10px 16px; }
+#access-settings .acc-add { padding: 12px 16px; }
+#access-settings .acc-roles { margin: 0; padding: 0 16px 14px 34px; }
+#access-settings .pol-card > .row { padding: 12px 16px; border-top: 1px solid var(--border); margin: 0; }
+#access-settings .pol-row > select.input { width: 220px; }
+@media (max-width: 640px) { #access-settings .pol-row > select.input { width: 100%; max-width: none; } }
+/* «Секреты»: roomier key–value cells; machines as plain chips. */
+#secret-view .kv > div { padding: 8px 12px; }
+#secret-view .kv .k { margin-bottom: 3px; }
+#secret-view .kv .tag { display: inline-block; }
+.chips a.lst-host { text-decoration: none; color: var(--text); }
+.chips a.lst-host:hover { color: var(--accent); }
+#access-settings .btn.ghost.danger { color: var(--bad); background: transparent; border-color: transparent; }
+#access-settings .btn.ghost.danger:hover { background: var(--bad-soft); }

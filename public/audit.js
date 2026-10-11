@@ -195,9 +195,11 @@
 
   async function render() {
     if (!root) return;
-    fill(root,
-      h('section', { class: 'card intro' }, h('div', { class: 'row' }, h('h2', { class: 'h-ic' }, ic('shield'), 'Журнал'),
-        helpButton('Что попадает в журнал',
+    fill(root, h('div', { class: 'layout dc-only' }, h('section', { class: 'panel detail-panel' },
+      h('div', { class: 'detail-head' }, h('span', { class: 'mark m-icon' }, ic('shield')),
+        h('div', { class: 'ag-title' }, h('h2', {}, 'Журнал'), h('span', { class: 'muted small' }, 'Кто что делал с машинами и куда они ходили: команды, запуски и остановки, ревью, настройки, файлы, соединения.')),
+        h('div', { class: 'actions' }, h('span', { id: 'aud-integrity', class: 'ss-pill' }, 'Проверка журнала…'), h('span', { id: 'aud-siem', class: 'ss-pill' }),
+          helpButton('Что попадает в журнал',
           h('ul', {},
             h('li', {}, 'Команды exec из консоли, init из Smolfile и установка агентов — с кодом выхода.'),
             h('li', {}, 'Действия с машинами: создание, запуск, остановка, удаление, ветки, загрузка файлов и образов.'),
@@ -206,10 +208,8 @@
             h('li', {}, 'Соединения машин через фильтр «Сеть»: куда, разрешено или заблокировано и почему. Они хранятся в памяти smolvm-web (последние записи) и в подписанный журнал не входят; в SIEM уходят по настройке «Сетевые события».'),
             h('li', {}, 'Фильтр по задаче показывает все её машины (и после «Сбросить») от открытия до закрытия.'),
             h('li', {}, 'Команды, которые агент выполняет внутри машины сам (без exec через smolvm-web), сюда не попадают: smolvm их не сообщает. Их след — сеть и изменения файлов.'))),
-        h('span', { class: 'spacer' }), h('span', { id: 'aud-integrity', class: 'ss-pill' }, 'Проверка журнала…'), h('span', { id: 'aud-siem', class: 'ss-pill' }),
-        h('a', { class: 'btn small-btn ghost', href: '#/egress?tab=log', title: 'Подробный журнал соединений с кнопкой «Разрешить»' }, ic('globe'), 'Сеть →')),
-        h('p', { class: 'muted small' }, 'Кто что делал с машинами и куда они ходили: команды, запуски и остановки, ревью, изменения настроек и файлов, соединения. За последние сутки:')),
-      h('section', { class: 'card', id: 'audit-log' }, h('p', { class: 'muted' }, 'Загрузка…')));
+          h('a', { class: 'btn small-btn ghost', href: '#/egress?tab=log', title: 'Журнал соединений с кнопкой «Разрешить»' }, ic('globe'), 'Сеть →'))),
+      h('div', { class: 'tab-body' }, h('div', { id: 'audit-log' }, h('p', { class: 'muted' }, 'Загрузка…'))))));
     renderLog();
     headerStatus();
   }
@@ -244,11 +244,12 @@
   pages.audit = {
     render(el, p) {
       root = el;
+      el.classList.add('page-agents');
       filter.machine = p.get('machine') || (p.get('task') ? '' : filter.machine);
       if (p.get('task')) { filter.task = p.get('task'); tasksAt = 0; }
       render();
       timer = setInterval(() => { if (!paused && !document.hidden && !el.querySelector('#audit-log :focus')) renderLog(); }, 4000);
-      return () => { clearInterval(timer); root = null; };
+      return () => { clearInterval(timer); root = null; el.classList.remove('page-agents'); };
     },
   };
 })();

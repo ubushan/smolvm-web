@@ -265,7 +265,7 @@ function folderRow(m, f, data, verify, { compact, refresh }) {
           h('span', { class: 'mono small' }, f.guestPath ? `→ ${f.guestPath}` : '→ отключается'),
           f.removed ? null : h('span', { class: `tag ${mode.tag}` }, mode.short), statusEl,
           st.restart ? h('button', { class: 'btn small-btn', onclick: async () => { await actions.restart(m); refresh(); } }, 'Перезапустить') : null,
-          st.review ? h('a', { class: 'small', href: `#/dirs?tab=folders&machine=${enc(m.name)}` }, 'изменения →') : null)));
+          st.review ? h('a', { class: 'small', href: `#/?machine=${enc(m.name)}&tab=folders` }, 'изменения →') : null)));
   }
   return h('div', { class: 'folder-row' },
     h('span', { class: 'mark m-icon' }, ic('folder')),
@@ -276,6 +276,6 @@ function folderRow(m, f, data, verify, { compact, refresh }) {
     f.removed ? null : compact || f.kind === 'volume' ? h('span', { class: `tag ${mode.tag}` }, mode.short) : menu,
     statusEl,
     st.restart ? h('button', { class: 'btn small-btn', onclick: async () => { await actions.restart(m); refresh(); } }, ic('refresh'), 'Перезапустить') : null,
-    st.review ? h('a', { class: 'btn small-btn ghost', href: `#/dirs?tab=folders&machine=${enc(m.name)}` }, 'Изменения →') : null,
+    st.review ? h('a', { class: 'btn small-btn ghost', href: `#/?machine=${enc(m.name)}&tab=folders` }, 'Изменения →') : null,
     compact || f.removed || f.kind === 'volume' ? null : h('button', { class: 'btn ghost icon danger', title: 'Закрыть доступ', onclick: remove }, ic('x')));
 }

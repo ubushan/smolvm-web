@@ -496,7 +496,9 @@ $('#form-branch').addEventListener('submit', async (e) => {
 // ---------- detail ----------
 const TABS = [
   ['overview', 'Обзор'],
-  ['agents', 'Агенты'],
+  ['agents', 'Программы'],
+  ['net', 'Сеть'],
+  ['folders', 'Папки'],
   ['console', 'Консоль'],
   ['details', 'Детали'],
   ['logs', 'Логи'],
@@ -577,8 +579,12 @@ function renderTab() {
   const m = current();
   if (!body || !m) return;
   body.innerHTML = '';
-  ({ overview: tabOverview, agents: tabAgents, console: tabConsole, logs: tabLogs, files: tabFiles, details: tabDetails }[state.tab] || tabOverview)(body, m);
+  ({ overview: tabOverview, agents: tabAgents, net: tabNet, folders: tabFolders, console: tabConsole, logs: tabLogs, files: tabFiles, details: tabDetails }[state.tab] || tabOverview)(body, m);
 }
+
+// --- the machine's network and folders (egress.js, dirs.js draw them)
+function tabNet(body, m) { window.machineNetTab ? window.machineNetTab(body, m.name) : body.append(h('p', { class: 'muted' }, 'Загрузка…')); }
+function tabFolders(body, m) { if (window.machineFoldersTab) window.machineFoldersTab(body, m); }
 
 function needsRunning(body, m, what) {
   if (m.state === 'running') return false;
@@ -767,7 +773,7 @@ async function tabOverview(body, m) {
         !info.network ? bitem('Сеть машины', h('span', { class: 'tag bad' }, 'выключена')) : null,
       ].filter(Boolean),
       empty: 'Машина ходит в интернет без ограничений smolvm-web.',
-      footer: [h('a', { href: `#/egress?machine=${enc(m.name)}`, class: 'small' }, 'Что разрешено →'), h('a', { href: `#/egress?tab=log&machine=${enc(m.name)}`, class: 'small' }, 'Журнал →')],
+      footer: [h('a', { href: '#', class: 'small', onclick: (e) => { e.preventDefault(); switchTab('net'); } }, 'Что разрешено →'), h('a', { href: `#/egress?tab=log&machine=${enc(m.name)}`, class: 'small' }, 'Журнал →')],
     }));
   }
 
@@ -778,7 +784,7 @@ async function tabOverview(body, m) {
       icon: 'users', title: 'Папки агента', sub: 'что агент видит с этого компьютера', on: true,
       badge: null, items: [],
       footer: [h('button', { class: 'btn', onclick: () => openFolderDialog({ machine: m.name, onDone: () => renderTab() }) }, ic('plus'), 'Дать доступ к папке'),
-        h('a', { href: `#/dirs?machine=${enc(m.name)}`, class: 'small' }, 'Подробнее →')],
+        h('a', { href: '#', class: 'small', onclick: (e) => { e.preventDefault(); switchTab('folders'); } }, 'Подробнее →')],
     });
     b.classList.toggle('on', n > 0);
     b.insertBefore(folderList(m, { compact: true }), b.querySelector('.block-foot'));
@@ -1798,35 +1804,62 @@ function openVault() {
   location.hash = '#/secrets';
 }
 
+// «Секреты» (⚙ → «Секреты»): the list on the left, the chosen secret (or its form) on the right.
+let selectedSecret = '';
 async function renderVault() {
   const st = $('#vault-status');
   const list = $('#vault-list');
   let v;
-  try { v = await loadVault(); } catch (e) { st.innerHTML = `<div class="error">${esc(e.message)}</div>`; return; }
+  try { v = await loadVault(); } catch (e) { fill(st, h('div', { class: 'error' }, e.message)); return; }
   if (!v.ok) {
-    st.replaceChildren(h('div', { class: 'error' }, v.error),
+    fill(st, h('div', { class: 'error' }, v.error),
       v.resettable ? h('div', { class: 'row', style: 'margin-top:10px' }, h('button', { type: 'button', class: 'btn primary', onclick: async () => {
         const c = await confirmDialog('Создать хранилище заново?', 'Старое хранилище и его ключ останутся в папке настроек (файлы с пометкой .old-<дата>), открыть их новой версией нельзя. Секреты нужно будет добавить заново и снова привязать к машинам.', false, '', 'Создать заново');
         if (!c.ok) return;
         try { await api('POST', '/ui/vault/reset', {}); vaultCache = []; toast('Хранилище секретов создано заново', 'ok'); } catch (e) { toast(e.message, 'err'); }
         renderVault();
       } }, 'Создать хранилище заново')) : null);
-    list.innerHTML = ''; return;
+    list.replaceChildren(); return;
   }
   const gw = v.gateway;
-  st.innerHTML = `Ключ шифрования: <b>${esc(v.backend)}</b>.${gw?.listening ? ` Шлюз: <code>${esc(gw.baseUrl || '')}</code>` : gw?.error ? ` <span class="error">Шлюз: ${esc(gw.error)}</span>` : ''}`;
-  list.innerHTML = '';
-  if (!v.secrets.length) { list.append(h('p', { class: 'muted' }, 'Секретов пока нет.')); return; }
-  list.append(h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
-    h('tr', {}, h('th', {}, 'Имя'), h('th', {}, 'Режим'), h('th', {}, 'Переменная'), h('th', {}, 'Куда'), h('th', {}, '')),
-    v.secrets.map((x) => h('tr', {},
-      h('td', {}, h('span', { class: 'with-mark' }, mark(secretMark(x), true), h('span', { class: 'mono' }, x.name)), x.note ? h('div', { class: 'muted small' }, x.note) : null),
-      h('td', {}, h('span', { class: `tag ${MODE_TAG[x.mode]}` }, MODE_LABEL[x.mode])),
-      h('td', { class: 'mono small' }, x.envVar, x.baseUrlVar ? h('div', { class: 'muted' }, x.baseUrlVar) : null, x.model ? h('div', { class: 'muted' }, `модель: ${x.model}`) : null, x.confirm?.length ? h('div', { class: 'warnc' }, `подтверждение: ${x.confirm.length}`) : null),
-      h('td', { class: 'mono small' }, x.mode === 'gateway' ? x.upstream : x.mode === 'substitute' ? x.hosts.join(', ') : '—'),
-      h('td', {},
-        h('button', { class: 'btn ghost', onclick: () => editSecret(x) }, 'Изменить'),
-        h('button', { class: 'btn ghost danger', onclick: () => deleteSecret(x) }, 'Удалить')))))));
+  fill(st, 'Ключ шифрования: ', h('b', {}, v.backend), '.', gw?.listening ? [' Шлюз: ', h('code', {}, gw.baseUrl || '')] : gw?.error ? [' ', h('span', { class: 'badc' }, `Шлюз: ${gw.error}`)] : '');
+  if (!v.secrets.some((x) => x.name === selectedSecret)) selectedSecret = v.secrets[0]?.name || '';
+  list.replaceChildren(...v.secrets.map((x) => h('a', { class: `machine ag-item sb-item${x.name === selectedSecret && $('#form-secret').hidden ? ' active' : ''}`, href: '#',
+    onclick: (e) => { e.preventDefault(); selectedSecret = x.name; $('#form-secret').hidden = true; renderVault(); } },
+    mark(secretMark(x), true), h('div', { class: 'name mono' }, x.name),
+    h('span', { class: `ag-pill ${x.mode === 'env' ? 'bad' : 'ok'}` }, x.mode === 'env' ? 'видна машине' : x.mode === 'gateway' ? 'шлюз' : 'подстановка'),
+    h('div', { class: 'meta' }, [x.envVar, x.machines.length ? `${x.machines.length} маш.` : null].filter(Boolean).join(' · ')))),
+  v.secrets.length ? '' : h('div', { class: 'sb-empty muted small' }, 'Секретов пока нет.'));
+  if (!$('#form-secret').hidden) return; // the form is open on the right
+  const x = v.secrets.find((y) => y.name === selectedSecret);
+  const head = $('#secret-head');
+  if (!x) {
+    fill(head, h('span', { class: 'mark m-icon' }, ic('key')), h('div', { class: 'ag-title' }, h('h2', {}, 'Секреты'),
+      h('span', { class: 'muted small' }, 'Зашифрованное хранилище API-ключей и токенов. Агент пользуется ключом через шлюз на этом компьютере, но не видит его значения.')));
+    fill($('#secret-view'), h('div', { class: 'empty-state' }, h('div', { class: 'big' }, ic('key')), h('p', {}, 'Секретов пока нет. Добавьте ключ модели — DeepSeek, Anthropic, OpenAI… — и агенты будут пользоваться им через шлюз.'),
+      h('button', { class: 'btn primary needs-admin', onclick: () => editSecret(null) }, ic('plus'), 'Добавить секрет')));
+    return;
+  }
+  fill(head, mark(secretMark(x)), h('div', { class: 'ag-title' }, h('h2', { class: 'mono' }, x.name), h('span', { class: 'muted small' }, x.note || MODE_LABEL[x.mode])),
+    h('div', { class: 'actions' },
+      h('button', { class: 'btn needs-admin', onclick: () => editSecret(x) }, 'Изменить'),
+      h('button', { class: 'btn ghost icon danger needs-admin', title: 'Удалить', 'aria-label': 'Удалить секрет', onclick: () => deleteSecret(x) }, ic('trash'))));
+  const kv = (k, val) => h('div', {}, h('div', { class: 'k' }, k), h('div', { class: 'v' }, val));
+  const where = x.mode === 'gateway' ? x.upstream : x.mode === 'substitute' ? x.hosts.join(', ') : '—';
+  fill($('#secret-view'),
+    h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h3', {}, 'Как передаётся')),
+      h('div', { class: 'kv' },
+        kv('Режим', h('span', { class: `tag ${MODE_TAG[x.mode]}` }, MODE_LABEL[x.mode])),
+        kv('Переменная', h('span', { class: 'mono' }, x.envVar)),
+        x.baseUrlVar ? kv('Base URL', h('span', { class: 'mono' }, x.baseUrlVar)) : null,
+        kv(x.mode === 'gateway' ? 'Куда шлюз отправляет' : 'Хосты', h('span', { class: 'mono' }, where)),
+        x.model ? kv('Модель', h('span', { class: 'mono' }, x.model)) : null,
+        x.methods?.length ? kv('Методы', x.methods.join(', ')) : null),
+      x.confirm?.length ? h('p', { class: 'small warnc' }, `Подтверждение человеком: ${x.confirm.join(', ')}`) : null,
+      x.mode === 'env' ? h('p', { class: 'small badc' }, 'Машина видит значение ключа. Для ключей моделей лучше шлюз.') : null),
+    h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h3', {}, 'Привязан к машинам')),
+      x.machines.length ? h('div', { class: 'chips' }, x.machines.map((n) => h('a', { class: 'lst-host mono', href: `#/?machine=${enc(n)}` }, n)))
+        : h('p', { class: 'muted small' }, 'Пока ни к одной. Секрет выбирают в окне агента (шаг «Секреты») или в «Обзоре» машины.')));
 }
 
 function syncSecretForm() {
@@ -1852,6 +1885,10 @@ function editSecret(x) {
   f.preset.disabled = !!x;
   syncSecretForm();
   f.hidden = false;
+  $('#secret-view').replaceChildren();
+  fill($('#secret-head'), h('span', { class: 'mark m-icon' }, ic(x ? 'key' : 'plus')), h('div', { class: 'ag-title' }, h('h2', {}, x ? `Изменить ${x.name}` : 'Новый секрет'),
+    h('span', { class: 'muted small' }, 'Значение хранится зашифрованным и обратно в интерфейс не выдаётся.')));
+  renderVault();
   (x ? f.value : f.preset).focus();
 }
 
@@ -1863,7 +1900,7 @@ async function deleteSecret(x) {
 }
 
 $('#btn-secret-add').addEventListener('click', () => editSecret(null));
-$('#btn-secret-cancel').addEventListener('click', () => { $('#form-secret').hidden = true; });
+$('#btn-secret-cancel').addEventListener('click', () => { $('#form-secret').hidden = true; renderVault(); });
 $('#form-secret').addEventListener('change', (e) => {
   const f = e.currentTarget;
   if (e.target.name === 'preset' && PRESETS[f.preset.value]) {
@@ -1891,6 +1928,7 @@ $('#form-secret').addEventListener('submit', async (e) => {
     await api('PUT', `/ui/vault/${enc(name)}`, body);
     f.value.value = '';
     f.hidden = true;
+    selectedSecret = name;
     toast(`Секрет ${name} сохранён`, 'ok');
     renderVault();
   } catch (ex) { err.textContent = ex.message; err.hidden = false; }
@@ -2175,7 +2213,7 @@ async function tabAgents(body, m) {
     if (st.vendor?.length) {
       const revoked = st.vendor.filter((v) => v.revoked).length;
       nodes.push(h('p', { class: 'muted small' }, `Серверы провайдеров агентов: ${st.vendor.length}${revoked ? `, отозвано: ${revoked}` : ''} — `,
-        h('a', { href: `#/egress?machine=${enc(m.name)}&tab=providers` }, 'настроить в «Сети» →')));
+        h('a', { href: `#/?machine=${enc(m.name)}&tab=net` }, 'настроить во вкладке «Сеть» →')));
     }
     head.replaceChildren(...nodes);
   }
@@ -2250,6 +2288,13 @@ function route() {
   document.querySelectorAll('#pagenav a').forEach((a) => a.classList.toggle('active', a.dataset.page === navId));
   $('#btn-settings').classList.toggle('active', !!ADMIN_PAGES[id]);
   if (id !== 'machines') pageCleanup = pages[id].render($(`#page-${id}`), params) || null;
+  else if (params.get('machine')) {
+    const want = params.get('machine');
+    const tab = params.get('tab');
+    history.replaceState(null, '', '#/');
+    const go = () => { if (tab && TABS.some(([t]) => t === tab)) { state.tab = tab; localStorage.setItem('smolvm.tab', tab); } state.selected = null; select(want); };
+    if (state.machines.some((x) => x.name === want)) go(); else tick().then(go);
+  }
 }
 window.addEventListener('hashchange', route);
 

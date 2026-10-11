@@ -111,7 +111,7 @@
         h('div', { class: 'dc-title', title: c.dir.hostPath }, `${plural(c.changes.length, 'файл', 'файла', 'файлов')} в ${base(c.dir.hostPath)}`,
           h('span', { class: 'muted' }, [add ? ` · новых ${add}` : '', del ? ` · удалено ${del}` : '', conflict ? ` · ${conflict} изменились и у вас` : ''].join(''))),
         h('div', { class: 'muted small' }, 'Пока вы не проверите, на диске ничего не меняется.')),
-      h('a', { class: 'btn primary', href: `#/dirs?tab=folders&machine=${enc(c.machine)}` }, 'Посмотреть и применить'));
+      h('a', { class: 'btn primary', href: `#/?machine=${enc(c.machine)}&tab=folders` }, 'Посмотреть и применить'));
   }
 
   function side() {

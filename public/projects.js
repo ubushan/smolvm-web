@@ -150,12 +150,24 @@
         templateCard(p), tasksCard(p), form(p)));
   }
 
+  // «?» of the section: why a project, when it is worth it.
+  function help() {
+    return helpButton('Зачем раздел «Проекты»',
+      h('p', {}, 'Проект — ваш git-репозиторий с настройками задач по умолчанию: какой агент работает, насколько ему доверять и как подготовить окружение.'),
+      h('ul', {},
+        h('li', {}, h('b', {}, 'Без проекта '), 'каждую задачу настраиваешь заново (агент, папка, доверие), а агент в чистой машине каждый раз заново ставит зависимости.'),
+        h('li', {}, h('b', {}, 'С проектом '), '«Новая задача» — это выбрать проект и написать, что сделать. Агент, репозиторий и доверие подставятся сами.'),
+        h('li', {}, h('b', {}, 'Скрипт подготовки '), '(npm ci, pip install -r requirements.txt…) выполняется один раз при сборке шаблона проекта. Задачи открываются из шаблона за секунды: зависимости уже установлены, код — текущий HEAD.'),
+        h('li', {}, h('b', {}, 'Шаблон устаревает сам, '), 'если поменять агента, папку или скрипт; после обновления зависимостей нажмите «Пересобрать».')),
+      h('p', { class: 'muted small' }, 'Проект необязателен: разовую задачу можно дать и без него, выбрав агента и папку.'));
+  }
+
   function side() {
     const item = (p) => h('a', { class: `machine ag-item sb-item${p.id === selected ? ' active' : ''}`, href: `#/projects?id=${enc(p.id)}` },
       mark(MARKS[profOf(p.profile)?.agent] || 'vm', true), h('div', { class: 'name' }, p.name), pillOf(tplState(p)),
       h('div', { class: 'meta' }, [profOf(p.profile)?.name, plural(tasks.filter((t) => t.project === p.id).length, 'задача', 'задачи', 'задач')].filter(Boolean).join(' · ')));
     return h('section', { class: 'panel list-panel' },
-      h('div', { class: 'panel-head' }, h('h2', { class: 'h-ic' }, ic('branch'), 'Проекты')),
+      h('div', { class: 'panel-head' }, h('h2', { class: 'h-ic' }, ic('branch'), 'Проекты'), help()),
       h('div', { class: 'machines' }, ...projects.map(item),
         h('a', { class: `machine ag-item sb-item sb-add needs-admin${selected === 'new' ? ' active' : ''}`, href: '#/projects?new=1' },
           h('span', { class: 'mark m-icon m-list' }, ic('plus')), h('div', { class: 'name' }, 'Новый проект'), h('span'), h('div', { class: 'meta' }, 'git-репозиторий на этом компьютере'))));
