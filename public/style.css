@@ -1483,3 +1483,17 @@ body[data-page="decisions"] #approvals, body[data-page="session"] #approvals { d
 @media (max-width: 1240px) { .topbar { height: auto; min-height: 60px; } }
 .dc-only { grid-template-columns: minmax(0, 1fr); }
 @media (max-width: 480px) { .topbar { gap: 8px; padding: 8px 12px; } }
+
+/* Roles: what a role may not do is not shown (the server refuses it anyway). */
+body[data-role="viewer"] .needs-operator, body[data-role="none"] .needs-operator,
+body[data-role="viewer"] .needs-admin, body[data-role="operator"] .needs-admin, body[data-role="none"] .needs-admin,
+body[data-merge="no"] .needs-merge { display: none !important; }
+/* «Доступ» */
+.acc-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-bottom: 6px; }
+.acc-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto auto; gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid var(--border); }
+.acc-add { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+.acc-roles { margin: 10px 0 0; padding-left: 18px; }
+.admin-me { padding: 6px 10px 2px; }
+.login-dialog { width: min(380px, calc(100vw - 32px)); }
+.login-dialog .dialog-body { display: flex; flex-direction: column; gap: 12px; }
+@media (max-width: 640px) { .acc-row { grid-template-columns: 1fr auto; } .acc-add { grid-template-columns: 1fr; } }

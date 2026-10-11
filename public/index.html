@@ -319,6 +319,7 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
       <header><h3 class="h-ic"><svg class="ic"><use href="#i-gear"/></svg>Настройки</h3><button type="button" class="btn ghost icon" data-close title="Закрыть"><svg class="ic"><use href="#i-x"/></svg></button></header>
       <div class="settings-layout">
         <nav class="settings-nav" id="settings-nav">
+          <button type="button" data-pane="access"><svg class="ic"><use href="#i-users"/></svg>Доступ</button>
           <button type="button" data-pane="smolvm"><svg class="ic"><use href="#i-server"/></svg>Виртуализация</button>
           <button type="button" data-pane="policy"><svg class="ic"><use href="#i-box"/></svg>Песочницы</button>
           <button type="button" data-pane="net"><svg class="ic"><use href="#i-globe"/></svg>Сеть</button>
@@ -398,6 +399,10 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
 
           </section>
           </form>
+          <section class="settings-pane" data-pane="access" hidden>
+            <div class="pane-head"><h4>Доступ</h4><p class="muted small">Учётные записи с ролями и обязательные правила для всех задач. Пока учётных записей нет, входить не нужно: кто открыл smolvm-web, тот администратор.</p></div>
+            <div id="access-settings"></div>
+          </section>
           <section class="settings-pane" data-pane="policy" hidden>
             <div class="pane-head"><h4>Песочницы: политика по умолчанию</h4><p class="muted small">Что получает каждая новая песочница. Уже открытые не меняются. Сохраняется кнопкой «Сохранить политику».</p></div>
             <div id="policy-settings"></div>
@@ -443,6 +448,7 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
   <script src="/review.js"></script>
   <script src="/tasks.js"></script>
   <script src="/projects.js"></script>
+  <script src="/access.js"></script>
   <script src="/profile.js"></script>
   <script src="/agents.js"></script>
   <script src="/agentwizard.js"></script>

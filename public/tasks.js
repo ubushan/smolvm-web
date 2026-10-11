@@ -120,6 +120,22 @@
   function accept(t) {
     return act(t, 'Принимаю…', async () => { await post(t, 'accept'); toast('Принято: ветка осталась в репозитории', 'ok'); });
   }
+  // Into the branch each repository's task started from; uncommitted work of yours is never touched.
+  async function mergeAll(t) {
+    const into = [...new Set(t.git.filter((g) => ['ready', 'accepted'].includes(g.state)).map((g) => g.baseRef || '?'))].join(', ');
+    const c = await confirmDialog(`Влить в ${into}?`, 'Ветка задачи вольётся в ветку, с которой задача началась: перемоткой, если там ничего не менялось, иначе merge-коммитом. Если эта ветка открыта в папке, файлы обновятся — незакоммиченных изменений в папке быть не должно. При конфликте ничего не меняется.', false, '', 'Влить');
+    if (!c.ok) return;
+    await act(t, 'Вливаю…', async () => { await post(t, 'merge', { how: 'merge' }); toast(`Влито в ${into}`, 'ok'); });
+  }
+  async function mergeOne(t, g, how) {
+    const c = await confirmDialog(how === 'squash' ? `Одним коммитом в ${g.baseRef}?` : `Влить в ${g.baseRef}?`,
+      `${how === 'squash' ? `Все изменения ветки ${g.branch} станут одним коммитом «${t.title}» в ${g.baseRef}.` : `Ветка ${g.branch} вольётся в ${g.baseRef}: перемоткой или merge-коммитом.`} Если ${g.baseRef} открыта в папке, файлы обновятся — незакоммиченных изменений быть не должно. При конфликте ничего не меняется.`, false, '', how === 'squash' ? 'Одним коммитом' : 'Влить');
+    if (!c.ok) return;
+    await act(t, 'Вливаю…', async () => {
+      await api('POST', `/ui/git/${enc(g.id)}/merge`, { how, title: t.title });
+      toast(`Влито в ${g.baseRef}`, 'ok');
+    });
+  }
   async function discard(t) {
     const c = await confirmDialog('Отбросить результат?', `Ветки задачи (${t.result.branches.join(', ')}) будут удалены из репозитория.`, false, '', 'Отбросить');
     if (!c.ok) return;
@@ -152,7 +168,7 @@
     const meta = [AGENTS[t.agent] || t.agent, profOf(t.profile)?.name ? `агент «${profOf(t.profile).name}»` : null, t.persistent ? 'постоянная' : null,
       t.closedAt ? `закрыта ${ago(t.closedAt)}` : `${mins < 60 ? `${mins} мин` : `${Math.floor(mins / 60)} ч ${mins % 60} мин`}`].filter(Boolean).join(' · ');
     const dis = !!busy;
-    const btn = (label, cls, onclick, title = '', disabled = dis) => h('button', { class: `btn ${cls}`, title, disabled, onclick }, label);
+    const btn = (label, cls, onclick, title = '', disabled = dis) => h('button', { class: `btn ${cls} needs-operator`, title, disabled, onclick }, label);
     let btns = [];
     if (isOpen(t)) {
       const running = t.status !== 'opening' && t.machineState === 'running';
@@ -169,8 +185,9 @@
     } else if (t.status === 'review') {
       btns = [
         t.profilePending.length ? h('a', { class: 'btn ghost', href: `#/review?id=${enc(t.profilePending[0].id)}` }, 'Память агента') : null,
-        t.git.some((g) => g.state === 'ready') ? btn('Отбросить', 'danger-outline', () => discard(t)) : null,
-        t.git.some((g) => g.state === 'ready') ? btn('Принять', 'ink', () => accept(t), 'Оставить ветку в репозитории для слияния') : null,
+        t.git.some((g) => g.state === 'ready') ? btn('Отбросить', 'danger-outline', () => discard(t), 'Удалить ветку задачи') : null,
+        t.git.some((g) => g.state === 'ready') ? btn('Оставить веткой', 'ghost', () => accept(t), 'Ветка остаётся в репозитории — влить можно позже, здесь или вручную') : null,
+        t.git.some((g) => g.state === 'ready') ? btn('Влить', 'ink needs-merge', () => mergeAll(t), 'Влить ветку в ту, с которой задача началась') : null,
       ];
     } else {
       btns = [
@@ -209,7 +226,7 @@
     const repo = base(g.hostPath);
     const state = {
       copying: 'копируется в машину', working: g.finishedAt ? 'агент ничего не закоммитил' : 'агент работает — изменений ещё не забирали',
-      ready: 'ждёт решения', accepted: 'принято', discarded: 'отброшено', lost: 'машина удалена до того, как результат забрали', empty: 'без изменений', error: g.error || 'ошибка',
+      ready: 'ждёт решения', accepted: 'оставлено веткой', discarded: 'отброшено', merged: `влито в ${g.mergedInto}`, lost: 'машина удалена до того, как результат забрали', empty: 'без изменений', error: g.error || 'ошибка',
     }[g.state] || g.state;
     const headRow = h('div', { class: 'card-head' },
       h('h3', { class: 'h-ic' }, ic('branch'), repo),
@@ -222,10 +239,17 @@
       g.error && g.state !== 'error' ? `последняя попытка забрать: ${g.error}` : null,
     ].filter(Boolean);
     const body = [headRow, h('div', { class: 'muted small' }, notes.join(' · '))];
-    if (g.state === 'accepted') {
+    if (['ready', 'accepted'].includes(g.state) && g.tip) {
       const cmd = `git merge ${g.branch}`;
-      body.push(h('div', { class: 'tk-merge' }, h('span', { class: 'small' }, 'Влить в текущую ветку:'), h('code', { class: 'mono' }, cmd),
+      body.push(h('div', { class: 'tk-merge' },
+        g.baseRef ? [h('button', { class: 'btn small-btn ink needs-merge', disabled: !!busy, onclick: () => mergeOne(t, g, 'merge') }, `Влить в ${g.baseRef}`),
+          h('button', { class: 'btn small-btn needs-merge', disabled: !!busy, onclick: () => mergeOne(t, g, 'squash') }, 'Одним коммитом')] : null,
+        h('span', { class: 'small muted' }, g.baseRef ? 'или вручную:' : 'Задача началась не с ветки — влейте вручную:'), h('code', { class: 'mono' }, cmd),
         h('button', { class: 'btn ghost small-btn', onclick: () => { navigator.clipboard?.writeText(`cd ${g.hostPath} && ${cmd}`); toast('Скопировано', 'ok'); } }, 'Копировать')));
+    }
+    if (g.state === 'merged') {
+      body.push(h('div', { class: 'tk-merge' }, h('span', { class: 'small' }, `Влито в ${g.mergedInto} · `, h('span', { class: 'mono' }, String(g.mergeCommit).slice(0, 8)),
+        ` · ${{ ff: 'перемоткой', merge: 'merge-коммитом', squash: 'одним коммитом' }[g.mergeHow] || ''}`)));
     }
     if (!g.tip) {
       if (isOpen(t) && g.state === 'working') body.push(h('p', { class: 'small' }, 'Изменения появятся здесь, когда вы нажмёте «Забрать результат» или закончите задачу.'));
@@ -252,7 +276,8 @@
     body.push(h('div', { class: 'rv-body tk-files' }, h('div', { class: 'rv-list' }, ...items), diffBox));
     const card = h('section', { class: 'card' }, ...body);
     // The file shown before, or the first one of the first branch.
-    const target = files.find((f) => shown === `${g.id}:${f.path}`) || (!shown && t.git.find((x) => x.tip)?.id === g.id ? files[0] : null);
+    const mine = t.git.some((x) => shown.startsWith(`${x.id}:`));
+    const target = files.find((f) => shown === `${g.id}:${f.path}`) || (!mine && t.git.find((x) => x.tip)?.id === g.id ? files[0] : null);
     if (target) setTimeout(() => showDiff(diffBox, g, target), 0);
     return card;
   }
@@ -307,7 +332,7 @@
   function didTab(t) {
     const lines = did.key === t.id ? did.lines : null;
     return [h('section', { class: 'card' },
-      h('div', { class: 'card-head' }, h('h3', {}, 'Что агент делал'), h('span', { class: 'spacer' }), h('a', { class: 'small', href: `#/audit?machine=${enc(t.machine)}` }, 'вся история')),
+      h('div', { class: 'card-head' }, h('h3', {}, 'Что агент делал'), h('span', { class: 'spacer' }), h('a', { class: 'small', href: `#/audit?task=${enc(t.id)}` }, 'вся история')),
       !lines ? h('p', { class: 'muted small' }, h('i', { class: 'spin' }), ' Загрузка…')
         : lines.length ? h('div', { class: 'sx-did' }, ...lines.map((l) => h('div', { class: l.bad ? 'badc' : '' }, h('span', { class: 'mono muted' }, time(l.ts)), h('span', {}, l.text))))
           : h('p', { class: 'muted small' }, 'Пока ничего: здесь появятся сайты, на которые ходил агент, и его действия.'))];
@@ -320,9 +345,9 @@
       h('div', { class: 'dc-meta' }, h('span', {}, a.kind === 'net' ? 'хочет зайти на сайт' : `хочет вызвать API · ключ ${a.detail?.secret || ''}`)),
       h('div', { class: 'dc-title' }, h('span', { class: 'mono' }, a.title)),
       h('div', { class: 'dc-actions' },
-        a.kind === 'net' ? [h('button', { class: 'btn ink', onclick: () => decide(a, 'always') }, 'Разрешить всегда'), h('button', { class: 'btn', onclick: () => decide(a, 'once') }, 'На 10 минут')]
-          : h('button', { class: 'btn ink', onclick: () => decide(a, 'once') }, 'Разрешить'),
-        h('button', { class: 'btn danger-outline', onclick: () => decide(a, 'deny') }, 'Запретить'))));
+        a.kind === 'net' ? [h('button', { class: 'btn ink needs-operator', onclick: () => decide(a, 'always') }, 'Разрешить всегда'), h('button', { class: 'btn needs-operator', onclick: () => decide(a, 'once') }, 'На 10 минут')]
+          : h('button', { class: 'btn ink needs-operator', onclick: () => decide(a, 'once') }, 'Разрешить'),
+        h('button', { class: 'btn danger-outline needs-operator', onclick: () => decide(a, 'deny') }, 'Запретить'))));
   }
 
   const tabOf = (t) => tab || (t.status === 'waiting' ? 'decisions' : isOpen(t) && !t.result.commits ? 'agent' : 'changes');
@@ -342,7 +367,7 @@
     };
     return h('section', { class: 'panel list-panel' },
       h('div', { class: 'panel-head' }, h('h2', { class: 'h-ic' }, ic('list'), 'Задачи'), h('span', { class: 'spacer' }),
-        h('button', { class: 'btn primary small-btn', onclick: () => newTask() }, ic('plus'), 'Новая задача')),
+        h('button', { class: 'btn primary small-btn needs-operator', onclick: () => newTask() }, ic('plus'), 'Новая задача')),
       h('div', { class: 'machines' }, ...groups.flatMap(([title, list]) => (list.length ? [h('div', { class: 'sb-group' }, title, h('span', { class: 'muted' }, String(list.length))), ...list.map(item)] : [])),
         tasks.length ? null : h('div', { class: 'sb-empty muted small' }, 'Задач пока нет.')));
   }
@@ -355,7 +380,7 @@
       fill(root, h('div', { class: 'layout ag-layout' }, side(null), h('section', { class: 'panel detail-panel' },
         h('div', { class: 'empty-state' }, h('div', { class: 'big' }, ic('list')),
           h('p', {}, 'Дайте агенту задачу: он получит чистую машину и копию проекта, а результат вернётся веткой в вашем репозитории.'),
-          h('button', { class: 'btn primary', onclick: () => newTask() }, ic('plus'), 'Новая задача')))));
+          h('button', { class: 'btn primary needs-operator', onclick: () => newTask() }, ic('plus'), 'Новая задача')))));
       return;
     }
     const cur_ = tabOf(t);
@@ -441,8 +466,11 @@
     who.addEventListener('change', () => { profile = who.value; if (!from) { folders = startFolders(prof()); drawDirs(); } trustBox.replaceWith(trustBox = window.agentUi.trustPicker(trust = prof()?.trust || trust, (v) => { trust = v; })); });
     let trustBox = window.agentUi.trustPicker(trust, (v) => { trust = v; });
     const mode = h('div', { class: 'tk-mode', role: 'radiogroup' });
-    const drawMode = () => mode.replaceChildren(...[[false, 'Разовая', 'Агент делает задачу и отдаёт результат; машина закрывается по сроку из настроек.'], [true, 'Постоянная сессия', 'Работаете вместе сколько нужно: машина не закрывается сама, её можно сбросить к чистой.']]
-      .map(([v, title, hint]) => h('button', { type: 'button', role: 'radio', 'aria-checked': String(persistent === v), class: `tk-mode-opt${persistent === v ? ' on' : ''}`, onclick: () => { persistent = v; drawMode(); } },
+    const pol = window.auth?.policy || {};
+    const noPersistent = pol.allowPersistent === false || pol.maxTtlHours > 0;
+    if (noPersistent) persistent = false;
+    const drawMode = () => mode.replaceChildren(...[[false, 'Разовая', `Агент делает задачу и отдаёт результат; машина закрывается по сроку${pol.maxTtlHours ? ` (не дольше ${pol.maxTtlHours} ч по политике)` : ' из настроек'}.`], [true, 'Постоянная сессия', noPersistent ? 'Запрещено политикой администратора.' : 'Работаете вместе сколько нужно: машина не закрывается сама, её можно сбросить к чистой.']]
+      .map(([v, title, hint]) => h('button', { type: 'button', role: 'radio', 'aria-checked': String(persistent === v), class: `tk-mode-opt${persistent === v ? ' on' : ''}`, disabled: v && noPersistent, onclick: () => { persistent = v; drawMode(); } },
         h('b', {}, title), h('span', { class: 'muted small' }, hint))));
     drawMode();
     let inTab = false;

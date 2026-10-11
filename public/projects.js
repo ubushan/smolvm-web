@@ -89,7 +89,7 @@
         h('p', { class: 'muted' }, 'Проект открывает задачи для агента: его программа, изоляция и ключи. Создайте агента — потом проект.'),
         h('button', { class: 'btn primary', onclick: () => agentWizard({ onDone: () => refresh() }) }, ic('plus'), 'Создать агента'));
     }
-    return h('section', { class: 'card pj-form' },
+    return h('section', { class: 'card pj-form needs-admin' },
       h('div', { class: 'grid2' },
         h('label', { class: 'ws-field', for: 'pj-path' }, 'Папка репозитория', path, sug, info),
         h('label', { class: 'ws-field', for: 'pj-name' }, 'Название', name)),
@@ -115,7 +115,7 @@
       err ? h('div', { class: 'error small' }, err) : null,
       log ? h('details', { open: !!err }, h('summary', { class: 'small' }, 'Вывод скрипта'), h('pre', { class: 'diff rv-pre pj-log' }, log)) : null,
       p.setup ? h('div', { class: 'row' }, h('span', { class: 'spacer' }),
-        h('button', { class: 'btn', disabled: running, onclick: async () => {
+        h('button', { class: 'btn needs-admin', disabled: running, onclick: async () => {
           try { await api('POST', `/ui/projects/${enc(p.id)}/build`, {}); toast('Сборка началась', 'ok'); } catch (e) { toast(e.message, 'err', 10000); }
           await refresh();
         } }, ic('refresh'), p.template ? 'Пересобрать' : 'Собрать')) : null);
@@ -126,7 +126,7 @@
     const STATUS = { opening: 'открывается', working: 'работает', waiting: 'ждёт вас', stopped: 'остановлена', lost: 'потеряна', review: 'на проверке', done: 'завершена' };
     return h('section', { class: 'card' },
       h('div', { class: 'card-head' }, h('h3', {}, 'Задачи проекта'), h('span', { class: 'spacer' }),
-        h('button', { class: 'btn primary small-btn', onclick: () => window.newTask({ project: p.id }) }, ic('plus'), 'Новая задача')),
+        h('button', { class: 'btn primary small-btn needs-operator', onclick: () => window.newTask({ project: p.id }) }, ic('plus'), 'Новая задача')),
       mine.length ? h('div', { class: 'pj-tasks' }, ...mine.slice(0, 20).map((t) => h('a', { href: `#/tasks?id=${enc(t.id)}`, class: 'pj-task' },
         h('span', { class: 'ellipsis' }, t.title), h('span', { class: 'muted small' }, `${STATUS[t.status] || t.status}${t.result.commits ? ` · ${t.result.commits} комм.` : ''} · ${ago(t.closedAt || t.createdAt)}`))))
         : h('p', { class: 'muted small' }, 'Задач ещё не было.'));
@@ -139,8 +139,8 @@
         h('span', { class: 'mark m-icon' }, ic('branch')),
         h('div', { class: 'ag-title' }, h('h2', {}, p.name), h('span', { class: 'muted small mono ellipsis', title: p.hostPath }, p.hostPath)),
         h('div', { class: 'actions' },
-          h('button', { class: 'btn primary', onclick: () => window.newTask({ project: p.id }) }, ic('play'), 'Новая задача'),
-          h('button', { class: 'btn ghost icon danger', title: 'Удалить проект', 'aria-label': 'Удалить проект', onclick: async () => {
+          h('button', { class: 'btn primary needs-operator', onclick: () => window.newTask({ project: p.id }) }, ic('play'), 'Новая задача'),
+          h('button', { class: 'btn ghost icon danger needs-admin', title: 'Удалить проект', 'aria-label': 'Удалить проект', onclick: async () => {
             if (!(await confirmDialog('Удалить проект?', `Проект «${p.name}» и его шаблон будут удалены. Репозиторий, ветки задач и сами задачи останутся.`, false, '', 'Удалить')).ok) return;
             try { await api('DELETE', `/ui/projects/${enc(p.id)}`); toast('Проект удалён', 'ok'); } catch (e) { toast(e.message, 'err'); return; }
             selected = ''; location.hash = '#/projects';
@@ -157,7 +157,7 @@
     return h('section', { class: 'panel list-panel' },
       h('div', { class: 'panel-head' }, h('h2', { class: 'h-ic' }, ic('branch'), 'Проекты')),
       h('div', { class: 'machines' }, ...projects.map(item),
-        h('a', { class: `machine ag-item sb-item sb-add${selected === 'new' ? ' active' : ''}`, href: '#/projects?new=1' },
+        h('a', { class: `machine ag-item sb-item sb-add needs-admin${selected === 'new' ? ' active' : ''}`, href: '#/projects?new=1' },
           h('span', { class: 'mark m-icon m-list' }, ic('plus')), h('div', { class: 'name' }, 'Новый проект'), h('span'), h('div', { class: 'meta' }, 'git-репозиторий на этом компьютере'))));
   }
 

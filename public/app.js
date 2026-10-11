@@ -115,8 +115,24 @@ async function api(method, path, body, opts = {}) {
   const text = await res.text();
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = { error: text }; }
+  // The session ended (or logins were turned on): the login window, once.
+  if (res.status === 401 && data?.code === 'AUTH' && !path.startsWith('/ui/auth/')) window.showLogin?.();
   if (!res.ok) throw new ApiError(res.status, data);
   return data;
+}
+
+// Accounts and the administrator's policy: { enabled, user: { name, role } | null, policy }.
+// No accounts — everyone is the administrator, as on one person's computer.
+window.auth = { enabled: false, user: null, policy: {} };
+const roleAtLeast = (r) => !window.auth.enabled || ({ viewer: 1, operator: 2, admin: 3 }[window.auth.user?.role] || 0) >= { viewer: 1, operator: 2, admin: 3 }[r];
+window.roleAtLeast = roleAtLeast;
+async function loadAuth() {
+  try { window.auth = await api('GET', '/ui/auth/state'); } catch {}
+  const role = !window.auth.enabled ? 'admin' : window.auth.user?.role || 'none';
+  document.body.dataset.role = role;
+  // Merging task branches may be the administrator's alone.
+  document.body.dataset.merge = roleAtLeast(window.auth.policy?.mergeBy === 'admin' ? 'admin' : 'operator') ? 'yes' : 'no';
+  if (window.auth.enabled && !window.auth.user) window.showLogin?.();
 }
 
 // Minimal SSE reader over fetch (supports POST bodies, unlike EventSource).
@@ -1448,7 +1464,7 @@ async function refreshInfo() {
 }
 
 // One settings window with a sidebar: proxy, certificates, repositories, secrets, smolvm.
-const SETTINGS_PANES = ['smolvm', 'policy', 'net', 'proxy', 'ca', 'repos', 'audit'];
+const SETTINGS_PANES = ['access', 'smolvm', 'policy', 'net', 'proxy', 'ca', 'repos', 'audit'];
 function showSettingsPane(pane) {
   if (!SETTINGS_PANES.includes(pane)) pane = 'smolvm';
   document.querySelectorAll('#dlg-settings .settings-pane').forEach((el) => { el.hidden = el.dataset.pane !== pane; });
@@ -1456,12 +1472,13 @@ function showSettingsPane(pane) {
   // Secrets are saved one by one in their own form; the footer saves the rest.
   const footer = $('#settings-footer');
   // Secrets and audit/SIEM are saved by their own buttons.
-  const own = pane === 'audit' || pane === 'policy' || pane === 'net';
+  const own = pane === 'audit' || pane === 'policy' || pane === 'net' || pane === 'access';
   footer.querySelector('[type=submit]').hidden = own;
   footer.querySelector('.footer-note').hidden = own;
   try { localStorage.setItem('smolvm.settingsPane', pane); } catch {}
   if (pane === 'smolvm') { renderVirtInfo(); renderPullHosts(); }
   if (pane === 'policy') renderPolicy();
+  if (pane === 'access' && window.renderAccess) window.renderAccess($('#access-settings'));
   if (pane === 'net' && window.egressSettings) window.egressSettings($('#net-settings'));
   if (pane === 'audit' && window.auditSettingsCards) window.auditSettingsCards().then((cards) => fill($('#audit-settings'), ...cards));
   $('.settings-main').scrollTop = 0;
@@ -1731,7 +1748,11 @@ $('#btn-settings').addEventListener('click', (e) => {
   const go = (href) => { menu.remove(); location.hash = href; };
   const item = (id, href, icon, label, hint) => h('button', { type: 'button', role: 'menuitem', class: here === id ? 'on' : '', onclick: () => go(href) },
     ic(icon), h('span', {}, h('b', {}, label), h('span', { class: 'muted small' }, hint)));
+  const me = window.auth.enabled && window.auth.user;
+  const admin = roleAtLeast('admin');
   const menu = h('div', { class: 'theme-menu admin-menu', role: 'menu' },
+    me ? h('div', { class: 'admin-me small' }, h('b', {}, me.name), h('span', { class: 'muted' }, ` · ${{ viewer: 'наблюдатель', operator: 'оператор', admin: 'администратор' }[me.role]}`)) : null,
+    me ? h('hr') : null,
     item('agents', '#/agents', 'bot', 'Агенты', 'программа, изоляция, ключи, память'),
     item('sandbox', '#/sandbox', 'box', 'Шаблоны', 'образы программ и снимки машин'),
     item('machines', '#/', 'server', 'Машины', 'все microVM, консоль, файлы'),
@@ -1739,8 +1760,9 @@ $('#btn-settings').addEventListener('click', (e) => {
     item('secrets', '#/secrets', 'key', 'Секреты', 'API-ключи и токены'),
     item('dirs', '#/dirs', 'folder', 'Папки', 'какие папки можно давать машинам'),
     h('hr'),
-    h('button', { type: 'button', role: 'menuitem', onclick: () => { menu.remove(); createAgent(); } }, ic('plus'), h('span', {}, h('b', {}, 'Создать агента'))),
-    h('button', { type: 'button', role: 'menuitem', onclick: () => { menu.remove(); openSettings(); } }, ic('sliders'), h('span', {}, h('b', {}, 'Настройки…'), h('span', { class: 'muted small' }, 'smolvm, прокси, сертификаты, репозитории, SIEM'))));
+    admin ? h('button', { type: 'button', role: 'menuitem', onclick: () => { menu.remove(); createAgent(); } }, ic('plus'), h('span', {}, h('b', {}, 'Создать агента'))) : null,
+    admin ? h('button', { type: 'button', role: 'menuitem', onclick: () => { menu.remove(); openSettings(); } }, ic('sliders'), h('span', {}, h('b', {}, 'Настройки…'), h('span', { class: 'muted small' }, 'доступ и политика, smolvm, прокси, сертификаты, SIEM'))) : null,
+    me ? h('button', { type: 'button', role: 'menuitem', onclick: async () => { menu.remove(); await api('POST', '/ui/auth/logout', {}).catch(() => {}); location.reload(); } }, ic('x'), h('span', {}, h('b', {}, 'Выйти'))) : null);
   const r = $('#btn-settings').getBoundingClientRect();
   menu.style.top = `${r.bottom + 6}px`; menu.style.left = `${Math.max(8, Math.min(r.right - 280, innerWidth - 288))}px`;
   document.body.append(menu);
@@ -2314,7 +2336,7 @@ async function tick() {
     if (state.healthy && (!wasHealthy || $('#detail').dataset.name !== (state.selected || '')) && current()) renderDetail();
   } finally { ticking = false; }
 }
-refreshInfo().then(tick).then(route);
+loadAuth().then(refreshInfo).then(tick).then(route);
 // The version line and «перезапустите smolvm-web» also on a page left open.
 setInterval(() => { if (!document.hidden) refreshInfo(); }, 60000);
 pollLive();

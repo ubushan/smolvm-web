@@ -1,12 +1,15 @@
 'use strict';
-// Page «Аудит»: who did what to which machine, file changes in rw folders.
+// «Журнал» (#/audit): who did what to which machine, file changes in rw folders, and
+// where machines went on the network — one feed, filtered by source, task or machine.
 // Export to SIEM (syslog / HTTP JSON) and alerts on bursts of blocked attempts
 // live in the settings window, section «Аудит и SIEM» (window.auditSettingsCards).
 
 (() => {
   let root = null;
   let timer = null;
-  const filter = { machine: '', type: '', q: '' };
+  const filter = { machine: '', type: '', q: '', source: 'all', task: '' };
+  let taskList = [];
+  let tasksAt = 0;
 
   function card(title, ...children) {
     return h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h3', {}, title)), ...children);
@@ -24,6 +27,8 @@
     ui: { icon: 'sliders', label: 'smolvm-web', cls: '' },
     fs: { icon: 'file', label: 'Файл', cls: 'warn' },
     alert: { icon: 'shield', label: 'Оповещение', cls: 'bad' },
+    net: { icon: 'globe', label: 'Сеть', cls: '' },
+    netDeny: { icon: 'globe', label: 'Сеть: заблокировано', cls: 'bad' },
     sandbox: { icon: 'box', label: 'Песочница', cls: '' },
     test: { icon: 'send', label: 'Тест', cls: '' },
   };
@@ -39,21 +44,27 @@
     if (!wrap) return;
     let data; let day;
     try {
-      const q = new URLSearchParams({ machine: filter.machine, type: filter.type, q: filter.q, limit: '500' });
-      // The counters ignore the type filter: they are the way to set it.
-      [data, day] = await Promise.all([api('GET', `/ui/audit?${q}`), api('GET', `/ui/audit?${new URLSearchParams({ machine: filter.machine, limit: '5000' })}`)]);
+      if (Date.now() - tasksAt > 15000) { tasksAt = Date.now(); taskList = (await api('GET', '/ui/tasks').catch(() => ({ tasks: [] }))).tasks || []; }
+      const scope = { machine: filter.machine, task: filter.task };
+      const q = new URLSearchParams({ ...scope, source: filter.source, type: filter.source === 'net' || filter.source === 'deny' ? '' : filter.type, q: filter.q, limit: '500' });
+      // The counters ignore the type and source filters: they are the way to set them.
+      [data, day] = await Promise.all([api('GET', `/ui/journal?${q}`), api('GET', `/ui/journal?${new URLSearchParams({ ...scope, limit: '5000' })}`)]);
     } catch (e) { fill(wrap, h('div', { class: 'error' }, e.message)); return; }
     if (!root?.contains(wrap)) return;
     const focused = document.activeElement && wrap.contains(document.activeElement) ? document.activeElement.name : null;
 
     // Counters for the last 24 hours.
     const since = Date.now() - 864e5;
-    const recent = day.entries.filter((e) => new Date(e.ts).getTime() >= since);
-    const count = (t) => recent.filter((e) => e.type === t).length;
+    const recent = day.entries.filter((e) => e.t >= since);
+    const count = (t) => recent.filter((e) => e.source === 'audit' && e.type === t).length;
     const failed = recent.filter((e) => (e.exitCode != null && e.exitCode !== 0) || e.status >= 400).length;
-    const tile = (type, icon, title, n, tone) => h('button', { type: 'button', class: `aud-tile${filter.type === type ? ' active' : ''}${tone && n ? ` ${tone}` : ''}`, onclick: () => { filter.type = filter.type === type ? '' : type; renderLog(); } },
+    const tile = (type, icon, title, n, tone) => h('button', { type: 'button', class: `aud-tile${filter.type === type && filter.source !== 'net' && filter.source !== 'deny' ? ' active' : ''}${tone && n ? ` ${tone}` : ''}`, onclick: () => { filter.type = filter.type === type ? '' : type; if (filter.type) filter.source = 'audit'; renderLog(); } },
       h('div', { class: 'set-tile-head' }, ic(icon), h('span', {}, title)), h('div', { class: 'aud-num' }, String(n)));
+    const netTile = (source, title, n, tone) => h('button', { type: 'button', class: `aud-tile${filter.source === source ? ' active' : ''}${tone && n ? ` ${tone}` : ''}`, onclick: () => { filter.source = filter.source === source ? 'all' : source; filter.type = ''; renderLog(); } },
+      h('div', { class: 'set-tile-head' }, ic('globe'), h('span', {}, title)), h('div', { class: 'aud-num' }, String(n)));
     const tiles = h('div', { class: 'aud-tiles' },
+      netTile('net', 'Соединения', recent.filter((e) => e.source === 'net').length),
+      netTile('deny', 'Заблокировано сетью', recent.filter((e) => e.source === 'net' && !e.allow).length, 'bad'),
       tile('exec', 'terminal', 'Команды', count('exec')),
       tile('api', 'server', 'Действия с машинами', count('api')),
       tile('ui', 'sliders', 'Настройки и ревью', count('ui')),
@@ -63,19 +74,25 @@
 
     // Filters
     const names = [...new Set([...state.machines.map((m) => m.name), ...data.entries.map((e) => e.machine).filter(Boolean)])].sort();
-    const typeSeg = segmented([['', 'Все'], ['exec', 'Команды'], ['api', 'Машины'], ['ui', 'Настройки'], ['fs', 'Файлы'], ['alert', 'Оповещения'], ['sandbox', 'Песочницы']], filter.type, (v) => { filter.type = v; renderLog(); });
+    const srcSeg = segmented([['all', 'Всё'], ['audit', 'Действия'], ['net', 'Сеть'], ['deny', 'Заблокировано']], filter.source, (v) => { filter.source = v; if (v !== 'audit') filter.type = ''; renderLog(); });
+    const typeSeg = filter.source === 'audit' ? segmented([['', 'Все'], ['exec', 'Команды'], ['api', 'Машины'], ['ui', 'Настройки'], ['fs', 'Файлы'], ['alert', 'Оповещения'], ['sandbox', 'Песочницы']], filter.type, (v) => { filter.type = v; renderLog(); }) : null;
+    const tSel = h('select', { class: 'input small', name: 't', title: 'Все машины задачи, от её открытия до закрытия' }, h('option', { value: '' }, 'Все задачи'),
+      taskList.map((t) => h('option', { value: t.id, selected: t.id === filter.task }, t.title.length > 50 ? `${t.title.slice(0, 50)}…` : t.title)));
+    tSel.addEventListener('change', () => { filter.task = tSel.value; renderLog(); });
     const mSel = h('select', { class: 'input small', name: 'm' }, h('option', { value: '' }, 'Все машины'), names.map((n) => h('option', { value: n, selected: n === filter.machine }, n)));
     mSel.addEventListener('change', () => { filter.machine = mSel.value; renderLog(); });
     const qIn = h('input', { class: 'input small', name: 'q', placeholder: 'Поиск', value: filter.q });
     qIn.addEventListener('input', () => { filter.q = qIn.value; clearTimeout(qIn._t); qIn._t = setTimeout(renderLog, 300); });
     const live = h('button', { class: `btn small-btn log-live${paused ? '' : ' on'}`, title: paused ? 'Обновление остановлено' : 'Журнал обновляется каждые 4 секунды', onclick: () => { paused = !paused; renderLog(); } },
       h('span', { class: 'live-dot' }), paused ? 'Пауза' : 'Вживую');
-    const toolbar = h('div', { class: 'log-toolbar' }, typeSeg, mSel, h('div', { class: 'log-search' }, ic('search'), qIn), h('span', { class: 'spacer' }), live,
+    const toolbar = h('div', { class: 'log-toolbar' }, srcSeg, typeSeg, tSel, mSel, h('div', { class: 'log-search' }, ic('search'), qIn), h('span', { class: 'spacer' }), live,
       h('button', { class: 'btn small-btn', title: 'Проверить цепочку подписей журнала: изменённые, удалённые или вставленные записи', onclick: verifyLog }, ic('shield'), 'Проверить целостность'),
       h('a', { class: 'btn small-btn', href: '/ui/audit/export', download: '', title: 'Весь журнал в формате JSON Lines' }, ic('download'), 'Экспорт'));
 
     // The feed, by day.
     const what = (e) => {
+      if (e.source === 'net') return [h('div', { class: `ellipsis${e.allow ? '' : ' badc'}` }, e.allow ? 'Соединение: ' : 'Не пустили: ', h('code', {}, `${e.host}:${e.port}`)),
+        e.reason || e.via ? h('div', { class: 'muted small ellipsis' }, [e.reason, e.via ? `через ${e.via}` : null].filter(Boolean).join(' · ')) : null];
       const d = e.detail || {};
       if (e.type === 'exec') return [h('div', { class: 'ellipsis' }, e.action === 'exec' ? '' : `${e.action}: `, h('code', {}, d.command || d.prompt || (d.commands != null ? `${d.commands} команд` : '') || '')),
         d.user ? h('div', { class: 'muted small' }, `от ${d.user}${d.workdir ? ` · ${d.workdir}` : ''}`) : null];
@@ -85,6 +102,7 @@
       return [h('div', { class: 'ellipsis' }, e.action), extra ? h('div', { class: 'muted small mono ellipsis', title: extra }, extra) : null];
     };
     const result = (e) => {
+      if (e.source === 'net') return h('span', { class: `tag ${e.allow ? 'ok' : 'bad'}` }, e.allow ? 'разрешено' : 'заблокировано');
       if (e.exitCode != null) return h('span', { class: `tag ${e.exitCode === 0 ? 'ok' : 'bad'}` }, e.exitCode === 0 ? 'успешно' : `код ${e.exitCode}`);
       if (e.status) return h('span', { class: `tag ${e.status < 400 ? 'ok' : 'bad'}`, title: `HTTP ${e.status}` }, e.status < 400 ? 'успешно' : `ошибка ${e.status}`);
       return null;
@@ -94,7 +112,7 @@
     for (const e of data.entries) {
       const dl = dayLabel(e.ts);
       if (dl !== lastDay) { rows.push(h('div', { class: 'aud-day' }, dl)); lastDay = dl; }
-      const k = KIND[e.type] || { icon: 'list', label: e.type, cls: '' };
+      const k = e.source === 'net' ? KIND[e.allow ? 'net' : 'netDeny'] : KIND[e.type] || { icon: 'list', label: e.type, cls: '' };
       rows.push(h('div', { class: `aud-row ${e.type === 'alert' ? 'bad' : ''}` },
         h('span', { class: 'mono small muted' }, new Date(e.ts).toLocaleTimeString('ru-RU')),
         h('span', { class: `aud-kind ${k.cls}`, title: k.label }, ic(k.icon)),
@@ -106,7 +124,7 @@
     const feed = data.entries.length ? h('div', { class: 'aud-feed' },
       h('div', { class: 'aud-row aud-head' }, h('span', {}, 'Время'), h('span', {}, ''), h('span', {}, 'Что произошло'), h('span', {}, 'Машина'), h('span', {}, 'Кто'), h('span', { class: 'right' }, 'Итог')),
       ...rows)
-      : h('div', { class: 'log-empty' }, ic('shield'), h('div', {}, filter.type || filter.machine || filter.q ? 'Под фильтр ничего не попало.' : 'Записей пока нет.'));
+      : h('div', { class: 'log-empty' }, ic('shield'), h('div', {}, filter.type || filter.machine || filter.q || filter.task || filter.source !== 'all' ? 'Под фильтр ничего не попало.' : 'Записей пока нет.'));
 
     fill(wrap, tiles, toolbar, feed,
       h('div', { class: 'aud-foot small muted' },
@@ -178,17 +196,19 @@
   async function render() {
     if (!root) return;
     fill(root,
-      h('section', { class: 'card intro' }, h('div', { class: 'row' }, h('h2', { class: 'h-ic' }, ic('shield'), 'Аудит'),
-        helpButton('Что попадает в аудит',
+      h('section', { class: 'card intro' }, h('div', { class: 'row' }, h('h2', { class: 'h-ic' }, ic('shield'), 'Журнал'),
+        helpButton('Что попадает в журнал',
           h('ul', {},
             h('li', {}, 'Команды exec из консоли, init из Smolfile и установка агентов — с кодом выхода.'),
             h('li', {}, 'Действия с машинами: создание, запуск, остановка, удаление, ветки, загрузка файлов и образов.'),
             h('li', {}, 'Ревью (какие файлы применены на хост или отклонены), снимки и откаты, изменения секретов (без значений), доступа в сеть, директорий и настроек.'),
             h('li', {}, 'Изменения файлов в папках хоста, подключённых к работающим машинам на запись. Источник изменения (машина или человек на хосте) по файловой системе не различить — в записи перечислены машины с доступом на запись.'),
-            h('li', {}, 'Команды, которые агент выполняет внутри машины сам (без exec через smolvm-web), сюда не попадают: smolvm их не сообщает. Их след — сетевой журнал и изменения файлов.'))),
+            h('li', {}, 'Соединения машин через фильтр «Сеть»: куда, разрешено или заблокировано и почему. Они хранятся в памяти smolvm-web (последние записи) и в подписанный журнал не входят; в SIEM уходят по настройке «Сетевые события».'),
+            h('li', {}, 'Фильтр по задаче показывает все её машины (и после «Сбросить») от открытия до закрытия.'),
+            h('li', {}, 'Команды, которые агент выполняет внутри машины сам (без exec через smolvm-web), сюда не попадают: smolvm их не сообщает. Их след — сеть и изменения файлов.'))),
         h('span', { class: 'spacer' }), h('span', { id: 'aud-integrity', class: 'ss-pill' }, 'Проверка журнала…'), h('span', { id: 'aud-siem', class: 'ss-pill' }),
-        h('a', { class: 'btn small-btn ghost', href: '#/egress?tab=log' }, ic('globe'), 'Сетевой журнал →')),
-        h('p', { class: 'muted small' }, 'Кто что делал с машинами: команды, запуски и остановки, ревью, изменения настроек и файлов. За последние сутки:')),
+        h('a', { class: 'btn small-btn ghost', href: '#/egress?tab=log', title: 'Подробный журнал соединений с кнопкой «Разрешить»' }, ic('globe'), 'Сеть →')),
+        h('p', { class: 'muted small' }, 'Кто что делал с машинами и куда они ходили: команды, запуски и остановки, ревью, изменения настроек и файлов, соединения. За последние сутки:')),
       h('section', { class: 'card', id: 'audit-log' }, h('p', { class: 'muted' }, 'Загрузка…')));
     renderLog();
     headerStatus();
@@ -224,7 +244,8 @@
   pages.audit = {
     render(el, p) {
       root = el;
-      filter.machine = p.get('machine') || filter.machine;
+      filter.machine = p.get('machine') || (p.get('task') ? '' : filter.machine);
+      if (p.get('task')) { filter.task = p.get('task'); tasksAt = 0; }
       render();
       timer = setInterval(() => { if (!paused && !document.hidden && !el.querySelector('#audit-log :focus')) renderLog(); }, 4000);
       return () => { clearInterval(timer); root = null; };

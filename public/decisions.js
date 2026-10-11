@@ -63,7 +63,7 @@
   function askCard(a) {
     const left = h('span', { 'data-exp': a.expiresAt, 'data-total': a.expiresAt - a.createdAt });
     const btns = [];
-    const b = (cls, label, decision) => { const x = h('button', { class: `btn ${cls}`, onclick: () => decide(a, decision, btns) }, label); btns.push(x); return x; };
+    const b = (cls, label, decision) => { const x = h('button', { class: `btn ${cls} needs-operator`, onclick: () => decide(a, decision, btns) }, label); btns.push(x); return x; };
     const net = a.kind === 'net';
     return h('article', { class: 'dc-card' },
       h('div', { class: 'dc-meta' }, h('b', {}, who(a.machine)), h('span', {}, net ? 'хочет зайти на сайт' : 'хочет вызвать API'), h('span', { class: 'spacer' }), left),

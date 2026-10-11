@@ -41,10 +41,15 @@
   }
 
   // ---------- the trust level (also used by «Новая задача») ----------
+  // Levels above the administrator's ceiling are shown, but cannot be chosen.
   function trustPicker(value, onChange) {
+    const order = { careful: 1, normal: 2, trusted: 3 };
+    const max = window.auth?.policy?.maxTrust || 'trusted';
+    if (order[value] > order[max]) { value = max; setTimeout(() => onChange(max), 0); }
     const box = h('div', { class: 'ag-trust', role: 'radiogroup', 'aria-label': 'Насколько вы доверяете агенту' });
     const draw = () => box.replaceChildren(...Object.entries(TRUST).map(([id, t]) => h('button', {
       type: 'button', role: 'radio', 'aria-checked': String(id === value), class: `ag-trust-col ${id}${id === value ? ' on' : ''}`,
+      disabled: order[id] > order[max], title: order[id] > order[max] ? 'Запрещено политикой администратора' : '',
       onclick: () => { value = id; draw(); onChange(id); },
     }, h('span', { class: 'ag-trust-title' }, h('i', { class: `ag-dot ${id}` }), t.title),
       h('span', { class: 'ag-trust-hint' }, t.hint),
@@ -98,7 +103,7 @@
     });
     return h('section', { class: 'panel list-panel' },
       h('div', { class: 'panel-head' }, h('h2', { class: 'h-ic' }, ic('bot'), 'Агенты'), guideButton(),
-        h('button', { class: 'btn primary icon', title: 'Создать агента', 'aria-label': 'Создать агента', onclick: () => create() }, ic('plus'))),
+        h('button', { class: 'btn primary icon needs-admin', title: 'Создать агента', 'aria-label': 'Создать агента', onclick: () => create() }, ic('plus'))),
       h('div', { class: 'machines' }, ...(items.length ? items : [h('div', { class: 'list-empty' }, 'Агентов пока нет.', h('br'), h('br'),
         h('button', { class: 'btn primary', onclick: () => create() }, 'Создать первого'))])));
   }
@@ -106,7 +111,7 @@
   // ---------- «Обзор»: network, directories, secrets ----------
   function overview(p) {
     const t = tplOf(p.template);
-    const edit = (step) => h('button', { class: 'btn ghost small-btn', onclick: () => agentWizard({ profile: p.id, step, onDone: () => refresh() }) }, 'Изменить');
+    const edit = (step) => h('button', { class: 'btn ghost small-btn needs-admin', onclick: () => agentWizard({ profile: p.id, step, onDone: () => refresh() }) }, 'Изменить');
     const card = (icon, title, step, ...body) => h('section', { class: 'card ag-ov' },
       h('div', { class: 'card-head' }, h('h3', { class: 'h-ic' }, ic(icon), title), h('span', { class: 'spacer' }), edit(step)), ...body);
     const net = p.net || (t?.egress?.enabled ? (t.egress.strict ? 'strict' : 'soft') : t ? 'off' : null);
@@ -178,9 +183,9 @@
         h('div', { class: 'ag-title' }, h('h2', {}, p.name), h('span', { class: 'muted small' }, [programOf(p), TRUST[p.trust] ? `доверие: ${TRUST[p.trust].title.toLowerCase()}` : null].filter(Boolean).join(' · '))),
         h('span', { class: `ag-pill ${tone}` }, tone === 'busy' ? h('i', { class: 'spin' }) : null, text),
         h('div', { class: 'actions' },
-          h('button', { class: 'btn primary', onclick: () => launch({ profile: p.id }) }, ic('play'), 'Дать задачу'),
-          h('button', { class: 'btn ghost icon', title: 'Настройки агента', 'aria-label': 'Настройки агента', onclick: () => agentWizard({ profile: p.id, onDone: () => refresh() }) }, ic('gear')),
-          h('button', { class: 'btn ghost icon danger', title: sessionsOf(p).length ? 'Сначала закончите его сессии' : 'Удалить агента', 'aria-label': 'Удалить агента', disabled: sessionsOf(p).length > 0, onclick: () => removeAgent(p) }, ic('trash')))),
+          h('button', { class: 'btn primary needs-operator', onclick: () => launch({ profile: p.id }) }, ic('play'), 'Дать задачу'),
+          h('button', { class: 'btn ghost icon needs-admin', title: 'Настройки агента', 'aria-label': 'Настройки агента', onclick: () => agentWizard({ profile: p.id, onDone: () => refresh() }) }, ic('gear')),
+          h('button', { class: 'btn ghost icon danger needs-admin', title: sessionsOf(p).length ? 'Сначала закончите его сессии' : 'Удалить агента', 'aria-label': 'Удалить агента', disabled: sessionsOf(p).length > 0, onclick: () => removeAgent(p) }, ic('trash')))),
       h('nav', { class: 'tabs' }, ...TABS.map(([id, label, n]) => h('button', { class: `tab${tab === id ? ' active' : ''}`, onclick: () => { tab = id; sync(); refresh(); } },
         label, n ? h('span', { class: 'nav-count' }, String(n)) : null))),
       h('div', { class: 'tab-body' }, ...body));

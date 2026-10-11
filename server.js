@@ -31,6 +31,7 @@ const review = require('./lib/review');
 const gitwork = require('./lib/gitwork');
 const tasks = require('./lib/tasks');
 const projects = require('./lib/projects');
+const access = require('./lib/access');
 const sandbox = require('./lib/sandbox');
 const audit = require('./lib/audit');
 const egress = require('./lib/egress');
@@ -148,7 +149,7 @@ function forward(req, res, bodyBuf, tap) {
 }
 
 // ---------- audit ----------
-function actorOf(req) { return `ui@${(req.socket.remoteAddress || '').replace(/^::ffff:/, '')}`; }
+function actorOf(req) { return req.user?.name || `ui@${(req.socket.remoteAddress || '').replace(/^::ffff:/, '')}`; }
 
 const AUDIT_LABELS = [
   [/^POST \/api\/v1\/machines$/, 'создание машины'],
@@ -189,6 +190,18 @@ const AUDIT_LABELS = [
   [/^POST \/ui\/sandbox\/images$/, 'песочницы: подготовка образа'],
   [/^POST \/ui\/sandbox\/templates\/[\w-]+\/upgrade$/, 'песочницы: обновление агентов шаблона'],
   [/^PUT \/ui\/sandbox\/policy$/, 'песочницы: политика по умолчанию'],
+  [/^PUT \/ui\/access\/policy$/, 'политика администратора'],
+  [/^PUT \/ui\/access\/users\//, 'учётная запись: создана или изменена'],
+  [/^DELETE \/ui\/access\/users\//, 'учётная запись удалена'],
+  [/^POST \/ui\/(tasks\/t-[0-9a-f]+|git\/[\w-]+)\/merge$/, 'слияние ветки задачи'],
+  [/^POST \/ui\/(tasks\/t-[0-9a-f]+|git\/[\w-]+)\/finish$/, 'задача: результат забран в ветку'],
+  [/^POST \/ui\/(tasks\/t-[0-9a-f]+|git\/[\w-]+)\/accept$/, 'задача: ветка оставлена'],
+  [/^POST \/ui\/(tasks\/t-[0-9a-f]+|git\/[\w-]+)\/discard$/, 'задача: ветка отброшена'],
+  [/^POST \/ui\/tasks\/t-[0-9a-f]+\/close$/, 'задача закрыта'],
+  [/^POST \/ui\/tasks\/t-[0-9a-f]+\/reset$/, 'задача: машина сброшена'],
+  [/^DELETE \/ui\/tasks\//, 'задача убрана из истории'],
+  [/^POST \/ui\/projects/, 'проект: создан или собран'],
+  [/^(PUT|DELETE) \/ui\/projects\//, 'проект изменён'],
   [/^POST \/ui\/sandbox\/machines\/[^/]+\/extend$/, 'песочница продлена'],
 ];
 
@@ -197,13 +210,16 @@ function auditRequest(req, res, url) {
   if (/^(GET|HEAD|OPTIONS) /.test(key) || /\/ui\/smolfile\/parse$|\/ui\/audit\/test$|\/ui\/proxy\/test$|\/ui\/ca\/preview$/.test(url.pathname)) return;
   const label = (AUDIT_LABELS.find(([re]) => re.test(key)) || [null, key])[1];
   const mm = url.pathname.match(/^\/(?:api\/v1|ui)\/machines\/([^/]+)/);
+  // A task's own actions (finish, close, merge…) belong to its journal too.
+  const gm = url.pathname.match(/^\/ui\/git\/([\w-]+)\//);
+  const tm = url.pathname.match(/^\/ui\/tasks\/(t-[0-9a-f]+)/) || (gm && [null, tasks.byGit(gm[1])]);
   const started = Date.now();
   res.on('finish', () => {
     if (res.auditDone) return;
     audit.record({
       type: url.pathname.startsWith('/ui/') ? 'ui' : 'api', actor: actorOf(req), machine: mm ? decodeURIComponent(mm[1]) : null,
       action: label, status: res.statusCode, ms: Date.now() - started,
-      detail: { method: req.method, path: url.pathname, ...(res.auditDetail || {}) },
+      detail: { method: req.method, path: url.pathname, ...(tm?.[1] ? { task: tm[1] } : {}), ...(res.auditDetail || {}) },
       severity: res.statusCode >= 400 ? 'notice' : 'info',
     });
   });
@@ -506,7 +522,7 @@ const sandboxHooks = {
     const payload = Buffer.from(JSON.stringify(body));
     const host = ['0.0.0.0', '::', ''].includes(HOST) ? '127.0.0.1' : HOST;
     const rq = http.request({ host, port: PORT, method: 'POST', path: '/api/v1/machines',
-      headers: { host: `127.0.0.1:${PORT}`, 'content-type': 'application/json', 'content-length': payload.length, 'x-smolvm-ui': '1' } }, (r) => {
+      headers: { host: `127.0.0.1:${PORT}`, 'content-type': 'application/json', 'content-length': payload.length, 'x-smolvm-ui': '1', 'x-smolvm-internal': access.INTERNAL } }, (r) => {
       let t = ''; r.setEncoding('utf8'); r.on('data', (c) => { t += c; });
       r.on('end', () => {
         let j = null; try { j = JSON.parse(t); } catch {}
@@ -764,12 +780,47 @@ function publicSettings() {
 
 const AG = '^/ui/machines/([^/]+)/agents';
 const RV = '^/ui/machines/([^/]+)/review';
-const err = (res, e) => sendJson(res, e.status || 500, { error: e.message });
+const err = (res, e) => sendJson(res, e.status || 500, { error: e.message, ...(['AUTH', 'ROLE', 'POLICY'].includes(e.code) ? { code: e.code } : {}) });
 const UI = [
   // ---- audit ----
   ['GET', /^\/ui\/audit$/, (req, res, _m, url) => {
     const p = url.searchParams;
     sendJson(res, 200, { entries: audit.list({ machine: p.get('machine') || '', type: p.get('type') || '', q: p.get('q') || '', limit: Math.min(2000, Number(p.get('limit')) || 500) }), file: audit.file, watched: audit.watched() });
+  }],
+  // «Журнал»: the audit and the network log in one feed. source: all | audit | net | deny;
+  // task: its machines, from its opening to its closing.
+  ['GET', /^\/ui\/journal$/, (req, res, _m, url) => {
+    const p = url.searchParams;
+    const source = ['audit', 'net', 'deny'].includes(p.get('source')) ? p.get('source') : 'all';
+    const type = p.get('type') || '';
+    const q = p.get('q') || '';
+    const limit = Math.min(5000, Number(p.get('limit')) || 500);
+    let machines = p.get('machine') ? [p.get('machine')] : null;
+    let from = 0; let to = Infinity;
+    if (p.get('task')) {
+      const t = tasks.raw(p.get('task'));
+      if (!t) return sendJson(res, 404, { error: 'задача не найдена' });
+      machines = machines ? machines.filter((m) => t.machines.includes(m)) : t.machines;
+      from = t.createdAt - 60000; to = t.closedAt ? t.closedAt + 60000 : Infinity;
+    }
+    const task = p.get('task') || null;
+    const keep = (m, ts, e) => ((!machines || machines.includes(m)) || (task && e?.detail?.task === task)) && ts >= from && ts <= to;
+    const out = [];
+    if (source === 'all' || source === 'audit') {
+      for (const e of audit.list({ type, q, limit: 5000 })) {
+        const t = new Date(e.ts).getTime();
+        if (keep(e.machine, t, e)) out.push({ ...e, source: 'audit', t });
+      }
+    }
+    if ((source !== 'audit') && !type) {
+      for (const e of egress.log({ decision: source === 'deny' ? 'deny' : undefined, q, limit: 5000 })) {
+        if (!keep(e.machine, e.ts)) continue;
+        out.push({ source: 'net', t: e.ts, ts: new Date(e.ts).toISOString(), machine: e.machine, host: e.host, port: e.port, allow: !!e.allow, reason: e.reason || '',
+          bytesIn: e.bytesIn || 0, bytesOut: e.bytesOut || 0, via: e.via || null });
+      }
+    }
+    out.sort((a, b) => b.t - a.t);
+    sendJson(res, 200, { entries: out.slice(0, limit), file: audit.file, watched: audit.watched() });
   }],
   ['GET', /^\/ui\/audit\/export$/, (req, res) => {
     let data = '';
@@ -858,6 +909,40 @@ const UI = [
       sendJson(res, 200, r);
     } catch (e) { err(res, e); }
   }],
+  // ---- access: logins, accounts, the administrator's policy ----
+  ['GET', /^\/ui\/auth\/state$/, (req, res) => sendJson(res, 200, { enabled: access.enabled(), user: req.user && !req.user.open ? req.user : null, policy: access.policy() })],
+  ['POST', /^\/ui\/auth\/login$/, async (req, res) => {
+    const b = await readJson(req);
+    try {
+      const token = access.login(b.name, b.password);
+      res.setHeader('set-cookie', access.sessionCookie(token));
+      audit.record({ type: 'ui', actor: String(b.name), action: 'вход', detail: { ip: (req.socket.remoteAddress || '').replace(/^::ffff:/, '') } });
+      sendJson(res, 200, { ok: true });
+    } catch (e) {
+      audit.record({ type: 'ui', actor: String(b.name || '').slice(0, 40), action: 'вход не удался', severity: 'notice', detail: { ip: (req.socket.remoteAddress || '').replace(/^::ffff:/, ''), why: e.message } });
+      err(res, e);
+    }
+  }],
+  ['POST', /^\/ui\/auth\/logout$/, (req, res) => { res.setHeader('set-cookie', access.clearCookie()); sendJson(res, 200, { ok: true }); }],
+  ['GET', /^\/ui\/access\/users$/, (req, res) => sendJson(res, 200, { users: access.listUsers() })],
+  ['PUT', /^\/ui\/access\/users\/([^/]+)$/, async (req, res, m) => {
+    const b = await readJson(req);
+    try {
+      const first = !access.enabled();
+      const u = access.setUser({ name: decodeURIComponent(m[1]), role: b.role, password: b.password || undefined, disabled: b.disabled });
+      res.auditDetail = { user: u.name, role: u.role, disabled: u.disabled, password: b.password ? 'изменён' : undefined, loginsOn: first || undefined };
+      // The first account turns logins on: its author is logged in as it.
+      if (first) res.setHeader('set-cookie', access.sessionCookie(access.login(u.name, b.password)));
+      sendJson(res, 200, u);
+    } catch (e) { err(res, e); }
+  }],
+  ['DELETE', /^\/ui\/access\/users\/([^/]+)$/, (req, res, m) => {
+    try { access.deleteUser(decodeURIComponent(m[1])); res.auditDetail = { user: decodeURIComponent(m[1]) }; sendJson(res, 200, { ok: true, enabled: access.enabled() }); } catch (e) { err(res, e); }
+  }],
+  ['PUT', /^\/ui\/access\/policy$/, async (req, res) => {
+    const b = await readJson(req);
+    try { const p = access.setPolicy(b); res.auditDetail = p; sendJson(res, 200, p); } catch (e) { err(res, e); }
+  }],
   // ---- tasks: a sandbox with what it was opened for and what came of it ----
   ['GET', /^\/ui\/tasks$/, async (req, res) => sendJson(res, 200, { tasks: await tasks.list() })],
   ['POST', /^\/ui\/tasks$/, async (req, res) => {
@@ -890,7 +975,7 @@ const UI = [
   ['DELETE', /^\/ui\/tasks\/(t-[0-9a-f]+)$/, (req, res, m) => {
     try { tasks.remove(m[1]); sendJson(res, 200, { ok: true }); } catch (e) { err(res, e); }
   }],
-  ['POST', /^\/ui\/tasks\/(t-[0-9a-f]+)\/(finish|close|reset|accept|discard)$/, async (req, res, m) => {
+  ['POST', /^\/ui\/tasks\/(t-[0-9a-f]+)\/(finish|close|reset|accept|discard|merge)$/, async (req, res, m) => {
     const b = await readJson(req);
     const id = m[1]; const op = m[2];
     if (op === 'close' || op === 'reset') res.auditDone = true;
@@ -899,8 +984,8 @@ const UI = [
       if (op === 'finish') r = await tasks.finish(id);
       else if (op === 'close') r = await tasks.close(id, { save: b.save !== false }, sandboxHooks);
       else if (op === 'reset') r = await tasks.reset(id, sandboxHooks);
-      else r = await tasks.decide(id, op);
-      if (r.git) res.auditDetail = { task: id, branches: r.git.map((x) => `${x.branch}: ${x.state}`) };
+      else r = await tasks.decide(id, op, { how: b.how === 'squash' ? 'squash' : 'merge' });
+      if (r.git) res.auditDetail = { branches: r.git.map((x) => `${x.branch}: ${x.state}`) };
       sendJson(res, 200, r);
     } catch (e) { err(res, e); }
   }],
@@ -913,9 +998,11 @@ const UI = [
   ['GET', /^\/ui\/git\/([\w-]+)\/diff$/, async (req, res, m, url) => {
     try { sendJson(res, 200, await gitwork.fileDiff(m[1], url.searchParams.get('path'))); } catch (e) { err(res, e); }
   }],
-  ['POST', /^\/ui\/git\/([\w-]+)\/(finish|accept|discard)$/, async (req, res, m) => {
+  ['POST', /^\/ui\/git\/([\w-]+)\/(finish|accept|discard|merge)$/, async (req, res, m) => {
+    const b = await readJson(req);
     try {
-      const r = await gitwork[m[2]](m[1]);
+      const r = m[2] === 'merge' ? await gitwork.merge(m[1], { how: b.how === 'squash' ? 'squash' : 'merge', into: b.into ? String(b.into) : undefined, title: b.title ? String(b.title) : undefined })
+        : await gitwork[m[2]](m[1]);
       res.auditDetail = { branch: r.branch, commits: r.commits, state: r.state };
       sendJson(res, 200, r);
     } catch (e) { err(res, e); }
@@ -1512,7 +1599,18 @@ const server = http.createServer(async (req, res) => {
   if ((isApi || isUi) && mutating && req.headers['x-smolvm-ui'] !== '1') {
     return sendJson(res, 403, { error: 'missing X-Smolvm-UI header', code: 'FORBIDDEN' });
   }
-  if ((isApi || isUi) && mutating) auditRequest(req, res, url);
+  // Accounts (when there are any): a login for /ui and /api, and the role the request needs.
+  if (isApi || isUi) {
+    req.user = access.identify(req);
+    const open = /^\/ui\/auth\//.test(url.pathname);
+    if (!open && !req.user) return sendJson(res, 401, { error: 'нужно войти', code: 'AUTH' });
+    const need = open ? 'viewer' : access.required(req.method, url.pathname);
+    if (!open && !access.allows(req.user.role, need)) {
+      if (mutating) auditRequest(req, res, url);
+      return sendJson(res, 403, { error: `недостаточно прав: нужна роль «${access.ROLE_TITLES[need]}»`, code: 'ROLE' });
+    }
+  }
+  if ((isApi || isUi) && mutating && !/^\/ui\/auth\//.test(url.pathname)) auditRequest(req, res, url);
   try {
     if (isUi) {
       if (!(await dispatch(UI, req, res, url))) sendJson(res, 404, { error: 'not found' });
