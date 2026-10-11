@@ -16,9 +16,8 @@
   // Sections of the page: a bar on top, one section at a time (like «Директории»).
   const SECTIONS = [
     ['machines', 'server', 'Машины', 'Куда может ходить каждая машина: режим, что разрешено, что недавно заблокировано.'],
+    ['lists', 'shield', 'Белые списки', 'Наборы разрешённых адресов (PyPI, npm, GitHub…), которые подключаются к машинам. Реестры образов — в «Настройки» → «Виртуализация», режим для новых машин — в «Настройки» → «Сеть».'],
     ['log', 'list', 'Журнал', 'Все соединения машин: что разрешено, что заблокировано и почему. Заблокированное можно разрешить одной кнопкой.'],
-    ['lists', 'shield', 'Списки', 'Наборы разрешённых адресов (PyPI, npm, GitHub…), которые подключаются к машинам. Реестры образов — в «Настройки» → «Виртуализация».'],
-    ['settings', 'gear', 'Настройки', 'Что подставляется новым машинам, и как работает сам фильтр.'],
   ];
   let section = 'machines';
   const goSection = (id) => {
@@ -127,7 +126,7 @@
           h('li', {}, 'Порты: ', h('code', {}, '443'), ', ', h('code', {}, '443,80'), ', ', h('code', {}, '8000-8100'), ', ', h('code', {}, '*'), '. Путь внутри HTTPS не виден (TLS не расшифровывается) — фильтр работает по хосту и порту.'),
           h('li', {}, 'Адреса хоста, loopback, link-local (169.254.x — metadata) и частных сетей доступны только по явному правилу IP/CIDR — даже если разрешённое имя на них резолвится. ', h('code', {}, '*'), ' их не открывает.'),
           h('li', {}, h('b', {}, 'Жёсткая изоляция'), ': smolvm получает egress-политику «только IP хоста», так что программы, игнорирующие HTTP_PROXY, не выйдут в сеть в обход фильтра. Применяется при запуске через smolvm-web (машина должна быть остановлена). Учтите: машине станут доступны и другие сервисы хоста, слушающие внешний интерфейс.'),
-          h('li', {}, 'Образы при старте скачиваются отдельным токеном, которому дополнительно разрешены реестры (вкладка «Списки» → «Реестры образов»).'))), h('span', { class: 'spacer' })),
+          h('li', {}, 'Образы при старте скачиваются отдельным токеном, которому дополнительно разрешены реестры образов («Настройки» → «Виртуализация»).'))), h('span', { class: 'spacer' })),
       h('nav', { class: 'section-nav' }, SECTIONS.map(([id, icon, title]) => h('button', { type: 'button', class: id === section ? 'active' : '', onclick: () => goSection(id) }, ic(icon), title))),
       h('p', { class: 'muted small section-about' }, SECTIONS.find(([id]) => id === section)[3]));
   }
@@ -152,7 +151,7 @@
   function machinesCard() {
     const names = state.machines.map((m) => m.name);
     if (!names.length) return h('section', { class: 'card' }, h('p', { class: 'muted' }, 'Машин пока нет.'));
-    return [asksBlock(), ...names.map(machineNetCard)].filter(Boolean);
+    return [asksBlock(), h('div', { class: 'net-cards' }, ...names.map(machineNetCard))].filter(Boolean);
   }
 
   // A segmented control: options [[value, label, title]], current value, onChange.
@@ -191,8 +190,8 @@
       mark(mk?.mark || 'vm', true),
       h('div', { class: 'net-title' },
         h('div', { class: 'row' }, h('b', { class: 'mono' }, name), mach ? h('span', { class: `badge ${mach.state}` }, stateLabel(mach.state)) : null),
-        h('div', { class: 'muted small' }, MODES[mode][1])),
-      h('span', { class: 'spacer' }), seg);
+        h('div', { class: 'muted small', title: MODES[mode][1] }, MODES[mode][0])),
+      seg);
     const parts = [head];
     if (pending) {
       parts.push(h('div', { class: 'notice small net-notice' }, ic('refresh'),
@@ -200,7 +199,7 @@
         h('span', { class: 'spacer' }),
         running && mach ? h('button', { class: 'btn small-btn', onclick: async () => { await actions.restart(mach); await load(); render(); } }, 'Перезапустить') : null));
     }
-    if (mode === 'off') return h('section', { class: 'card machine-net off' }, ...parts);
+    if (mode === 'off') return h('section', { class: 'card machine-net off', id: `net-${name}` }, ...parts);
 
     if (mode === 'record') {
       parts.push(h('div', { class: 'net-record' },
@@ -219,16 +218,16 @@
     const allowedV = vend.filter((v) => !v.revoked).length;
     const allowedCol = h('div', { class: 'net-col' },
       h('div', { class: 'net-col-title' }, 'Разрешено'),
-      h('div', { class: 'muted small' }, 'Списки'), lists,
+      h('div', { class: 'muted small' }, 'Белые списки'), lists,
       h('div', { class: 'net-facts' },
         h('button', { class: `fact${isOpen('rules') ? ' active' : ''}`, onclick: () => toggle('rules') }, h('b', {}, String(m.rules.length)), h('span', {}, 'своих правил')),
         vend.length ? h('button', { class: `fact${isOpen('vendors') ? ' active' : ''}`, onclick: () => toggle('vendors') }, h('b', {}, `${allowedV}/${vend.length}`), h('span', {}, 'серверов агентов')) : null));
     const blocked = denied.filter((d) => d.machine === name);
     const blockedCol = h('div', { class: 'net-col' },
       h('div', { class: 'net-col-title' }, 'Недавно заблокировано', blocked.length ? h('span', { class: 'badge stopped' }, String(blocked.length)) : null),
-      blocked.length ? h('div', { class: 'net-blocked' }, ...blocked.slice(0, 4).map((d) => blockedRow(name, d)),
-        blocked.length > 4 ? h('a', { class: 'small', href: '#', onclick: (e) => { e.preventDefault(); logFilter.machine = name; goSection('log'); } }, `ещё ${blocked.length - 4} в журнале →`) : null)
-        : h('div', { class: 'muted small net-empty' }, mode === 'record' ? 'В режиме записи ничего не блокируется.' : 'Пока ничего. Если агент упрётся в закрытый адрес, он появится здесь — с кнопкой «Разрешить».'));
+      blocked.length ? h('div', { class: 'net-blocked' }, ...blocked.slice(0, 2).map((d) => blockedRow(name, d)),
+        blocked.length > 2 ? h('a', { class: 'small', href: '#', onclick: (e) => { e.preventDefault(); logFilter.machine = name; goSection('log'); } }, `ещё ${blocked.length - 2} в журнале →`) : null)
+        : h('div', { class: 'muted small net-empty' }, mode === 'record' ? 'В режиме записи ничего не блокируется.' : 'Пока ничего.'));
     parts.push(h('div', { class: 'net-grid' }, allowedCol, blockedCol));
 
     if (isOpen('rules')) {
@@ -250,16 +249,17 @@
     ask.addEventListener('change', () => save({ ask: ask.checked }, true));
     const askCtl = mode !== 'record' ? h('label', { class: 'check small', title: 'Неизвестный адрес не блокировать сразу, а спросить человека: «на 10 минут», «всегда» или «запретить»' }, ask, ' Спрашивать о незнакомых адресах') : null;
 
+    if (askCtl) parts.push(askCtl);
     // Actions of the card.
     parts.push(h('div', { class: 'net-actions' },
-      h('button', { class: `btn small-btn${isOpen('check') ? ' active' : ''}`, onclick: () => toggle('check') }, ic('search'), 'Проверить адрес'),
-      h('button', { class: `btn small-btn${isOpen('rules') ? ' active' : ''}`, onclick: () => toggle('rules') }, ic('plus'), 'Своё правило'),
+      h('button', { class: `btn small-btn${isOpen('check') ? ' active' : ''}`, title: 'Проверить, пройдёт ли запрос машины на адрес', onclick: () => toggle('check') }, ic('search'), 'Проверить'),
+      h('button', { class: `btn small-btn${isOpen('rules') ? ' active' : ''}`, title: 'Своё правило машины', onclick: () => toggle('rules') }, ic('plus'), 'Правило'),
       h('button', { class: 'btn small-btn', onclick: () => { logFilter.machine = name; goSection('log'); } }, ic('list'), 'Журнал'),
-      askCtl,
       h('span', { class: 'spacer' }),
       mode !== 'record' ? h('button', { class: 'btn ghost small-btn', title: MODES.soft[1], onclick: () => save(MODE_PATCH[mode === 'soft' ? 'strict' : 'soft'], true) },
         mode === 'soft' ? 'Включить изоляцию' : 'Без изоляции…') : null));
-    return h('section', { class: `card machine-net${params.get('machine') === name ? ' hl' : ''}`, id: `net-${name}` }, ...parts);
+    const wide = ['rules', 'vendors', 'check'].some(isOpen);
+    return h('section', { class: `card machine-net${wide ? ' wide' : ''}${params.get('machine') === name ? ' hl' : ''}`, id: `net-${name}` }, ...parts);
   }
 
   // A blocked destination with one-click allow (exact host, or the domain with subdomains).
@@ -342,17 +342,24 @@
     dlg.showModal();
   }
 
-  // ---------- «Списки»: a grid of list cards, one opens for editing ----------
+  // ---------- «Белые списки»: a grid of list cards, one opens for editing ----------
   let editingList = null; // list id, 'new' or '__pull'
   const plural3 = (n, one, few, many) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? few : many}`;
 
-  function listsCard() {
+  // picker: { selected: [ids], onToggle(id, on), disabled } — the cards with a «подключить» check (agent window).
+  function listsCard(picker) {
     const usersOf = (l) => Object.entries(data.machines).filter(([, m]) => m.lists.includes(l.id)).map(([n]) => n);
     const preview = (hosts) => h('div', { class: 'lst-hosts' },
       ...hosts.slice(0, 6).map((x) => h('span', { class: 'lst-host mono' }, x)),
       hosts.length > 6 ? h('span', { class: 'muted small' }, `+ ещё ${hosts.length - 6}`) : null,
       hosts.length ? null : h('span', { class: 'muted small' }, 'Пока пусто — добавьте адреса.'));
     const edit = (id) => { editingList = editingList === id ? null : id; render(); };
+    const pick = (l) => {
+      if (!picker) return null;
+      const cb = h('input', { type: 'checkbox', checked: picker.selected.includes(l.id), disabled: !!picker.disabled });
+      cb.addEventListener('change', () => picker.onToggle(l.id, cb.checked));
+      return h('label', { class: 'check small lst-pick' }, cb, ' подключить');
+    };
 
     const cards = data.lists.map((l) => {
       const users = usersOf(l);
@@ -360,10 +367,10 @@
       return h('div', { class: 'lst-card' },
         h('div', { class: 'lst-head' }, h('span', { class: 'mark m-icon' }, ic('shield')),
           h('div', { class: 'lst-title' }, h('b', {}, l.name), h('div', { class: 'muted small' }, plural3(l.rules.length, 'адрес', 'адреса', 'адресов'))),
-          h('span', { class: 'spacer' }), l.default ? h('span', { class: 'tag ok', title: 'Подключается к новым машинам' }, 'для новых машин') : null),
+          h('span', { class: 'spacer' }), picker ? pick(l) : l.default ? h('span', { class: 'tag ok', title: 'Подключается к новым машинам' }, 'для новых машин') : null),
         preview(l.rules.map((r) => r.host + (r.ports && r.ports !== '443' ? `:${r.ports}` : ''))),
         h('div', { class: 'lst-foot' },
-          h('span', { class: 'muted small' }, users.length ? `Подключён: ${users.join(', ')}` : 'Не подключён к машинам'),
+          h('span', { class: 'muted small' }, users.length ? `Подключён: ${users.join(', ')}` : picker ? '' : 'Не подключён к машинам'),
           h('span', { class: 'spacer' }),
           h('button', { class: 'btn small-btn', onclick: () => edit(l.id) }, 'Изменить')));
     });
@@ -371,11 +378,21 @@
     const newCard = editingList === 'new' ? newListForm() : h('button', { type: 'button', class: 'lst-card lst-add', onclick: () => edit('new') },
       h('span', { class: 'lst-add-ic' }, ic('plus')), h('b', {}, 'Новый список'), h('span', { class: 'muted small' }, 'пустой или из шаблона: PyPI, npm, GitHub, Hugging Face…'));
 
+    if (picker) return [h('div', { class: 'lst-grid' }, ...cards, newCard)];
     return [
       h('div', { class: 'lst-section' }, h('div', { class: 'net-col-title' }, 'Списки для машин'), h('span', { class: 'muted small' }, 'подключаются к машинам на вкладке «Машины»')),
       h('div', { class: 'lst-grid' }, ...cards, newCard),
     ];
   }
+
+  // The same cards inside another window («Создать агента» → «Изоляция»).
+  let pickerHost = null; let pickerOpts = null;
+  const redrawPicker = () => { if (pickerHost?.isConnected) fill(pickerHost, ...listsCard(pickerOpts)); };
+  window.egressListsPicker = async (el, opts) => {
+    pickerHost = el; pickerOpts = opts; editingList = null;
+    fill(el, h('p', { class: 'muted' }, 'Загрузка…'));
+    await load(); redrawPicker();
+  };
 
   function listEditor(l, users) {
     const name = h('input', { class: 'input', value: l.name, maxlength: 64 });
@@ -410,6 +427,7 @@
       if (!nm) { toast('Укажите название списка', 'err'); return; }
       try {
         const r = await api('PUT', '/ui/egress/lists/new', { name: nm, default: false, rules: t ? t.rules.map((x) => ({ ...x, note: t.name })) : [] });
+        if (r?.id && pickerHost?.isConnected) pickerOpts?.onToggle(r.id, true);
         editingList = r?.id || null; await load(); render();
       } catch (e) { toast(e.message, 'err'); }
     };
@@ -501,14 +519,17 @@
       more);
   }
 
-  // ---------- «Настройки»: defaults for new machines, the filter's own state ----------
+  // ---------- «Настройки» → «Сеть» (settings dialog): defaults for new machines, the filter's own state ----------
+  let settingsHost = null;
+  const redrawSettings = () => { if (settingsHost?.isConnected) fill(settingsHost, ...settingsCard()); };
+  window.egressSettings = async (el) => { settingsHost = el; fill(el, h('p', { class: 'muted' }, 'Загрузка…')); await load(); redrawSettings(); };
   function settingsCard() {
     const d = data.defaults;
     const cur = !d.enabled ? 'off' : d.strict ? 'strict' : 'soft';
     const saveDefaults = async (v) => {
       try { await api('PUT', '/ui/egress/settings', { defaults: { enabled: v !== 'off', strict: v === 'strict' } }); toast('Режим для новых машин сохранён', 'ok'); }
       catch (e) { toast(e.message, 'err'); }
-      await load(); render();
+      await load(); render(); redrawSettings();
     };
     const modeCards = h('div', { class: 'set-modes' }, [['off', 'Без ограничений', MODES.off[1]], ['strict', 'Только разрешённое', `${MODES.strict[1]} Рекомендуется для агентов.`], ['soft', 'Только разрешённое, без изоляции', MODES.soft[1]]]
       .map(([v, t, desc]) => h('button', { type: 'button', class: `set-mode${v === cur ? ' sel' : ''}`, onclick: () => { if (v !== cur) saveDefaults(v); } },
@@ -517,7 +538,7 @@
       const cb = h('input', { type: 'checkbox', checked: l.default });
       cb.addEventListener('change', async () => {
         try { await api('PUT', `/ui/egress/lists/${enc(l.id)}`, { name: l.name, default: cb.checked, rules: l.rules }); } catch (e) { toast(e.message, 'err'); }
-        await load(); render();
+        await load(); render(); redrawSettings();
       });
       return h('label', { class: `check chip-check${l.default ? ' on' : ''}` }, cb, ` ${l.name} `, h('span', { class: 'muted small' }, `(${l.rules.length})`));
     }));
@@ -531,11 +552,11 @@
         h('div', { class: 'card-head' }, h('h3', {}, 'Новые машины')),
         h('p', { class: 'muted small' }, 'Что подставляется в окно «Создать». При создании каждой машины это можно поменять.'),
         h('div', { class: 'label-like' }, 'Режим сети'), modeCards,
-        h('div', { class: 'label-like' }, 'Сразу подключать списки'), listToggles,
+        h('div', { class: 'label-like' }, 'Сразу подключать белые списки'), listToggles,
         h('p', { class: 'muted small' }, 'Агентам их серверы (API, вход по подписке) и адреса для установки разрешаются автоматически — отдельно добавлять не нужно.')),
       h('section', { class: 'card' },
         h('div', { class: 'card-head' }, h('h3', {}, 'Как работает фильтр'), h('span', { class: 'spacer' }),
-          h('button', { class: 'btn small-btn ghost', onclick: () => openSettings('proxy') }, ic('gear'), 'Прокси компьютера')),
+          h('button', { class: 'btn small-btn ghost', type: 'button', onclick: () => showSettingsPane('proxy') }, ic('gear'), 'Прокси компьютера')),
         h('div', { class: 'set-tiles' },
           tile('shield', 'Фильтр', st.listening ? 'Работает' : st.error ? 'Не запущен' : 'Ожидает',
             st.listening ? `порт ${st.port} на этом компьютере` : st.error || 'запустится, когда понадобится машине', st.listening ? 'ok' : st.error ? 'bad' : ''),
@@ -563,10 +584,11 @@
   }
 
   function render() {
+    redrawPicker();
     if (!root || !data) return;
     const y = root.scrollTop;
     clearInterval(logTimer); logRoot = null;
-    const body = { machines: machinesCard, log: logSection, lists: listsCard, settings: settingsCard }[section]();
+    const body = { machines: machinesCard, log: logSection, lists: listsCard }[section]();
     fill(root, intro(), body);
     if (section === 'log') startLog();
     root.scrollTop = y;
@@ -583,6 +605,7 @@
         const k = p.get('focus') === 'providers' || p.get('tab') === 'providers' ? 'vendors' : null;
         if (k) openParts.add(`${p.get('machine')}:${k}`);
       }
+      if (section === 'settings') { section = 'machines'; setTimeout(() => openSettings('net'), 0); } // moved to the settings dialog
       if (!SECTIONS.some(([id]) => id === section)) section = 'machines';
       fill(el, h('p', { class: 'muted' }, 'Загрузка…'));
       load().then(render).catch((e) => fill(el, h('div', { class: 'error' }, e.message)));

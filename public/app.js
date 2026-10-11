@@ -255,7 +255,7 @@ function renderList() {
       ${machineMark(m)}
       <div class="name">${esc(m.name)}</div>
       <div>${state.isolated?.[m.name] ? '<span class="badge failed" title="Kill switch: машина изолирована">изолирована</span>' : stateBadge(m)}</div>
-      <div class="meta">${state.marks?.[m.name]?.sandbox ? '<span class="tag sbx">песочница</span> ' : ''}${m.cpus} vCPU · ${fmtMb(m.memoryMb)}${m.network ? ' · net' : ''}${m.branchable ? ' · branchable' : ''}${m.parentMachine ? ` · ⑂ ${esc(m.parentMachine)}` : ''}</div>
+      <div class="meta">${state.marks?.[m.name]?.sandbox ? '<span class="tag sbx">песочница</span> ' : ''}${state.marks?.[m.name]?.image ? '<span class="tag sbx" title="Служебная машина: из неё сделан образ программы для песочниц. «Обновить агента» во вкладке «Шаблоны» работает через неё — не удаляйте.">образ программы</span> ' : ''}${m.cpus} vCPU · ${fmtMb(m.memoryMb)}${m.network ? ' · net' : ''}${m.branchable ? ' · branchable' : ''}${m.parentMachine ? ` · ⑂ ${esc(m.parentMachine)}` : ''}</div>
     </div>`).join('');
   if (box.dataset.html !== html) { box.innerHTML = html; box.dataset.html = html; }
 }
@@ -494,7 +494,7 @@ function renderDetail() {
   const m = state.machines.find((x) => x.name === state.selected);
   box.dataset.name = m ? m.name : '';
   if (!m) {
-    box.innerHTML = `<div class="empty-state"><div class="big"><svg class="ic"><use href="#i-server"/></svg></div><p>Выберите машину слева или создайте новую.</p></div>`;
+    box.innerHTML = `<div class="empty-state"><div class="big"><svg class="ic"><use href="#i-server"/></svg></div><p>Выберите машину слева или создайте новую.</p><button type="button" class="btn primary" id="btn-create-empty"><svg class="ic"><use href="#i-plus"/></svg>Создать машину</button></div>`;
     return;
   }
   box.innerHTML = '';
@@ -745,7 +745,7 @@ async function tabOverview(body, m) {
       badge: em?.learn ? 'обучение' : em?.enabled ? (em.strict ? 'allow list · жёстко' : 'allow list') : 'без фильтра',
       items: [
         em?.learn ? bitem('Режим обучения', h('span', { class: 'small warnc' }, `всё разрешено и журналируется, собрано хостов: ${em.learnedCount || 0}`)) : null,
-        em?.enabled ? bitem('Списки', h('span', { class: 'small' }, lists.join(', ') || '—')) : null,
+        em?.enabled ? bitem('Белые списки', h('span', { class: 'small' }, lists.join(', ') || '—')) : null,
         em?.enabled ? bitem('Свои правила', h('span', { class: 'small' }, String(em.rules.length))) : null,
         policy.length ? bitem('Политика smolvm', h('span', { class: 'mono small ellipsis', title: policy.join(', ') }, policy.join(', '))) : null,
         !info.network ? bitem('Сеть машины', h('span', { class: 'tag bad' }, 'выключена')) : null,
@@ -1252,6 +1252,10 @@ function openCreate() {
 $('#form-create').image.addEventListener('input', syncImageHint);
 window.openCreate = openCreate;
 $('#btn-create').addEventListener('click', openCreate);
+// The empty detail panel is re-rendered: its button is found by delegation.
+document.addEventListener('click', (e) => { if (e.target.closest('#btn-create-empty')) openCreate(); });
+// «Создать агента» in the header: the agent window from any page; the open page catches up after.
+$('#btn-create-agent').addEventListener('click', () => agentWizard({ onDone: () => { if (['agents', 'sandbox', 'session'].includes(state.page)) route(); } }));
 document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => b.closest('dialog').close()));
 
 const lines = (s) => s.split('\n').map((x) => x.trim()).filter(Boolean);
@@ -1411,8 +1415,10 @@ function renderVersion() {
     ...(b.branch ? [` (${b.branch})`] : []));
   const r = $('#app-restart');
   // The code on disk changed (git pull) but the server still runs the old one.
-  r.hidden = !(b.commit && b.disk?.commit && b.disk.commit !== b.commit);
-  if (!r.hidden) r.textContent = `на диске уже ${short(b.disk.commit)} — перезапустите smolvm-web, чтобы применить обновление`;
+  const newCommit = b.commit && b.disk?.commit && b.disk.commit !== b.commit;
+  r.hidden = !(newCommit || b.stale);
+  if (!r.hidden) r.textContent = newCommit ? `на диске уже ${short(b.disk.commit)} — перезапустите smolvm-web, чтобы применить обновление`
+    : 'файлы сервера обновлены после запуска — перезапустите smolvm-web, чтобы применить обновление';
 }
 
 // ---------- platform & proxy settings ----------
@@ -1442,7 +1448,7 @@ async function refreshInfo() {
 }
 
 // One settings window with a sidebar: proxy, certificates, repositories, secrets, smolvm.
-const SETTINGS_PANES = ['smolvm', 'policy', 'proxy', 'ca', 'repos', 'audit'];
+const SETTINGS_PANES = ['smolvm', 'policy', 'net', 'proxy', 'ca', 'repos', 'audit'];
 function showSettingsPane(pane) {
   if (!SETTINGS_PANES.includes(pane)) pane = 'smolvm';
   document.querySelectorAll('#dlg-settings .settings-pane').forEach((el) => { el.hidden = el.dataset.pane !== pane; });
@@ -1450,12 +1456,13 @@ function showSettingsPane(pane) {
   // Secrets are saved one by one in their own form; the footer saves the rest.
   const footer = $('#settings-footer');
   // Secrets and audit/SIEM are saved by their own buttons.
-  const own = pane === 'audit' || pane === 'policy';
+  const own = pane === 'audit' || pane === 'policy' || pane === 'net';
   footer.querySelector('[type=submit]').hidden = own;
   footer.querySelector('.footer-note').hidden = own;
   try { localStorage.setItem('smolvm.settingsPane', pane); } catch {}
   if (pane === 'smolvm') { renderVirtInfo(); renderPullHosts(); }
   if (pane === 'policy') renderPolicy();
+  if (pane === 'net' && window.egressSettings) window.egressSettings($('#net-settings'));
   if (pane === 'audit' && window.auditSettingsCards) window.auditSettingsCards().then((cards) => fill($('#audit-settings'), ...cards));
   $('.settings-main').scrollTop = 0;
 }
@@ -1729,6 +1736,7 @@ const PRESETS = {
   // Neutral variable names: agents' DeepSeek/OpenAI auto-config does not pick it up by mistake.
   local: { name: 'local-llm', envVar: 'LOCAL_LLM_API_KEY', hosts: '', upstream: 'http://localhost:11434/v1', baseUrlVar: 'LOCAL_LLM_BASE_URL', allowHttp: true, model: 'deepseek-r1:14b', mode: 'gateway' },
 };
+window.SECRET_PRESETS = PRESETS; // «+ Новый секрет» of the agent window
 let vaultCache = [];
 
 async function loadVault() {
@@ -1763,13 +1771,12 @@ async function renderVault() {
   list.innerHTML = '';
   if (!v.secrets.length) { list.append(h('p', { class: 'muted' }, 'Секретов пока нет.')); return; }
   list.append(h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
-    h('tr', {}, h('th', {}, 'Имя'), h('th', {}, 'Режим'), h('th', {}, 'Переменная'), h('th', {}, 'Куда'), h('th', {}, 'Машины'), h('th', {}, '')),
+    h('tr', {}, h('th', {}, 'Имя'), h('th', {}, 'Режим'), h('th', {}, 'Переменная'), h('th', {}, 'Куда'), h('th', {}, '')),
     v.secrets.map((x) => h('tr', {},
       h('td', {}, h('span', { class: 'with-mark' }, mark(secretMark(x), true), h('span', { class: 'mono' }, x.name)), x.note ? h('div', { class: 'muted small' }, x.note) : null),
       h('td', {}, h('span', { class: `tag ${MODE_TAG[x.mode]}` }, MODE_LABEL[x.mode])),
       h('td', { class: 'mono small' }, x.envVar, x.baseUrlVar ? h('div', { class: 'muted' }, x.baseUrlVar) : null, x.model ? h('div', { class: 'muted' }, `модель: ${x.model}`) : null, x.confirm?.length ? h('div', { class: 'warnc' }, `подтверждение: ${x.confirm.length}`) : null),
       h('td', { class: 'mono small' }, x.mode === 'gateway' ? x.upstream : x.mode === 'substitute' ? x.hosts.join(', ') : '—'),
-      h('td', { class: 'small' }, x.machines.join(', ') || '—'),
       h('td', {},
         h('button', { class: 'btn ghost', onclick: () => editSecret(x) }, 'Изменить'),
         h('button', { class: 'btn ghost danger', onclick: () => deleteSecret(x) }, 'Удалить')))))));
@@ -2159,35 +2166,10 @@ pages.secrets = {
 };
 let pageCleanup = null;
 
-// Simple mode (default): «Агенты · Решения · История». Expert mode: every page and setting.
-const MODE_KEY = 'smolvm.mode';
-function expertMode() { try { return localStorage.getItem(MODE_KEY) === 'expert'; } catch { return false; } }
-function applyMode() {
-  const on = expertMode();
-  document.body.classList.toggle('simple', !on);
-  $('#btn-mode').setAttribute('aria-pressed', String(on));
-  $('#btn-mode').textContent = on ? 'Простой режим' : 'Режим эксперта';
-  $('#btn-mode').title = on ? 'Только агенты, решения и история' : 'Режим эксперта: машины, сеть, секреты, директории и все настройки';
-  document.querySelectorAll('#pagenav a').forEach((a) => {
-    a.hidden = !on && !('simple' in a.dataset);
-    if (a.dataset.simpleLabel) {
-      a.dataset.expertLabel ||= a.lastChild.textContent;
-      a.lastChild.textContent = on ? a.dataset.expertLabel : a.dataset.simpleLabel;
-    }
-  });
-}
-$('#btn-mode').addEventListener('click', () => {
-  const on = !expertMode();
-  try { localStorage.setItem(MODE_KEY, on ? 'expert' : 'simple'); } catch {}
-  applyMode();
-  // Pages only the expert sees: back to the agents.
-  if (!on && !['agents', 'decisions', 'audit', 'session', 'review', 'profile'].includes(state.page)) location.hash = '#/agents';
-});
-applyMode();
-
 // «Решения» badge: requests waiting for a person and profile changes waiting for review.
 let pendingReviews = 0;
 function setDecisionsBadge(approvals) {
+  window.liveApprovals = approvals;
   const n = approvals + pendingReviews;
   const b = $('#nav-decisions');
   b.hidden = !n; b.textContent = n;
@@ -2200,8 +2182,8 @@ setInterval(() => { if (!document.hidden) refreshPendingReviews(); }, 15000);
 
 function routeParams() {
   const m = location.hash.match(/^#\/(\w*)(?:\?(.*))?$/);
-  // No hash at all: the start page is «Агенты» (simple) or «Рабочие места» (expert); «#/» stays the machines list.
-  if (!location.hash || location.hash === '#') return { page: expertMode() ? 'work' : 'agents', params: new URLSearchParams() };
+  // No hash at all: the start page is «Агенты»; «#/» stays the machines list.
+  if (!location.hash || location.hash === '#') return { page: 'agents', params: new URLSearchParams() };
   return { page: (m && m[1]) || 'machines', params: new URLSearchParams((m && m[2]) || '') };
 }
 function route() {
@@ -2211,9 +2193,9 @@ function route() {
   state.page = id;
   $('#page-machines').hidden = id !== 'machines';
   for (const k of Object.keys(pages)) $(`#page-${k}`).hidden = k !== id;
-  // The session, profile and review screens belong to «Рабочие места»; «Песочница» has its own link.
+  // The session, profile and review screens belong to «Агенты»; «Песочница» has its own link.
   document.body.dataset.page = id;
-  const navId = ['session', 'review', 'profile'].includes(id) ? (expertMode() ? 'work' : 'agents') : id === 'log' ? 'egress' : id;
+  const navId = ['agents', 'decisions', 'session', 'review', 'profile', 'work'].includes(id) ? 'sandbox' : id === 'log' ? 'egress' : id;
   document.querySelectorAll('#pagenav a').forEach((a) => a.classList.toggle('active', a.dataset.page === navId));
   if (id !== 'machines') pageCleanup = pages[id].render($(`#page-${id}`), params) || null;
 }
@@ -2302,6 +2284,8 @@ async function tick() {
   } finally { ticking = false; }
 }
 refreshInfo().then(tick).then(route);
+// The version line and «перезапустите smolvm-web» also on a page left open.
+setInterval(() => { if (!document.hidden) refreshInfo(); }, 60000);
 pollLive();
 setInterval(() => { if (!document.hidden) tick(); }, 3000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });

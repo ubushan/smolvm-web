@@ -7,12 +7,11 @@
   let root = null;
   let id = '';
   let prof = null;      // profile from GET /ui/sandbox
-  let tpl = null;
   let files = [];       // [{ path, size, binary }]
   let section = 'instructions';
   let open = '';        // path in the editor
 
-  const AGENTS = { claude: 'Claude Code', opencode: 'OpenCode', codex: 'Codex', pi: 'Pi', hermes: 'Hermes', dsh: 'Harness' };
+  const AGENTS = { claude: 'Claude Code', opencode: 'OpenCode', codex: 'Codex', pi: 'Pi', hermes: 'Hermes', dsh: 'DSH' };
   const MARKS = { claude: 'claude', opencode: 'opencode', codex: 'codex', pi: 'pi', hermes: 'hermes', dsh: 'dsh' };
   const showPath = (p) => (p === '.smolvm-profile/claude-mcp.json' ? '~/.claude.json → mcpServers' : `~/${p}`);
   const SECTIONS = [
@@ -31,7 +30,6 @@
     const d = await api('GET', '/ui/sandbox');
     prof = d.profiles.find((p) => p.id === id) || null;
     if (!prof) return;
-    tpl = d.templates.find((t) => t.id === prof.template) || null;
     files = (await api('GET', `/ui/sandbox/profiles/${enc(id)}/files`)).files;
   }
 
@@ -67,7 +65,7 @@
     const dlg = h('dialog', { class: 'dialog small' },
       h('header', {}, h('h3', {}, 'Новый файл профиля'), h('button', { type: 'button', class: 'btn ghost icon', 'aria-label': 'Закрыть', onclick: () => dlg.close() }, ic('x'))),
       h('div', { class: 'dialog-body' }, h('label', { for: 'pf-new-path' }, 'Путь (от ~ агента)', inp),
-        h('p', { class: 'muted small' }, 'Попадёт в домашнюю папку агента при следующем открытии песочницы. Файл вне стандартных путей профиля обратно не забирается — при закрытии он будет показан как удалённый.')),
+        h('p', { class: 'muted small' }, 'Попадёт в домашнюю папку агента при следующей задаче. Файл вне стандартных путей профиля обратно не забирается — при закрытии он будет показан как удалённый.')),
       h('footer', {}, h('button', { class: 'btn', onclick: () => dlg.close() }, 'Отмена'), h('button', { class: 'btn primary', onclick: async () => {
         const p = inp.value.trim().replace(/^~\//, '');
         if (!p) return;
@@ -82,26 +80,16 @@
   function render(keepEditor) {
     if (!root) return;
     if (!prof) {
-      fill(root, h('section', { class: 'card ws-empty' }, ic('users'), h('h3', {}, 'Профиль не найден'), h('a', { class: 'btn primary', href: '#/work' }, 'К рабочим местам')));
+      fill(root, h('section', { class: 'card ws-empty' }, ic('users'), h('h3', {}, 'Агент не найден'), h('a', { class: 'btn primary', href: '#/agents' }, 'К агентам')));
       return;
     }
     const s = prof.summary || {};
     const review = h('input', { type: 'checkbox', checked: !prof.autoSave });
     review.addEventListener('change', async () => {
-      try { await api('PUT', `/ui/sandbox/profiles/${enc(id)}`, { autoSave: !review.checked }); prof.autoSave = !review.checked; toast(review.checked ? 'Изменения профиля будут идти на проверку' : 'Изменения будут сохраняться без проверки', review.checked ? 'ok' : ''); }
+      try { await api('PUT', `/ui/sandbox/profiles/${enc(id)}`, { autoSave: !review.checked }); prof.autoSave = !review.checked; toast(review.checked ? 'То, что агент запомнит, будет идти к вам на проверку' : 'Память агента будет сохраняться без проверки', review.checked ? 'ok' : ''); }
       catch (e) { toast(e.message, 'err'); review.checked = !review.checked; }
     });
-    const openBtn = h('button', { class: 'btn primary', disabled: !tpl || tpl.missing }, ic('play'), 'Открыть песочницу');
-    openBtn.addEventListener('click', async () => {
-      const w = prof.agent ? agentTab() : null;
-      openBtn.disabled = true;
-      try {
-        const r = await api('POST', '/ui/sandbox/open', { template: tpl.id, profile: id, agent: prof.agent || null });
-        if (r.url) goAgent(w, r.url); else if (w) w.close();
-        refreshMachines();
-        location.hash = `#/session?name=${enc(r.name)}`;
-      } catch (e) { if (w) w.close(); toast(e.message, 'err', 12000); openBtn.disabled = false; }
-    });
+    const openBtn = h('button', { class: 'btn primary', onclick: () => window.agentsLaunch?.({ profile: id }) }, ic('play'), 'Дать задачу');
 
     const nav = h('div', { class: 'pf-nav' }, ...SECTIONS.filter(([sec]) => sec !== 'other' || inSection('other').length).map(([sec, title]) => {
       const n = inSection(sec).length;
@@ -118,18 +106,18 @@
 
     fill(root,
       h('div', { class: 'pf-top' },
-        h('a', { href: '#/work' }, '← Рабочие места'), h('span', { class: 'spacer' }),
+        h('a', { href: '#/agents' }, '← Агенты'), h('span', { class: 'spacer' }),
         h('label', { class: 'check' }, review, ' Проверять изменения перед сохранением'),
         openBtn),
       h('div', { class: 'pf-title' },
         mark(MARKS[prof.agent] || 'vm'),
-        h('div', {}, h('h1', {}, prof.name), h('div', { class: 'muted small' }, [AGENTS[prof.agent] || 'агент не выбран', tpl ? `шаблон «${tpl.title}»` : 'шаблон не выбран', `${prof.files} файлов, ${fmtBytes(prof.size)}`].join(' · ')))),
+        h('div', {}, h('h1', {}, prof.name), h('div', { class: 'muted small' }, [AGENTS[prof.agent] || 'программа не выбрана', `память: ${prof.files} файлов, ${fmtBytes(prof.size)}`].join(' · ')))),
       h('div', { class: 'pf-layout' },
         h('div', { class: 'pf-side' }, nav,
           s.secrets?.length ? h('div', { class: 'ws-notice pf-secret' },
-            h('span', {}, h('b', {}, 'Токен открытым текстом. '), `${s.secrets.map((x) => `${showPath(x.file)} → ${x.key}`).join('; ')}. Он попадёт в каждую песочницу, и агент его видит.`),
+            h('span', {}, h('b', {}, 'Токен открытым текстом. '), `${s.secrets.map((x) => `${showPath(x.file)} → ${x.key}`).join('; ')}. Он попадёт в каждую задачу, и агент его видит.`),
             h('a', { href: '#', onclick: (e) => { e.preventDefault(); openVault(); } }, 'Перенести в «Секреты» (через шлюз)')) : null,
-          h('p', { class: 'muted small' }, 'Входы, токены, сессии и кэши в профиль не попадают никогда.')),
+          h('p', { class: 'muted small' }, 'Входы, токены, сессии и кэши в память агента не попадают никогда.')),
         h('div', { class: 'pf-main' }, fileList, edBox)));
     editor(edBox);
   }

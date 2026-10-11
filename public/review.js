@@ -65,7 +65,7 @@
       }
     } catch (e) { toast(e.message, 'err'); return; }
     await load('');
-    if (!cur) { location.hash = '#/work'; return; }
+    if (!cur) { location.hash = '#/agents'; return; }
     render();
   }
 
@@ -94,7 +94,7 @@
     if (flagged.length) suspicious.add(path); else suspicious.delete(path);
     const alarm = flagged.length ? h('div', { class: 'rv-alarm' }, h('b', {}, 'Подозрительно: '), `${flagged.join('; ')}. Это может быть prompt injection — сохранять не рекомендуется.`) : null;
     const warn = risky(path) && c.kind !== 'deleted'
-      ? h('div', { class: 'rv-warn' }, 'Исполняемая настройка: она будет работать в каждой следующей песочнице этого профиля. Сохраняйте, только если понимаете, что она делает.') : null;
+      ? h('div', { class: 'rv-warn' }, 'Исполняемая настройка: она будет работать в каждой следующей задаче этого агента. Сохраняйте, только если понимаете, что она делает.') : null;
     box.replaceChildren(head, alarm, pre, warn);
     root.querySelector(`.rv-item[data-path="${CSS.escape(path)}"]`)?.classList.toggle('sus', flagged.length > 0);
   }
@@ -103,8 +103,8 @@
     if (!root) return;
     if (!cur) {
       fill(root, h('section', { class: 'card ws-empty' }, ic('list'), h('h3', {}, 'Проверять нечего'),
-        h('p', { class: 'muted' }, 'Когда вы закроете песочницу с профилем, изменения агента появятся здесь.'),
-        h('a', { class: 'btn primary', href: '#/work' }, 'К рабочим местам')));
+        h('p', { class: 'muted' }, 'Когда агент закончит задачу, то, что он хочет запомнить, появится здесь.'),
+        h('a', { class: 'btn primary', href: '#/agents' }, 'К агентам')));
       return;
     }
     if (location.hash !== `#/review?id=${enc(cur.id)}`) history.replaceState(null, '', `#/review?id=${enc(cur.id)}`);
@@ -122,13 +122,13 @@
         h('div', { class: 'rv-item-text' },
           h('b', {}, title(c)),
           h('span', { class: 'mono small muted ellipsis', title: showPath(c.path) }, showPath(c.path)),
-          danger ? h('span', { class: 'small warnc' }, 'Исполняемая настройка — будет запускаться в каждой песочнице') : null));
+          danger ? h('span', { class: 'small warnc' }, 'Исполняемая настройка — будет запускаться в каждой задаче') : null));
     });
     fill(root,
       h('div', { class: 'ws-head' },
         h('div', { class: 'ws-head-text' },
           h('h1', {}, 'Что агент хочет сохранить'),
-          h('p', { class: 'muted' }, `Профиль «${cur.profileName}» · песочница закрыта ${ago(cur.at)} · ${n} ${n === 1 ? 'изменение' : n < 5 ? 'изменения' : 'изменений'}`)),
+          h('p', { class: 'muted' }, `Агент «${cur.profileName}» · задача закончена ${ago(cur.at)} · ${n} ${n === 1 ? 'изменение' : n < 5 ? 'изменения' : 'изменений'}`)),
         h('button', { class: 'btn', onclick: () => act('drop-all') }, 'Отклонить всё'),
         saveBtn),
       list.length > 1 ? h('div', { class: 'rv-tabs' }, ...list.map((x) => h('a', { class: `ws-chip${x.id === cur.id ? ' on' : ''}`, href: `#/review?id=${enc(x.id)}` }, `${x.profileName} · ${x.changes.length}`))) : null,

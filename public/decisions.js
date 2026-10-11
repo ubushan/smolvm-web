@@ -14,7 +14,7 @@
   let tick = null;
   let lastSig = '';
 
-  const AGENTS = { terminal: 'Терминал', claude: 'Claude Code', opencode: 'OpenCode', 'opencode-tui': 'OpenCode TUI', dsh: 'Harness', codex: 'Codex', pi: 'Pi', hermes: 'Hermes' };
+  const AGENTS = { terminal: 'Терминал', claude: 'Claude Code', opencode: 'OpenCode', 'opencode-tui': 'OpenCode TUI', dsh: 'DSH', codex: 'Codex', pi: 'Pi', hermes: 'Hermes' };
   const risky = (p) => /claude-mcp\.json$|settings\.json$|opencode\.json$|config\.toml$|config\.yaml$|\/(skills|hooks|agents|commands|plugin|extensions)\//.test(p);
   const short = (p) => String(p || '').replace(/^\/(Users|home)\/[^/]+/, '~');
   const base = (p) => String(p || '').split(/[\\/]/).filter(Boolean).pop() || p;
@@ -109,7 +109,7 @@
         h('a', { class: 'small', href: `#/session?name=${enc(x.name)}` }, 'Открыть агента'));
     });
     const said = today.slice(0, 8).map((e) => h('div', {},
-      e.action.replace(/^подтверждение: /, '').replace(/^ревью: /, 'проект: ').replace(/^песочницы: /, ''),
+      e.action.replace(/^подтверждение: /, '').replace(/^ревью: /, 'проект: ').replace(/^песочницы: изменения профиля/, 'память агента:'),
       e.detail?.title ? h('span', { class: 'mono' }, ` ${e.detail.title}`) : null,
       e.machine ? h('span', { class: 'muted' }, ` · ${who(e.machine)}`) : null));
     return h('aside', { class: 'dc-side' },
@@ -124,10 +124,10 @@
     if (!root || !data) return;
     const y = root.scrollTop;
     const cards = [...approvals.map(askCard), ...data.pending.map(memoryCard), ...copies.map(projectCard)];
-    fill(root, h('div', { class: 'dc-wrap' },
+    fill(root, sandboxHeader('decisions', data), h('div', { class: 'dc-wrap' },
       h('div', { class: 'dc-main' },
         h('div', { class: 'ws-head-text' },
-          h('h1', {}, 'Агенты спрашивают'),
+          h('h2', {}, 'Агенты спрашивают'),
           h('p', { class: 'muted' }, 'Всё, что агенты не могут сделать сами. Ответьте — и они продолжат работу.')),
         ...(cards.length ? cards : [h('section', { class: 'card ws-empty' }, ic('shield'), h('h3', {}, 'Всё решено'),
           h('p', { class: 'muted' }, 'Когда агент захочет на новый сайт, запомнить навык или записать изменения в проект, вопрос появится здесь.'))])),

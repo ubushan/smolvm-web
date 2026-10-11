@@ -32,6 +32,7 @@
     <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-10 0zM12 16v5"/></symbol>
     <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v6c0 4 3 7.5 7 9 4-1.5 7-5 7-9V6z"/></symbol>
     <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M16 4a3 3 0 0 1 0 6M21 20a6 6 0 0 0-4-5.6"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
     <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
     <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 0 1 4.9.7c0 1.7-2.4 2.1-2.4 3.8M12 17h.01"/></symbol>
     <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
@@ -57,22 +58,22 @@
       <div id="health" class="health"><span class="dot"></span><span></span></div>
     </div>
     <nav class="pagenav" id="pagenav">
-      <a href="#/agents" data-page="agents" data-simple title="Ваши агенты: что каждый видит, куда ходит и какие ключи у него есть"><svg class="ic"><use href="#i-bot"/></svg>Агенты</a>
-      <a href="#/decisions" data-page="decisions" data-simple title="Всё, что агенты не могут сделать без вас"><svg class="ic"><use href="#i-list"/></svg>Решения<span class="nav-badge" id="nav-decisions" hidden></span></a>
-      <a href="#/work" data-page="work" title="Агенты с настройками, MCP и памятью — каждый раз в чистой машине"><svg class="ic"><use href="#i-users"/></svg>Рабочие места</a>
-      <a href="#/sandbox" data-page="sandbox" title="Песочницы: шаблоны, профили, открытые песочницы и ревью изменений"><svg class="ic"><use href="#i-box"/></svg>Песочница</a>
+      <a href="#/agents" data-page="sandbox" title="Агенты, решения и шаблоны: всё для работы агентов в чистых машинах"><svg class="ic"><use href="#i-box"/></svg>Песочница<span class="nav-badge" id="nav-decisions" hidden></span></a>
       <a href="#/" data-page="machines"><svg class="ic"><use href="#i-server"/></svg>Машины</a>
       <a href="#/egress" data-page="egress" title="Allow list ресурсов интернета для машин"><svg class="ic"><use href="#i-globe"/></svg>Сеть</a>
       <a href="#/secrets" data-page="secrets" title="Хранилище API-ключей и токенов"><svg class="ic"><use href="#i-key"/></svg>Секреты</a>
-      <a href="#/audit" data-page="audit" data-simple data-simple-label="История" title="Журнал действий: команды, изменения файлов, экспорт в SIEM, оповещения"><svg class="ic"><use href="#i-shield"/></svg>Аудит</a>
+      <a href="#/audit" data-page="audit" title="Журнал действий: команды, изменения файлов, экспорт в SIEM, оповещения"><svg class="ic"><use href="#i-shield"/></svg>Аудит</a>
       <a href="#/dirs" data-page="dirs" title="Разрешённые директории хоста и права пользователей"><svg class="ic"><use href="#i-folder"/></svg>Директории</a>
     </nav>
     <button id="proxy-chip" class="chip" hidden title="Настройки сети и прокси"></button>
     <div class="spacer"></div>
-    <button id="btn-mode" class="btn ghost mode-btn" type="button" aria-pressed="false" title="Режим эксперта: машины, сеть, секреты, директории и все настройки">Режим эксперта</button>
+    <div class="notif" id="notif">
+      <button id="btn-notif" class="btn ghost notif-btn" type="button" aria-haspopup="dialog" aria-expanded="false" title="Последние оповещения: решения, журнал сети, аудит"><svg class="ic"><use href="#i-bell"/></svg><span class="notif-label">Уведомления</span><span class="nav-badge" id="notif-count" hidden></span></button>
+      <div class="notif-panel" id="notif-panel" role="dialog" aria-label="Уведомления" hidden></div>
+    </div>
     <button id="btn-settings" class="btn ghost icon" title="Настройки: прокси, сертификаты, репозитории, секреты, smolvm" aria-label="Настройки"><svg class="ic"><use href="#i-gear"/></svg></button>
     <button id="btn-theme" class="btn ghost icon" title="Тема: светлая, тёмная или как в системе" aria-label="Тема" aria-haspopup="menu"><svg class="ic"><use href="#i-contrast"/></svg></button>
-    <button id="btn-create" class="btn primary" title="Создать машину"><svg class="ic"><use href="#i-plus"/></svg>Создать</button>
+    <button id="btn-create-agent" class="btn primary" title="Создать агента: программа, изоляция, директории, секреты, доверие и задача — в одном окне"><svg class="ic"><use href="#i-plus"/></svg>Создать агента</button>
   </header>
 
   <div id="host-warning" class="notice host-warning" hidden></div>
@@ -86,6 +87,7 @@
           <button id="btn-search" class="btn ghost icon" type="button" title="Поиск"><svg class="ic"><use href="#i-search"/></svg></button>
         </div>
         <button id="btn-refresh" class="btn ghost icon" title="Обновить"><svg class="ic"><use href="#i-refresh"/></svg></button>
+        <button id="btn-create" class="btn primary icon" title="Создать машину" aria-label="Создать машину"><svg class="ic"><use href="#i-plus"/></svg></button>
         <button id="btn-isolate-all" class="btn ghost icon danger" title="Остановить всех агентов: изолировать все работающие машины (kill switch)"><svg class="ic"><use href="#i-shield"/></svg></button>
       </div>
       <div id="machines" class="machines"></div>
@@ -99,6 +101,7 @@
       <div class="empty-state">
         <div class="big"><svg class="ic"><use href="#i-server"/></svg></div>
         <p>Выберите машину слева или создайте новую.</p>
+        <button type="button" class="btn primary" id="btn-create-empty"><svg class="ic"><use href="#i-plus"/></svg>Создать машину</button>
       </div>
     </section>
   </main>
@@ -160,7 +163,7 @@
             </div>
             <label data-mode="gateway">URL API (куда шлюз отправляет запросы)<input name="upstream" class="input mono" placeholder="https://api.deepseek.com"></label>
             <label class="check" data-mode="gateway"><input type="checkbox" name="allowHttp"> Локальная модель / сервер по HTTP <span class="muted small">(Ollama, vLLM, LM Studio, llama.cpp; <code>localhost</code> — это хост; без TLS ключ идёт от хоста до сервера открытым текстом)</span></label>
-            <label data-mode="gateway">Модель <span class="muted small">(для локального сервера: OpenCode, Pi и Hermes настроятся на неё сами; Claude Code, Codex и Harness локальные модели не используют)</span><input name="model" class="input mono" placeholder="deepseek-r1:14b"></label>
+            <label data-mode="gateway">Модель <span class="muted small">(для локального сервера: OpenCode, Pi и Hermes настроятся на неё сами; Claude Code, Codex и DSH локальные модели не используют)</span><input name="model" class="input mono" placeholder="deepseek-r1:14b"></label>
             <label data-mode="substitute">Разрешённые хосты (точные имена, через запятую)<input name="hosts" class="input mono" placeholder="api.deepseek.com"></label>
             <label data-mode="gateway">Подтверждать вызовы человеком <span class="muted small">(необратимые действия: удаление, деплой, письма, платежи — запрос ждёт «Разрешить» в интерфейсе до 2 минут; «МЕТОД путь» через запятую, * — любой)</span><input name="confirm" class="input mono" placeholder="DELETE *, POST /repos/*/deployments, POST */messages/send"></label>
     <label data-mode="gateway substitute">Разрешённые HTTP-методы <span class="muted small">(пусто — все)</span><input name="methods" class="input mono" placeholder="GET, POST"></label>
@@ -319,7 +322,8 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
         <nav class="settings-nav" id="settings-nav">
           <button type="button" data-pane="smolvm"><svg class="ic"><use href="#i-server"/></svg>Виртуализация</button>
           <button type="button" data-pane="policy"><svg class="ic"><use href="#i-box"/></svg>Песочницы</button>
-          <button type="button" data-pane="proxy"><svg class="ic"><use href="#i-globe"/></svg>Прокси</button>
+          <button type="button" data-pane="net"><svg class="ic"><use href="#i-globe"/></svg>Сеть</button>
+          <button type="button" data-pane="proxy"><svg class="ic"><use href="#i-plug"/></svg>Прокси</button>
           <button type="button" data-pane="ca"><svg class="ic"><use href="#i-shield"/></svg>Сертификаты</button>
           <button type="button" data-pane="repos"><svg class="ic"><use href="#i-box"/></svg>Репозитории</button>
           <button type="button" data-pane="audit"><svg class="ic"><use href="#i-list"/></svg>Аудит и SIEM</button>
@@ -399,6 +403,10 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
             <div class="pane-head"><h4>Песочницы: политика по умолчанию</h4><p class="muted small">Что получает каждая новая песочница. Уже открытые не меняются. Сохраняется кнопкой «Сохранить политику».</p></div>
             <div id="policy-settings"></div>
           </section>
+          <section class="settings-pane" data-pane="net" hidden>
+            <div class="pane-head"><h4>Сеть</h4><p class="muted small">Режим фильтра «Сеть» и белые списки для новых машин, состояние самого фильтра. Сохраняется сразу.</p></div>
+            <div id="net-settings"></div>
+          </section>
           <section class="settings-pane" data-pane="audit" hidden>
             <div class="pane-head"><h4>Аудит и SIEM</h4><p class="muted small">Отправка журнала действий и сетевых событий в SIEM, оповещения о всплесках заблокированных соединений (попытки вывести данные). Сохраняются кнопками в карточках. Сам журнал — на странице «Аудит».</p></div>
             <div id="audit-settings"></div>
@@ -433,11 +441,12 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
   <script src="/dirs.js"></script>
   <script src="/audit.js"></script>
   <script src="/sandbox.js"></script>
-  <script src="/work.js"></script>
   <script src="/session.js"></script>
   <script src="/review.js"></script>
   <script src="/profile.js"></script>
   <script src="/agents.js"></script>
+  <script src="/agentwizard.js"></script>
   <script src="/decisions.js"></script>
+  <script src="/notifications.js"></script>
 </body>
 </html>

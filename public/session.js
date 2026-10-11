@@ -22,7 +22,7 @@
   let agentId = null;
   const urls = {};      // `${machine}/${agent}` -> url | { error }
 
-  const AGENTS = { terminal: 'Терминал', claude: 'Claude Code', opencode: 'OpenCode', 'opencode-tui': 'OpenCode TUI', dsh: 'Harness', codex: 'Codex', pi: 'Pi', hermes: 'Hermes' };
+  const AGENTS = { terminal: 'Терминал', claude: 'Claude Code', opencode: 'OpenCode', 'opencode-tui': 'OpenCode TUI', dsh: 'DSH', codex: 'Codex', pi: 'Pi', hermes: 'Hermes' };
   const left = (ts) => {
     const m = Math.max(0, Math.round((ts - Date.now()) / 60000));
     return m < 60 ? `${m} мин` : `${Math.floor(m / 60)} ч ${m % 60} мин`;
@@ -96,7 +96,7 @@
       toast(r.applied ? `Готово, сохранено в память агента: ${r.applied}` : 'Готово, машина удалена', 'ok');
     } catch (e) { toast(e.message, 'err', 12000); return; }
     name = '';
-    location.hash = expertMode() ? '#/work' : '#/agents';
+    location.hash = '#/agents';
   }
   async function decide(a, decision) {
     try { await api('POST', `/ui/approvals/${a.id}`, { decision }); } catch (e) { toast(e.message, 'err'); }
@@ -162,7 +162,7 @@
     let body;
     if (!id) body = h('div', { class: 'sx-empty' }, 'В этой машине нет агентов.');
     else if (x.opening) body = h('div', { class: 'sx-empty' }, h('i', { class: 'spin' }), ` ${x.opening}…`);
-    else if (isolated[x.name]) body = h('div', { class: 'sx-empty' }, h('b', {}, 'Агент остановлен'), h('span', {}, 'Все соединения оборваны, машина на паузе. Снять остановку можно в режиме эксперта на странице машины.'));
+    else if (isolated[x.name]) body = h('div', { class: 'sx-empty' }, h('b', {}, 'Агент остановлен'), h('span', {}, 'Все соединения оборваны, машина на паузе. Снять остановку можно на странице машины («Машины»).'));
     else if (x.state !== 'running') body = h('div', { class: 'sx-empty' }, `Машина ${x.state === 'missing' ? 'пропала' : 'не работает'}.`);
     else if (u === undefined) { body = h('div', { class: 'sx-empty' }, h('i', { class: 'spin' }), ' Подключаюсь к агенту…'); setTimeout(() => startAgent(x, id), 0); }
     else if (u === 'loading') body = h('div', { class: 'sx-empty' }, h('i', { class: 'spin' }), ' Подключаюсь к агенту…');
@@ -259,25 +259,28 @@
 
   // ---------- page ----------
   let headEl = null;
+  let secEl = null;   // «Песочница» head with its tabs
   let builtFor = '';
   function render() {
     if (!root || !data) return;
     const x = sbx();
     if (!x) {
       builtFor = ''; frame = null;
-      fill(root, h('section', { class: 'card ws-empty' }, ic('box'), h('h3', {}, 'Сейчас никто не работает'),
-        h('p', { class: 'muted' }, 'Дайте агенту задачу — он появится здесь.'),
-        h('a', { class: 'btn primary', href: expertMode() ? '#/work' : '#/agents' }, 'К агентам')));
+      fill(root, sandboxHeader('sessions', data, { guide: false }), h('section', { class: 'card ws-empty' }, ic('box'), h('h3', {}, 'Сейчас никто не работает'),
+        h('p', { class: 'muted' }, 'Дайте агенту задачу — его сессия появится здесь: сам агент и рядом контроль.'),
+        h('a', { class: 'btn primary', href: '#/agents' }, 'К агентам')));
       return;
     }
     if (location.hash !== `#/session?name=${enc(x.name)}`) history.replaceState(null, '', `#/session?name=${enc(x.name)}`);
     if (builtFor !== x.name) {
       builtFor = x.name; frame = null; agentId = null; preview = null; trif = null; copies = []; slowAt = 0;
+      secEl = h('div', {});
       headEl = h('div', {});
       leftEl = h('section', { class: 'sx-agent' });
       rightEl = h('aside', { class: 'sx-side' });
-      fill(root, h('div', { class: 'sx-wrap' }, headEl, h('div', { class: 'sx-body' }, leftEl, rightEl)));
+      fill(root, h('div', { class: 'sx-wrap' }, secEl, headEl, h('div', { class: 'sx-body' }, leftEl, rightEl)));
     }
+    secEl.replaceChildren(sandboxHeader('sessions', data, { guide: false }));
     headEl.replaceChildren(header(x));
     drawLeft();
     drawRight();

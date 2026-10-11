@@ -183,6 +183,8 @@ const AUDIT_LABELS = [
   [/^POST \/ui\/sandbox\/pending\/[^/]+\/apply$/, 'песочницы: изменения профиля применены'],
   [/^DELETE \/ui\/sandbox\/pending\//, 'песочницы: изменения профиля отклонены'],
   [/^DELETE \/ui\/sandbox\/templates\//, 'песочницы: шаблон удалён'],
+  [/^POST \/ui\/sandbox\/images$/, 'песочницы: подготовка образа'],
+  [/^POST \/ui\/sandbox\/templates\/[\w-]+\/upgrade$/, 'песочницы: обновление агентов шаблона'],
   [/^PUT \/ui\/sandbox\/policy$/, 'песочницы: политика по умолчанию'],
   [/^POST \/ui\/sandbox\/machines\/[^/]+\/extend$/, 'песочница продлена'],
 ];
@@ -425,6 +427,10 @@ async function lethalTrifecta(name) {
   };
 }
 
+// New versions of the agents in templates: once a day (the first check a minute after the start).
+setTimeout(() => sandbox.checkUpdates().catch(() => {}), 60000).unref();
+setInterval(() => sandbox.checkUpdates().catch(() => {}), 24 * 3600000).unref();
+
 // Agents past their time limit are stopped (checked every 30 s).
 setInterval(async () => {
   for (const o of limits.overdue()) {
@@ -456,7 +462,7 @@ setInterval(async () => {
 
 // Host folders for the path field of «Дать доступ к папке»: subfolders of what was typed.
 const norm = (p) => (process.platform === 'win32' || process.platform === 'darwin' ? String(p).toLowerCase() : String(p));
-function suggestFolders(q) {
+function suggestFolders(q, limit = 30) {
   const home = require('os').homedir();
   let input = String(q || '').trim();
   if (!input) input = home + path.sep;
@@ -467,7 +473,7 @@ function suggestFolders(q) {
   let entries = [];
   try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
   return entries.filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name.toLowerCase().startsWith(prefix))
-    .map((e) => path.join(dir, e.name)).sort().slice(0, 30);
+    .map((e) => path.join(dir, e.name)).sort().slice(0, limit);
 }
 
 // Everything smolvm-web keeps about a machine that is gone.
@@ -485,6 +491,22 @@ async function deleteMachine(name) {
 const sandboxHooks = {
   startMachine: (name, o = {}) => startMachine(name, { apiPath: `/api/v1/machines/${encodeURIComponent(name)}/start`, branchable: !!o.branchable }),
   deleteMachine,
+  // A machine made by smolvm-web itself (an image for a preset): through its own API, so the
+  // create logic (agent preset, the «Сеть» filter, hard isolation) is the one the UI uses.
+  createMachine: (body) => new Promise((resolve, reject) => {
+    const payload = Buffer.from(JSON.stringify(body));
+    const host = ['0.0.0.0', '::', ''].includes(HOST) ? '127.0.0.1' : HOST;
+    const rq = http.request({ host, port: PORT, method: 'POST', path: '/api/v1/machines',
+      headers: { host: `127.0.0.1:${PORT}`, 'content-type': 'application/json', 'content-length': payload.length, 'x-smolvm-ui': '1' } }, (r) => {
+      let t = ''; r.setEncoding('utf8'); r.on('data', (c) => { t += c; });
+      r.on('end', () => {
+        let j = null; try { j = JSON.parse(t); } catch {}
+        if (r.statusCode === 200) resolve(j); else reject(new Error(j?.error || `HTTP ${r.statusCode}`));
+      });
+    });
+    rq.on('error', reject);
+    rq.end(payload);
+  }),
 };
 
 async function machineState(name) {
@@ -760,6 +782,46 @@ const UI = [
   }],
   ['GET', /^\/ui\/audit\/verify$/, (req, res) => sendJson(res, 200, audit.verify())],
   ['POST', /^\/ui\/audit\/test$/, async (req, res) => sendJson(res, 200, await audit.test())],
+  // The header's «Уведомления»: the latest of «Решения», the network log and the audit in one list.
+  ['GET', /^\/ui\/notifications$/, (req, res) => {
+    const items = [];
+    const day = Date.now() - 24 * 3600000;
+    for (const a of approvals.list()) {
+      items.push({ id: `ap-${a.id}`, source: 'decisions', level: 'warn', ts: a.createdAt, machine: a.machine, active: true,
+        text: a.kind === 'net' ? `хочет зайти на ${a.title}` : `хочет вызвать API ${a.title}`, href: '#/decisions' });
+    }
+    for (const x of sandbox.pendingList()) {
+      items.push({ id: `pd-${x.id}`, source: 'decisions', level: 'warn', ts: x.at, machine: x.sandbox, active: true,
+        text: `«${x.profileName}»: ${x.changes.length} изменений памяти агента ждут проверки`, href: `#/review?id=${encodeURIComponent(x.id)}` });
+    }
+    // New versions of agents in the images.
+    for (const t of sandbox.updatesList()) {
+      items.push({ id: `up-${t.id}-${t.updates.map((u) => u.latest).join('-')}`, source: 'decisions', level: 'warn', ts: Date.now() - 1000, machine: null, active: true,
+        text: `«${t.title}»: доступна новая версия — ${t.updates.map((u) => `${u.cmd} ${u.have} → ${u.latest}`).join(', ')}`, href: '#/sandbox' });
+    }
+    // Blocked destinations: one line per machine and host, newest first.
+    const denied = new Map();
+    for (const e of egress.log({ decision: 'deny', limit: 2000 })) {
+      if (e.ts < day) break;
+      const k = `${e.machine}|${e.host}`;
+      const cur = denied.get(k);
+      if (cur) cur.n++;
+      else denied.set(k, { ts: e.ts, machine: e.machine, host: e.host, port: e.port, n: 1 });
+    }
+    for (const d of [...denied.values()].slice(0, 40)) {
+      items.push({ id: `nt-${d.machine}-${d.host}-${d.ts}`, source: 'journal', level: 'bad', ts: d.ts, machine: d.machine,
+        text: `не пустили на ${d.host}:${d.port}${d.n > 1 ? ` · ${d.n} раз` : ''}`, href: `#/log?machine=${encodeURIComponent(d.machine || '')}` });
+    }
+    for (const e of audit.list({ limit: 1500 })) {
+      if (new Date(e.ts).getTime() < day) break;
+      if (!['notice', 'warning', 'alert', 'error', 'critical'].includes(e.severity) || e.type === 'net') continue;
+      items.push({ id: `au-${e.id}`, source: 'audit', level: ['notice'].includes(e.severity) ? 'warn' : 'bad', ts: new Date(e.ts).getTime(), machine: e.machine || null,
+        text: e.action, href: `#/audit${e.machine ? `?machine=${encodeURIComponent(e.machine)}` : ''}` });
+      if (items.filter((i) => i.source === 'audit').length >= 40) break;
+    }
+    items.sort((a, b) => b.ts - a.ts);
+    sendJson(res, 200, { items });
+  }],
   ['GET', /^\/ui\/alerts$/, (req, res, _m, url) => sendJson(res, 200, { alerts: audit.alerts(Number(url.searchParams.get('since')) || 0) })],
   // ---- review copies ----
   ['GET', new RegExp(`${RV}$`), (req, res, m) => sendJson(res, 200, { dirs: review.list(decodeURIComponent(m[1])), defaultExclude: review.DEFAULT_EXCLUDE, busy: review.busy(decodeURIComponent(m[1])) })],
@@ -797,7 +859,10 @@ const UI = [
   }],
   ['GET', /^\/ui\/machines\/marks$/, (req, res) => {
     const out = agents.marks();
-    for (const n of Object.keys(out)) if (sandbox.isSandbox(n)) out[n].sandbox = true;
+    for (const n of Object.keys(out)) {
+      if (sandbox.isSandbox(n)) out[n].sandbox = true;
+      if (sandbox.isImageSource(n)) out[n].image = true;
+    }
     sendJson(res, 200, out);
   }],
 
@@ -808,6 +873,18 @@ const UI = [
     res.auditDone = true;
     try { const r = await sandbox.createTemplate({ source: String(b.source || ''), title: b.title, id: b.id }, sandboxHooks.startMachine); sendJson(res, 200, r); } catch (e) { err(res, e); }
   }],
+  // The image of a preset: ready, or prepared once (machine → agent → checkpoint) in the background.
+  ['POST', /^\/ui\/sandbox\/images$/, async (req, res) => {
+    const b = await readJson(req);
+    try { sendJson(res, 200, sandbox.prepareImage({ preset: String(b.preset || ''), isolated: !!b.isolated }, sandboxHooks)); } catch (e) { err(res, e); }
+  }],
+  // «Обновить агента»: the latest version in the source machine, then a new checkpoint.
+  ['POST', /^\/ui\/sandbox\/templates\/([\w-]+)\/upgrade$/, (req, res, m) => {
+    try { sendJson(res, 200, sandbox.upgradeTemplate(m[1], sandboxHooks)); } catch (e) { err(res, e); }
+  }],
+  ['POST', /^\/ui\/sandbox\/updates\/check$/, async (req, res) => {
+    try { sendJson(res, 200, { latest: await sandbox.checkUpdates() }); } catch (e) { err(res, e); }
+  }],
   ['DELETE', /^\/ui\/sandbox\/templates\/([\w-]+)$/, (req, res, m) => {
     try { sandbox.deleteTemplate(m[1]); sendJson(res, 200, { ok: true }); } catch (e) { err(res, e); }
   }],
@@ -815,7 +892,8 @@ const UI = [
     const b = await readJson(req);
     res.auditDone = true;
     try { sendJson(res, 200, await sandbox.open({ template: String(b.template || ''), profile: b.profile ? String(b.profile) : null, agent: b.agent ? String(b.agent) : null,
-      trust: b.trust ? String(b.trust) : null, task: b.task ? String(b.task) : null, folder: b.folder ? String(b.folder) : null }, sandboxHooks)); } catch (e) { err(res, e); }
+      trust: b.trust ? String(b.trust) : null, task: b.task ? String(b.task) : null, folder: b.folder ? String(b.folder) : null,
+      folders: Array.isArray(b.folders) ? b.folders : undefined, idleMinutes: b.idleMinutes, ttlHours: b.ttlHours }, sandboxHooks)); } catch (e) { err(res, e); }
   }],
   ['POST', /^\/ui\/sandbox\/machines\/([^/]+)\/close$/, async (req, res, m) => {
     const b = await readJson(req);
@@ -836,7 +914,8 @@ const UI = [
   }],
   ['POST', /^\/ui\/sandbox\/profiles$/, async (req, res) => {
     const b = await readJson(req);
-    try { sendJson(res, 200, await sandbox.createProfile({ name: b.name, from: b.from ? String(b.from) : null, template: b.template ? String(b.template) : null, agent: b.agent ? String(b.agent) : null })); } catch (e) { err(res, e); }
+    try { sendJson(res, 200, await sandbox.createProfile({ name: b.name, from: b.from ? String(b.from) : null, template: b.template ? String(b.template) : null, agent: b.agent ? String(b.agent) : null, task: b.task, folder: b.folder, folders: b.folders, trust: b.trust, idleMinutes: b.idleMinutes, ttlHours: b.ttlHours,
+      preset: b.preset, net: b.net, lists: b.lists, secrets: b.secrets })); } catch (e) { err(res, e); }
   }],
   ['PUT', /^\/ui\/sandbox\/profiles\/([\w-]+)$/, async (req, res, m) => {
     const b = await readJson(req);
@@ -971,7 +1050,7 @@ const UI = [
     const g = sys ? null : s.proxy.url ? await px.guestUrl(s.proxy.url) : null;
     sendJson(res, 200, {
       version: VERSION,
-      build: { ...buildInfo.RUNNING, disk: buildInfo.current() },
+      build: { ...buildInfo.RUNNING, disk: buildInfo.current(), stale: buildInfo.serverChanged() },
       platform: process.platform, home: require("os").homedir(),
       upstream: up.UPSTREAM,
       listen: up.listenArg(),
@@ -1221,7 +1300,7 @@ const UI = [
   }],
   // ---- «Дать доступ к папке»: one call registers, attaches and applies ----
   ['GET', /^\/ui\/folders\/check$/, (req, res, _m, url) => sendJson(res, 200, dirs.checkFolder(url.searchParams.get('path')))],
-  ['GET', /^\/ui\/folders\/suggest$/, (req, res, _m, url) => sendJson(res, 200, { paths: suggestFolders(url.searchParams.get('q') || '') })],
+  ['GET', /^\/ui\/folders\/suggest$/, (req, res, _m, url) => sendJson(res, 200, { paths: suggestFolders(url.searchParams.get('q') || '', url.searchParams.get('all') ? 1000 : 30) })],
   ['GET', /^\/ui\/machines\/([^/]+)\/folders$/, async (req, res, m) => {
     const name = decodeURIComponent(m[1]);
     const state = await machineState(name).catch(() => null);

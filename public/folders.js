@@ -15,7 +15,45 @@ const FOLDER_MODES = {
 const folderBase = (p) => String(p || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || 'folder';
 const guestDefault = (p) => `/work/${folderBase(p).replace(/[^A-Za-z0-9._@+-]/g, '_')}`;
 
-// opts: { machine, hostPath, mode, onDone(result) }
+// «Выбрать…»: walk the folders of this computer, one level at a time. Resolves the chosen path or null.
+function pickFolder(start) {
+  return new Promise((resolve) => {
+    let cur = String(start || '').trim();
+    let picked = null;
+    const pathEl = h('div', { class: 'mono small fp-path' });
+    const list = h('div', { class: 'fp-list' });
+    const up = h('button', { type: 'button', class: 'btn small-btn', title: 'На уровень выше' }, '↑ Выше');
+    const choose = h('button', { type: 'button', class: 'btn primary' }, 'Выбрать эту папку');
+    const dlg = h('dialog', { class: 'dialog fp-dialog' },
+      h('header', {}, h('h3', { class: 'h-ic' }, ic('folder'), 'Выбор папки'),
+        h('button', { type: 'button', class: 'btn ghost icon', title: 'Закрыть', 'aria-label': 'Закрыть', onclick: () => dlg.close() }, ic('x'))),
+      h('div', { class: 'dialog-body' }, h('div', { class: 'row' }, up, pathEl), list),
+      h('footer', {}, h('button', { type: 'button', class: 'btn ghost', onclick: () => dlg.close() }, 'Отмена'), choose));
+    const sep = state.info?.platform === 'win32' ? '\\' : '/';
+    const parent = (p) => { const x = p.replace(/[\\/]+$/, ''); const i = Math.max(x.lastIndexOf('/'), x.lastIndexOf('\\')); return i > 0 ? x.slice(0, i) : i === 0 ? '/' : x; };
+    async function open(dir) {
+      list.replaceChildren(h('p', { class: 'muted small' }, 'Загрузка…'));
+      let r;
+      try { r = await api('GET', `/ui/folders/suggest?all=1&q=${enc(dir ? (/[\\/]$/.test(dir) ? dir : dir + sep) : '')}`); } catch (e) { list.replaceChildren(h('div', { class: 'error' }, e.message)); return; }
+      // An empty q starts at the home folder: take it from the first child.
+      if (!dir) dir = r.paths.length ? parent(r.paths[0]) : (state.info?.home || '/');
+      cur = dir.replace(/[\\/]+$/, '') || '/';
+      pathEl.textContent = cur;
+      list.replaceChildren(...(r.paths.length ? r.paths.map((p) => h('button', { type: 'button', class: 'fp-item', onclick: () => open(p) },
+        ic('folder'), h('span', {}, p.split(/[\\/]/).pop()))) : [h('p', { class: 'muted small' }, 'Вложенных папок нет.')]));
+    }
+    up.addEventListener('click', () => open(parent(cur)));
+    choose.addEventListener('click', () => { picked = cur; dlg.close(); });
+    dlg.addEventListener('close', () => { dlg.remove(); resolve(picked); });
+    document.body.append(dlg);
+    dlg.showModal();
+    open(cur && cur.replace(/^~/, state.info?.home || '~'));
+  });
+}
+
+// opts: { machine, hostPath, mode, onDone(result), sandbox }
+// sandbox: the folder goes to the agent's sandboxes — copies only (smolvm cannot attach a
+// folder to a machine restored from a template), «Только чтение» is a copy never written back.
 function openFolderDialog(opts = {}) {
   const dlg = h('dialog', { class: 'dialog folder-dialog' });
   const close = () => { dlg.close(); dlg.remove(); };
@@ -36,7 +74,7 @@ function openFolderDialog(opts = {}) {
   let mode = opts.mode || 'ro';
   const modeBox = h('div', { class: 'mode-cards' });
   const drawModes = () => {
-    modeBox.replaceChildren(...Object.entries(FOLDER_MODES).map(([id, x]) => {
+    modeBox.replaceChildren(...Object.entries(FOLDER_MODES).filter(([id]) => !opts.sandbox || id !== 'rw').map(([id, x]) => {
       const warn = id === 'rw' && check?.ok && check.agentCanWrite === false
         ? h('div', { class: 'small warnc' }, 'Папка принадлежит root — агент не сможет в неё писать. Выберите рабочую копию.')
         : id === 'rw' && check?.ok && check.owner > 0 && check.owner !== 1000
@@ -44,9 +82,10 @@ function openFolderDialog(opts = {}) {
         : id === 'rw' && check?.ok && check.maxLevel === 'ro' ? h('div', { class: 'small warnc' }, 'Строгий режим разрешает эту папку только для чтения.') : null;
       const r = h('input', { type: 'radio', name: 'folder-mode', value: id, checked: id === mode, disabled: id === 'rw' && check?.ok && check.maxLevel === 'ro' });
       r.addEventListener('change', () => { mode = id; drawModes(); });
+      const desc = opts.sandbox && id === 'ro' ? 'Агент получает копию папки и может её читать; на компьютер из неё ничего не записывается.' : x.desc;
       return h('label', { class: `mode-card ${id === mode ? 'sel' : ''}` }, r,
         h('div', {}, h('div', { class: 'mode-title' }, x.title, x.rec ? h('span', { class: 'tag ok' }, 'для кода') : null),
-          h('div', { class: 'small muted' }, x.desc), warn));
+          h('div', { class: 'small muted' }, desc), opts.sandbox ? null : warn));
     }));
     drawWhere();
   };
@@ -97,10 +136,15 @@ function openFolderDialog(opts = {}) {
     h('header', {}, h('h3', { class: 'h-ic' }, ic('folder'), 'Дать доступ к папке'),
       h('button', { type: 'button', class: 'btn ghost icon', title: 'Закрыть', onclick: close }, ic('x'))),
     h('div', { class: 'dialog-body' },
-      h('label', {}, 'Папка на этом компьютере', pathIn, suggest, pathNote),
+      h('label', {}, 'Папка на этом компьютере', h('div', { class: 'row fp-row' }, pathIn,
+        h('button', { type: 'button', class: 'btn', onclick: async () => {
+          const p = await pickFolder(pathIn.value.trim());
+          if (p) { pathIn.value = p; runCheck(); }
+        } }, ic('folder'), 'Выбрать…')), suggest, pathNote),
+      opts.sandbox ? h('div', { class: 'small muted' }, 'В песочнице агент всегда работает с копией: прямой доступ («Чтение и запись») к копии из шаблона smolvm не подключает.') : null,
       machineSel ? h('label', {}, 'Машина', machineSel) : null,
       h('div', {}, h('div', { class: 'label-like' }, 'Как агент работает с папкой'), modeBox),
-      h('details', { class: 'tech' }, h('summary', {}, 'Путь в машине'),
+      opts.sandbox ? null : h('details', { class: 'tech' }, h('summary', {}, 'Путь в машине'),
         h('label', {}, 'Где папка будет в машине', guestIn),
         h('p', { class: 'muted small' }, 'По умолчанию — /work/<имя папки>: рабочая папка агентов.')),
       where, err),

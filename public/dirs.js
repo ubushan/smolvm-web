@@ -106,11 +106,13 @@
   function machineFolders() {
     if (!state.machines.length) return h('section', { class: 'card' }, h('p', { class: 'muted' }, 'Машин пока нет — создайте машину, затем дайте ей доступ к папкам.'));
     const wanted = params.get('machine');
-    return state.machines.map((m) => {
+    // Compact cards, three in a row; a card with review copies spans the row (diffs need the width).
+    return h('div', { class: 'mf-cards' }, ...state.machines.map((m) => {
       const changes = h('div', { class: 'mf-changes' });
       const drawChanges = async () => {
         let copies = [];
         try { copies = (await api('GET', `/ui/machines/${enc(m.name)}/review`)).dirs; } catch { copies = []; }
+        changes.closest('.machine-folders')?.classList.toggle('wide', copies.length > 0);
         if (!copies.length) { changes.replaceChildren(); return; }
         changes.replaceChildren(h('div', { class: 'net-col-title' }, 'Изменения агента в рабочих копиях'),
           ...(await Promise.all(copies.map((d) => reviewDir(m, d, drawChanges)))));
@@ -124,10 +126,9 @@
           h('div', { class: 'net-title' },
             h('div', { class: 'row' }, h('b', { class: 'mono' }, m.name), h('span', { class: `badge ${m.state}` }, stateLabel(m.state)), mk?.sandbox ? h('span', { class: 'tag sbx' }, 'песочница') : null),
             h('div', { class: 'muted small' }, mk?.title ? `пресет ${mk.title}` : 'машина без пресета')),
-          h('span', { class: 'spacer' }),
-          h('button', { class: 'btn small-btn', onclick: () => openFolderDialog({ machine: m.name, onDone: () => { list.refresh(); drawChanges(); } }) }, ic('plus'), 'Дать доступ к папке')),
+          h('button', { class: 'btn small-btn mf-add', title: 'Дать доступ к папке', onclick: () => openFolderDialog({ machine: m.name, onDone: () => { list.refresh(); drawChanges(); } }) }, ic('plus'), 'Дать папку')),
         list, changes);
-    });
+    }));
   }
 
   // Sections of the page, like the settings window: a bar on top, one section at a time.
