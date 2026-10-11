@@ -1,8 +1,8 @@
 'use strict';
-// Page «Сеанс» (#/session?name=…): the agent and its controller side by side.
-// Left: the agent itself, embedded. Right: what it asks for right now, what it did
-// (in plain words, from the audit and the network log) and what «Закончить» changes.
-// The agent frame is built once per agent: polls only redraw the header and the right column.
+// «Песочница» → a session (#/session?name=…): the panel of the section on the left
+// (decisions, sessions, templates), the chosen session on the right with tabs —
+// «Программы» (each opens in its own browser tab), «Что сделал» (in plain words, from the
+// audit and the network log), «Решения» (what it waits for), «Что изменится» on «Закончить».
 
 (() => {
   let root = null;
@@ -18,9 +18,6 @@
   let slowAt = 0;
   let timer = null;
   let lastSig = '';
-  let frame = null;     // { key, el }
-  let agentId = null;
-  const urls = {};      // `${machine}/${agent}` -> url | { error }
 
   const AGENTS = { terminal: 'Терминал', claude: 'Claude Code', opencode: 'OpenCode', 'opencode-tui': 'OpenCode TUI', dsh: 'DSH', codex: 'Codex', pi: 'Pi', hermes: 'Hermes' };
   const left = (ts) => {
@@ -34,7 +31,7 @@
   const tplOf = (id) => data.templates.find((t) => t.id === id) || null;
   const profOf = (id) => data.profiles.find((p) => p.id === id) || null;
   const risky = (p) => /claude-mcp\.json$|settings\.json$|opencode\.json$|config\.toml$|config\.yaml$|\/(skills|hooks|agents|commands|plugin|extensions)\//.test(p);
-  const mainAgent = (x) => {
+  const mainAgent = (x, agentId = null) => {
     const ids = x.agents.map((a) => a.id);
     return agentId && ids.includes(agentId) ? agentId : x.agent && ids.includes(x.agent) ? x.agent : ids.find((id) => id !== 'terminal') || ids[0] || null;
   };
@@ -62,20 +59,13 @@
   }
 
   // ---------- actions ----------
-  async function startAgent(x, id) {
-    const key = `${x.name}/${id}`;
-    urls[key] = 'loading';
-    drawLeft();
-    try { urls[key] = agentUrl((await api('POST', `/ui/machines/${enc(x.name)}/agents/${enc(id)}/start`, {})).url); }
-    catch (e) { urls[key] = { error: e.message }; }
-    drawLeft();
-  }
-  function toTab(x, u) {
-    if (!window.open(u, '_blank', 'noopener')) return toast('Браузер заблокировал новую вкладку', 'err');
-    agentInTab(x.name, true);
-    if (frame?.el) frame.el.src = 'about:blank'; // drop the embedded connection
-    frame = null;
-    drawLeft();
+  // A program of the sandbox opens in its own browser tab (the session screen is the control).
+  async function openProgram(x, id, btn) {
+    const w = agentTab();
+    if (btn) btn.disabled = true;
+    try { goAgent(w, (await api('POST', `/ui/machines/${enc(x.name)}/agents/${enc(id)}/start`, {})).url); }
+    catch (e) { if (w) w.close(); toast(e.message, 'err', 10000); }
+    if (btn) btn.disabled = false;
   }
   async function finish(x, keep) {
     const p = profOf(x.profile);
@@ -90,27 +80,27 @@
     try {
       const r = await api('POST', `/ui/sandbox/machines/${enc(x.name)}/close`, { save: keep && !!p });
       refreshMachines();
-      frame = null;
       agentInTab(x.name, false);
       if (r.pending) { toast(`Готово. На проверку: ${plural(r.changes, 'изменение', 'изменения', 'изменений')} памяти агента`, 'ok', 8000); location.hash = `#/review?id=${enc(r.pending)}`; return; }
       toast(r.applied ? `Готово, сохранено в память агента: ${r.applied}` : 'Готово, машина удалена', 'ok');
     } catch (e) { toast(e.message, 'err', 12000); return; }
     name = '';
-    location.hash = '#/agents';
+    location.hash = '#/session';
   }
   async function decide(a, decision) {
     try { await api('POST', `/ui/approvals/${a.id}`, { decision }); } catch (e) { toast(e.message, 'err'); }
     await refresh();
   }
   async function checkChanges() {
-    preview = 'loading'; drawRight();
+    preview = 'loading'; render();
     try { preview = await api('GET', `/ui/sandbox/machines/${enc(name)}/changes`); }
     catch (e) { preview = { error: e.message }; }
-    drawRight();
+    render();
   }
 
-  // ---------- header ----------
-  function header(x) {
+  // ---------- the panel on the right: the chosen session ----------
+  let tab = 'programs'; // programs | did | decisions | changes
+  function head(x) {
     const p = profOf(x.profile);
     const iso = isolated[x.name];
     const pill = iso ? ['bad', 'остановлен вами']
@@ -119,78 +109,50 @@
       : trif.untrustedLevel === 'open' ? ['warn', 'интернет открыт']
       : ['ok', 'безопасно'];
     const why = trif ? [trif.untrustedWhy, trif.lethal ? `У агента есть ${trif.privateData.join(', ')} и выход наружу.` : null, trif.note].filter(Boolean).join('\n') : '';
-    const others = data.sandboxes.filter((y) => y.name !== x.name);
-    return h('header', { class: 'sx-head' },
-      h('div', { class: 'sx-title' },
-        h('b', {}, [AGENTS[mainAgent(x)] || null, p ? p.name : 'разовая задача'].filter(Boolean).join(' · ')),
-        h('span', { class: `ag-pill ${pill[0]}`, title: why }, pill[1]),
-        x.task ? h('span', { class: 'sx-task muted small', title: x.task }, `«${x.task}»`) : null),
-      h('span', { class: 'spacer' }),
-      others.length ? h('select', { class: 'input sx-switch', 'aria-label': 'Другой агент', onchange: (ev) => { location.hash = `#/session?name=${enc(ev.target.value)}`; } },
-        h('option', { value: x.name }, `Ещё работают: ${others.length}`),
-        others.map((y) => h('option', { value: y.name }, [AGENTS[y.agent], profOf(y.profile)?.name || 'разовая'].filter(Boolean).join(' · ')))) : null,
-      x.expiresAt ? h('span', { class: `small ${x.expiresAt - Date.now() < 30 * 60000 ? 'warnc' : 'muted'}`, title: `Закроется сама ${new Date(x.expiresAt).toLocaleString('ru-RU')}` }, `осталось ${left(x.expiresAt)}`) : null,
-      x.expiresAt ? h('button', { class: 'btn ghost small-btn', title: 'Продлить на 2 часа', onclick: async () => {
-        try { await api('POST', `/ui/sandbox/machines/${enc(x.name)}/extend`, { hours: 2 }); toast('Продлено на 2 часа', 'ok'); } catch (e) { toast(e.message, 'err'); }
-        await refresh();
-      } }, '+2 ч') : null,
-      iso ? null : h('button', { class: 'btn danger-outline', disabled: x.state !== 'running', title: 'Оборвать все соединения агента, заменить его токены и поставить машину на паузу',
-        onclick: async () => { await actions.isolate(state.machines.find((m) => m.name === x.name) || { name: x.name }); await refresh(); } }, 'Остановить всё'),
-      p ? h('button', { class: 'btn ghost', title: 'Удалить машину, ничего не сохранять', onclick: () => finish(x, false) }, 'Без сохранения') : null,
-      h('button', { class: 'btn ink', disabled: !!x.opening, title: p ? 'Забрать память агента на проверку и удалить машину' : 'Удалить машину', onclick: () => finish(x, true) }, p ? 'Закончить и проверить' : 'Закончить'));
+    const mins = Math.max(0, Math.round((Date.now() - x.createdAt) / 60000));
+    return h('div', { class: 'detail-head' },
+      mark(x.agents.find((a) => a.id === mainAgent(x))?.mark || 'vm'),
+      h('div', { class: 'ag-title' },
+        h('h2', {}, p ? p.name : 'Разовая задача'),
+        h('span', { class: 'muted small' }, [AGENTS[mainAgent(x)] || null, h('span', { class: 'mono' }, x.name), `открыта ${mins < 60 ? `${mins} мин` : `${Math.floor(mins / 60)} ч ${mins % 60} мин`} назад`]
+          .filter(Boolean).flatMap((v, i) => (i ? [' · ', v] : [v])))),
+      h('span', { class: `ag-pill ${pill[0]}`, title: why }, pill[1]),
+      h('div', { class: 'actions' },
+        x.expiresAt ? h('span', { class: `small ${x.expiresAt - Date.now() < 30 * 60000 ? 'warnc' : 'muted'}`, title: `Закроется сама ${new Date(x.expiresAt).toLocaleString('ru-RU')}` }, `осталось ${left(x.expiresAt)}`) : null,
+        x.expiresAt ? h('button', { class: 'btn ghost small-btn', title: 'Продлить на 2 часа', onclick: async () => {
+          try { await api('POST', `/ui/sandbox/machines/${enc(x.name)}/extend`, { hours: 2 }); toast('Продлено на 2 часа', 'ok'); } catch (e) { toast(e.message, 'err'); }
+          await refresh();
+        } }, '+2 ч') : null,
+        iso ? null : h('button', { class: 'btn danger-outline', disabled: x.state !== 'running', title: 'Оборвать все соединения агента, заменить его токены и поставить машину на паузу',
+          onclick: async () => { await actions.isolate(state.machines.find((m) => m.name === x.name) || { name: x.name }); await refresh(); } }, 'Остановить всё'),
+        p ? h('button', { class: 'btn ghost', title: 'Удалить машину, ничего не сохранять', onclick: () => finish(x, false) }, 'Без сохранения') : null,
+        h('button', { class: 'btn ink', disabled: !!x.opening, title: p ? 'Забрать память агента на проверку и удалить машину' : 'Удалить машину', onclick: () => finish(x, true) }, p ? 'Закончить и проверить' : 'Закончить')));
   }
 
-  // ---------- left: the agent ----------
-  let leftEl = null;
-  function drawLeft() {
-    const x = sbx();
-    if (!leftEl || !x) return;
-    const id = mainAgent(x);
-    const key = `${x.name}/${id}`;
-    const ids = x.agents.map((a) => a.id);
-    const tabs = ids.length > 1 ? h('div', { class: 'sx-tabs' }, ...x.agents.map((a) => h('button', {
-      class: `sx-tab${a.id === id ? ' on' : ''}`, onclick: () => { agentId = a.id; drawLeft(); },
-    }, mark(a.mark || 'term', true), a.title || AGENTS[a.id] || a.id))) : null;
-    const u = urls[key];
-    const ext = agentInTab(x.name);
-    const bar = h('div', { class: 'sx-bar' }, tabs || h('span', { class: 'sx-bar-title' }, AGENTS[id] || id || 'Агент'),
-      h('span', { class: 'spacer' }),
-      h('button', { class: 'btn ghost small-btn', title: 'Дать агенту ещё одну папку', onclick: () => openFolderDialog({ machine: x.name, mode: 'review', onDone: () => { slowAt = 0; refresh(); } }) }, ic('folder'), 'Дать папку'),
-      typeof u === 'string' && u !== 'loading' && !ext ? h('button', { class: 'btn ghost small-btn', title: 'Открыть агента в отдельной вкладке браузера, а здесь оставить контроль', onclick: () => toTab(x, u) }, ic('external'), 'В отдельной вкладке') : null,
-      typeof u === 'string' && u !== 'loading' && !ext ? h('button', { class: 'btn ghost small-btn icon', title: 'Перезагрузить', 'aria-label': 'Перезагрузить', onclick: () => { if (frame?.el) frame.el.src = u; } }, ic('refresh')) : null);
-
-    let body;
-    if (!id) body = h('div', { class: 'sx-empty' }, 'В этой машине нет агентов.');
-    else if (x.opening) body = h('div', { class: 'sx-empty' }, h('i', { class: 'spin' }), ` ${x.opening}…`);
-    else if (isolated[x.name]) body = h('div', { class: 'sx-empty' }, h('b', {}, 'Агент остановлен'), h('span', {}, 'Все соединения оборваны, машина на паузе. Снять остановку можно на странице машины («Машины»).'));
-    else if (x.state !== 'running') body = h('div', { class: 'sx-empty' }, `Машина ${x.state === 'missing' ? 'пропала' : 'не работает'}.`);
-    else if (u === undefined) { body = h('div', { class: 'sx-empty' }, h('i', { class: 'spin' }), ' Подключаюсь к агенту…'); setTimeout(() => startAgent(x, id), 0); }
-    else if (u === 'loading') body = h('div', { class: 'sx-empty' }, h('i', { class: 'spin' }), ' Подключаюсь к агенту…');
-    else if (ext && !u.error) {
-      // Not embedded: a second connection would start a second agent.
-      frame = null;
-      body = h('div', { class: 'sx-empty' }, ic('external'), h('b', {}, 'Агент открыт в отдельной вкладке'),
-        h('span', {}, 'Здесь — контроль: что он просит, что сделал и что изменится.'),
-        h('div', { class: 'dc-actions' },
-          h('a', { class: 'btn primary', href: u, target: '_blank', rel: 'noopener' }, 'Перейти к агенту'),
-          h('button', { class: 'btn', onclick: () => { agentInTab(x.name, false); drawLeft(); } }, 'Показать здесь')),
-        h('span', { class: 'small' }, 'Перед «Показать здесь» закройте вкладку с агентом.'));
-    } else if (u.error) body = h('div', { class: 'sx-empty' }, h('b', { class: 'badc' }, 'Агент не запустился'), h('pre', { class: 'mono small' }, u.error), h('button', { class: 'btn', onclick: () => startAgent(x, id) }, 'Попробовать снова'));
-    else {
-      if (!frame || frame.key !== key) frame = { key, el: h('iframe', { class: 'sx-frame', src: u, title: AGENTS[id] || id, allow: 'clipboard-read; clipboard-write' }) };
-      body = frame.el;
-    }
-    // Keep the live frame where it is: replacing it would reload the agent.
-    const cur = leftEl.querySelector('.sx-frame');
-    leftEl.firstChild ? leftEl.firstChild.replaceWith(bar) : leftEl.append(bar);
-    if (cur && cur === body) return;
-    const rest = [...leftEl.childNodes].slice(1);
-    rest.forEach((n) => n.remove());
-    leftEl.append(body);
+  // «Программы»: each opens in its own browser tab.
+  function programsTab(x) {
+    const busy = !!x.opening || x.state !== 'running' || !!isolated[x.name];
+    const note = x.opening ? [h('i', { class: 'spin' }), ` ${x.opening}…`]
+      : isolated[x.name] ? 'Агент остановлен: соединения оборваны, машина на паузе. Снять остановку можно на странице машины («Машины»).'
+        : x.state !== 'running' ? `Машина ${x.state === 'missing' ? 'пропала' : 'не работает'}.` : null;
+    const tiles = x.agents.map((a) => {
+      const b = h('button', { type: 'button', class: 'aw-tile sx-prog', disabled: busy, title: `Открыть ${a.title || AGENTS[a.id] || a.id} в отдельной вкладке браузера`,
+        onclick: () => openProgram(x, a.id, b) },
+        h('span', { class: 'aw-tile-ic' }, mark(a.mark || 'term')),
+        h('span', { class: 'aw-tile-text' }, h('b', {}, a.title || AGENTS[a.id] || a.id), h('span', { class: 'small sx-prog-open' }, 'открыть в новой вкладке ↗')));
+      return b;
+    });
+    return [
+      x.task ? h('div', { class: 'ag-task-line', title: x.task }, `Задача: «${x.task}»`) : null,
+      note ? h('div', { class: 'muted small' }, ...[].concat(note)) : null,
+      tiles.length ? h('div', { class: 'aw-tiles sx-progs' }, ...tiles) : h('p', { class: 'muted' }, 'В этой машине нет программ агента.'),
+      h('div', { class: 'row' },
+        h('span', { class: 'muted small' }, 'Программа открывается в отдельной вкладке браузера; здесь — контроль: что агент делает, что просит и что изменится.'),
+        h('span', { class: 'spacer' }),
+        h('button', { class: 'btn small-btn', title: 'Дать агенту ещё одну папку', onclick: () => openFolderDialog({ machine: x.name, mode: 'review', onDone: () => { slowAt = 0; refresh(); } }) }, ic('folder'), 'Дать папку')),
+    ];
   }
 
-  // ---------- right: asks, did, will change ----------
-  let rightEl = null;
   function didLines(x) {
     const out = [];
     const hosts = new Map();
@@ -207,33 +169,44 @@
       out.push({ ts: new Date(e.ts).getTime(), bad: e.type === 'alert' || /запрещено|нет ответа/.test(e.action), text: `${e.action}${cmd}` });
     }
     for (const c of copies) if (c.changes.length) out.push({ ts: Date.now(), text: `Изменил ${plural(c.changes.length, 'файл', 'файла', 'файлов')} в копии ${base(c.dir.hostPath)}` });
-    return out.sort((a, b) => b.ts - a.ts).slice(0, 12);
+    return out.sort((a, b) => b.ts - a.ts).slice(0, 40);
   }
 
-  function drawRight() {
-    const x = sbx();
-    if (!rightEl || !x) return;
-    const mine = approvals.filter((a) => a.machine === x.name);
-    const asks = mine.length ? mine.map((a) => h('section', { class: 'sx-ask' },
-      h('div', { class: 'small' }, 'Агент просит сейчас'),
-      h('div', { class: 'sx-ask-title' }, a.kind === 'net' ? ['Зайти на ', h('span', { class: 'mono' }, a.title)] : ['Вызвать ', h('span', { class: 'mono' }, a.title), ` (ключ ${a.detail?.secret || ''})`]),
-      h('div', { class: 'dc-actions' },
-        a.kind === 'net'
-          ? [h('button', { class: 'btn ink', onclick: () => decide(a, 'always') }, 'Разрешить'), h('button', { class: 'btn', onclick: () => decide(a, 'once') }, '10 минут')]
-          : h('button', { class: 'btn ink', onclick: () => decide(a, 'once') }, 'Разрешить'),
-        h('button', { class: 'btn danger-outline', onclick: () => decide(a, 'deny') }, 'Нет')))) : [];
-
+  // «Что сделал»: sites, actions, project changes — in plain words.
+  function didTab(x) {
     const lines = didLines(x);
-    const did = h('section', { class: 'ss-card' },
-      h('div', { class: 'ss-card-title' }, 'Что агент сделал', h('a', { class: 'small', href: `#/audit?machine=${enc(x.name)}` }, 'вся история')),
+    return [h('section', { class: 'card' },
+      h('div', { class: 'card-head' }, h('h3', {}, 'Что агент сделал'), h('span', { class: 'spacer' }), h('a', { class: 'small', href: `#/audit?machine=${enc(x.name)}` }, 'вся история')),
       lines.length ? h('div', { class: 'sx-did' }, ...lines.map((l) => h('div', { class: l.bad ? 'badc' : '' }, h('span', { class: 'mono muted' }, time(l.ts)), h('span', {}, l.text))))
-        : h('p', { class: 'muted small' }, 'Пока ничего. Здесь появятся сайты, на которые ходил агент, и изменения в проекте.'));
+        : h('p', { class: 'muted small' }, 'Пока ничего. Здесь появятся сайты, на которые ходил агент, и изменения в проекте.'))];
+  }
 
+  // «Решения»: what this session waits for.
+  function decisionsTab(x) {
+    const mine = approvals.filter((a) => a.machine === x.name).map((a) => h('section', { class: 'dc-card' },
+      h('div', { class: 'dc-meta' }, h('span', {}, a.kind === 'net' ? 'хочет зайти на сайт' : `хочет вызвать API · ключ ${a.detail?.secret || ''}`)),
+      h('div', { class: 'dc-title' }, h('span', { class: 'mono' }, a.title)),
+      h('div', { class: 'dc-actions' },
+        a.kind === 'net' ? [h('button', { class: 'btn ink', onclick: () => decide(a, 'always') }, 'Разрешить всегда'), h('button', { class: 'btn', onclick: () => decide(a, 'once') }, 'На 10 минут')]
+          : h('button', { class: 'btn ink', onclick: () => decide(a, 'once') }, 'Разрешить'),
+        h('button', { class: 'btn danger-outline', onclick: () => decide(a, 'deny') }, 'Запретить'))));
+    const proj = copies.filter((c) => c.changes.length && !c.dir.readonly).map((c) => h('section', { class: 'dc-card row' },
+      h('div', { class: 'dc-grow' }, h('div', { class: 'dc-meta' }, h('span', {}, 'хочет записать изменения в проект')),
+        h('div', { class: 'dc-title', title: c.dir.hostPath }, `${plural(c.changes.length, 'файл', 'файла', 'файлов')} в ${base(c.dir.hostPath)}`)),
+      h('a', { class: 'btn primary', href: `#/dirs?tab=folders&machine=${enc(x.name)}` }, 'Посмотреть и применить')));
+    const all = [...mine, ...proj];
+    return all.length ? all : [h('section', { class: 'card ws-empty' }, ic('shield'), h('h3', {}, 'Всё решено'),
+      h('p', { class: 'muted' }, 'Когда агент попросит новый сайт или захочет записать изменения в проект, вопрос появится здесь.'))];
+  }
+
+  // «Что изменится»: the project copies and the agent's memory, before «Закончить».
+  function changesTab(x) {
     const p = profOf(x.profile);
     const proj = copies.map((c) => {
       const add = c.changes.filter((y) => y.kind === 'added').length;
       const del = c.changes.filter((y) => y.kind === 'deleted').length;
-      return h('div', { title: c.dir.hostPath }, `Проект ${base(c.dir.hostPath)}: `, c.changes.length ? `${plural(c.changes.length, 'файл', 'файла', 'файлов')}${add ? `, новых ${add}` : ''}${del ? `, удалено ${del}` : ''} — после вашей проверки` : 'пока без изменений');
+      return h('div', { title: c.dir.hostPath }, `Проект ${base(c.dir.hostPath)}: `, c.dir.readonly ? 'только чтение — на диск не записывается'
+        : c.changes.length ? `${plural(c.changes.length, 'файл', 'файла', 'файлов')}${add ? `, новых ${add}` : ''}${del ? `, удалено ${del}` : ''} — после вашей проверки` : 'пока без изменений');
     });
     let mem = null;
     if (p) {
@@ -246,44 +219,40 @@
       } else mem = h('div', {}, p.autoSave ? 'Память агента сохранится сразу, без проверки' : 'Память агента — после вашей проверки');
     }
     const s = p?.summary;
-    const change = h('section', { class: 'ss-card' },
-      h('div', { class: 'ss-card-title' }, 'Что изменится, когда закончите'),
+    return [h('section', { class: 'card' },
+      h('div', { class: 'card-head' }, h('h3', {}, 'Что изменится, когда закончите')),
       h('div', { class: 'ss-list sx-change' }, ...proj, mem,
         !proj.length && !p ? h('div', { class: 'muted' }, 'Ничего: разовая задача без папок — машина просто удалится.') : null),
-      p ? h('button', { class: 'btn small-btn', disabled: preview === 'loading' || x.state !== 'running', onclick: checkChanges }, preview && preview !== 'loading' ? 'Проверить снова' : 'Посмотреть заранее') : null,
-      copies.some((c) => c.changes.length) ? h('a', { class: 'btn small-btn', href: `#/dirs?tab=folders&machine=${enc(x.name)}` }, 'Проверить проект') : null,
-      p ? h('div', { class: 'muted small' }, `Агент начал с памяти «${p.name}»: ${[s?.mcp?.length ? `MCP ${s.mcp.length}` : null, s?.skills ? `skills ${s.skills}` : null, s?.memory ? `записей ${s.memory}` : null].filter(Boolean).join(', ') || 'пока пусто'}.`) : null);
-
-    rightEl.replaceChildren(...asks, did, change);
+      h('div', { class: 'row' },
+        p ? h('button', { class: 'btn small-btn', disabled: preview === 'loading' || x.state !== 'running', onclick: checkChanges }, preview && preview !== 'loading' ? 'Проверить снова' : 'Посмотреть заранее') : null,
+        copies.some((c) => c.changes.length && !c.dir.readonly) ? h('a', { class: 'btn small-btn', href: `#/dirs?tab=folders&machine=${enc(x.name)}` }, 'Проверить проект') : null),
+      p ? h('div', { class: 'muted small' }, `Агент начал с памяти «${p.name}»: ${[s?.mcp?.length ? `MCP ${s.mcp.length}` : null, s?.skills ? `skills ${s.skills}` : null, s?.memory ? `записей ${s.memory}` : null].filter(Boolean).join(', ') || 'пока пусто'}.`) : null)];
   }
 
   // ---------- page ----------
-  let headEl = null;
-  let secEl = null;   // «Песочница» head with its tabs
-  let builtFor = '';
   function render() {
     if (!root || !data) return;
     const x = sbx();
+    const side = sandboxSide(data, { kind: 'session', id: x?.name }, approvals);
     if (!x) {
-      builtFor = ''; frame = null;
-      fill(root, sandboxHeader('sessions', data, { guide: false }), h('section', { class: 'card ws-empty' }, ic('box'), h('h3', {}, 'Сейчас никто не работает'),
-        h('p', { class: 'muted' }, 'Дайте агенту задачу — его сессия появится здесь: сам агент и рядом контроль.'),
-        h('a', { class: 'btn primary', href: '#/agents' }, 'К агентам')));
+      fill(root, h('div', { class: 'layout ag-layout' }, side, h('section', { class: 'panel detail-panel' },
+        h('div', { class: 'empty-state' }, h('div', { class: 'big' }, ic('box')),
+          h('p', {}, 'Сейчас никто не работает. Дайте агенту задачу — его сессия появится слева.'),
+          h('a', { class: 'btn primary', href: '#/agents' }, 'К агентам')))));
       return;
     }
-    if (location.hash !== `#/session?name=${enc(x.name)}`) history.replaceState(null, '', `#/session?name=${enc(x.name)}`);
-    if (builtFor !== x.name) {
-      builtFor = x.name; frame = null; agentId = null; preview = null; trif = null; copies = []; slowAt = 0;
-      secEl = h('div', {});
-      headEl = h('div', {});
-      leftEl = h('section', { class: 'sx-agent' });
-      rightEl = h('aside', { class: 'sx-side' });
-      fill(root, h('div', { class: 'sx-wrap' }, secEl, headEl, h('div', { class: 'sx-body' }, leftEl, rightEl)));
-    }
-    secEl.replaceChildren(sandboxHeader('sessions', data, { guide: false }));
-    headEl.replaceChildren(header(x));
-    drawLeft();
-    drawRight();
+    const want = `#/session?name=${enc(x.name)}${tab !== 'programs' ? `&tab=${tab}` : ''}`;
+    if (location.hash !== want) history.replaceState(null, '', want);
+    const nAsk = approvals.filter((a) => a.machine === x.name).length + copies.filter((c) => c.changes.length && !c.dir.readonly).length;
+    const TABS = [['programs', 'Программы', x.agents.length], ['did', 'Что сделал', 0], ['decisions', 'Решения', nAsk], ['changes', 'Что изменится', 0]];
+    const scroll = root.querySelector('.tab-body')?.scrollTop || 0;
+    fill(root, h('div', { class: 'layout ag-layout' }, side, h('section', { class: 'panel detail-panel' },
+      head(x),
+      h('nav', { class: 'tabs' }, ...TABS.map(([id, label, n]) => h('button', { class: `tab${tab === id ? ' active' : ''}`, onclick: () => { tab = id; render(); } },
+        label, n ? h('span', { class: `nav-count${id === 'decisions' ? ' attn' : ''}` }, String(n)) : null))),
+      h('div', { class: 'tab-body' }, ...{ programs: programsTab, did: didTab, decisions: decisionsTab, changes: changesTab }[tab](x).filter(Boolean)))));
+    const tb = root.querySelector('.tab-body');
+    if (tb) tb.scrollTop = scroll;
   }
 
   async function refresh() {
@@ -304,12 +273,14 @@
 
   pages.session = {
     render(el, p) {
-      root = el; name = p.get('name') || ''; preview = null; builtFor = ''; frame = null;
-      el.classList.add('page-wide', 'page-session');
+      root = el; preview = null; trif = null; copies = []; slowAt = 0;
+      name = p.get('name') || '';
+      tab = ['programs', 'did', 'decisions', 'changes'].includes(p.get('tab')) ? p.get('tab') : 'programs';
+      el.classList.add('page-agents');
       fill(el, h('p', { class: 'muted' }, 'Загрузка…'));
       load().then(() => { lastSig = ''; render(); }).catch((e) => fill(el, h('div', { class: 'error' }, e.message)));
       timer = setInterval(poll, 3000);
-      return () => { clearInterval(timer); el.classList.remove('page-wide', 'page-session'); root = null; frame = null; builtFor = ''; };
+      return () => { clearInterval(timer); el.classList.remove('page-agents'); root = null; };
     },
   };
 })();

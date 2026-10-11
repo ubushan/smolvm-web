@@ -1,7 +1,8 @@
 'use strict';
-// «Песочница» → «Агенты» (#/agents, the start page): every agent «on staff» — what it
-// sees, where it goes, which keys it holds — in plain words. «Создать агента» and the
-// gear of a card open agentwizard.js; «Дать задачу» opens a sandbox with a task.
+// Section «Агенты» (#/agents, the start page): agents on the left, the chosen one on the
+// right — «Обзор» (network, directories, secrets), «Сессии» (its sandboxes; the programs in
+// them open in a browser tab), «Решения» (what it waits for). «Создать агента» and the
+// gear open agentwizard.js; «Дать задачу» opens a sandbox with a task.
 
 (() => {
   let root = null;
@@ -9,9 +10,6 @@
   let approvals = [];    // GET /ui/live
   let isolated = {};
   let lists = {};        // egress list id -> name
-  const risk = {};       // machine -> trifecta (open sandboxes)
-  const folders = {};    // machine -> folders
-  let detailsAt = 0;
   let timer = null;
   let lastSig = '';
 
@@ -44,84 +42,9 @@
     if (!Object.keys(lists).length) {
       try { lists = Object.fromEntries(((await api('GET', '/ui/egress')).lists || []).map((l) => [l.id, l.name])); } catch {}
     }
-    // What an open agent sees and where it goes: every 10 s, not every poll.
-    if (Date.now() - detailsAt > 10000) {
-      detailsAt = Date.now();
-      await Promise.all(data.sandboxes.filter((x) => x.state === 'running' && !x.opening).map(async (x) => {
-        const [r, f] = await Promise.all([
-          api('GET', `/ui/machines/${enc(x.name)}/risk`).catch(() => null),
-          api('GET', `/ui/machines/${enc(x.name)}/folders`).catch(() => null),
-        ]);
-        risk[x.name] = r?.trifecta || null;
-        folders[x.name] = (f?.folders || []).filter((y) => !y.removed);
-      }));
-    }
-  }
-
-  // ---------- the three rows: sees, goes, keys ----------
-  function sees(x, t, p) {
-    if (x) {
-      const f = folders[x.name] || [];
-      if (!f.length) return 'Только свою чистую машину — ваших папок нет';
-      return f.slice(0, 3).map((y) => `${short(y.hostPath).length > 36 ? `…/${short(y.hostPath).split(/[\\/]/).filter(Boolean).slice(-2).join('/')}` : short(y.hostPath)} (${{ review: 'копия', rw: 'запись', ro: 'чтение' }[y.level] || y.level})`).join(', ') + (f.length > 3 ? ` +${f.length - 3}` : '');
-    }
-    const own = p?.folders?.length ? p.folders : p?.folder ? [{ hostPath: p.folder, mode: 'review' }] : [];
-    if (own.length) return own.slice(0, 3).map((f) => `${short(f.hostPath).split(/[\\/]/).filter(Boolean).pop()} (${f.mode === 'ro' ? 'только чтение' : 'копия'})`).join(', ') + (own.length > 3 ? ` +${own.length - 3}` : '');
-    return 'Только свою чистую машину, пока вы не дадите папку';
-  }
-  function goes(x, t, p) {
-    const r = x && risk[x.name];
-    if (!x && p?.net) {
-      if (p.net === 'off') return ['bad', 'Куда угодно в интернете'];
-      const names = (p.lists || []).map((id) => lists[id]).filter(Boolean);
-      return ['ok', `Только разрешённое${names.length ? `: ${names.slice(0, 3).join(', ')}` : ''}${p.trust === 'trusted' ? ', остальное — без вопросов' : p.trust === 'normal' ? ', о новых спросит' : ''}`];
-    }
-    if (r) return [{ open: 'bad', limited: 'ok', none: 'ok' }[r.untrustedLevel] || 'neutral', r.untrustedWhy];
-    if (x) {
-      const trust = TRUST[x.trust];
-      if (trust) return [x.trust === 'trusted' ? 'bad' : 'ok', trust.lines[1]];
-    }
-    const e = t?.egress;
-    if (!t) return ['neutral', 'Определится при запуске'];
-    if (!e || !e.enabled) return ['bad', 'Куда угодно в интернете'];
-    const names = (e.lists || []).map((id) => lists[id]).filter(Boolean);
-    return ['ok', `Только разрешённое${names.length ? `: ${names.slice(0, 3).join(', ')}` : ''}${e.rules?.length ? ` + ${e.rules.length} адресов` : ''}`];
-  }
-  function keys(x, t, p) {
-    const r = x && risk[x.name];
-    const names = r ? r.privateData.filter((s) => s.startsWith('секрет ')).map((s) => s.slice(7)) : Array.isArray(p?.secrets) ? p.secrets : (t?.secrets || []);
-    return names.length ? names.slice(0, 4).join(', ') + (names.length > 4 ? ` +${names.length - 4}` : '') : 'Нет';
-  }
-
-  // «Осторожно — неизвестные адреса запрещены, не дольше 2 ч».
-  function trustText(id) {
-    const t = TRUST[id];
-    if (!t) return 'Не задано';
-    return `${t.title} — ${{ careful: 'неизвестные адреса запрещены, песочница живёт ≤ 2 ч', normal: 'о неизвестных адресах спросит вас', trusted: 'неизвестные адреса пропускает' }[id]}`;
-  }
-
-  function status(x) {
-    if (!x) return ['neutral', 'спит'];
-    if (isolated[x.name]) return ['bad', 'остановлен вами'];
-    if (x.opening) return ['busy', x.opening];
-    if (approvals.some((a) => a.machine === x.name)) return ['warn', 'ждёт вашего ответа'];
-    if (x.state !== 'running') return ['neutral', x.state === 'missing' ? 'машина пропала' : 'на паузе'];
-    return ['ok', `работает · ${ago(x.createdAt)}`];
   }
 
   // ---------- actions ----------
-  async function openSession(x) {
-    location.hash = `#/session?name=${enc(x.name)}`;
-  }
-  async function openTab(x) {
-    const id = x.agent || x.agents?.find((a) => a.id !== 'terminal')?.id || x.agents?.[0]?.id;
-    if (!id) return toast('В этой машине нет агентов', 'err');
-    const w = agentTab();
-    try {
-      goAgent(w, (await api('POST', `/ui/machines/${enc(x.name)}/agents/${enc(id)}/start`, {})).url);
-      agentInTab(x.name, true);
-    } catch (e) { if (w) w.close(); toast(e.message, 'err'); }
-  }
   async function stop(x) {
     const c = await confirmDialog('Остановить агента?', x.profile
       ? 'Машина будет удалена. То, что агент запомнил, уйдёт к вам на проверку в «Решения». Изменения в проекте можно проверить там же, пока машина работает — после остановки копия проекта пропадёт.'
@@ -131,7 +54,7 @@
       const r = await api('POST', `/ui/sandbox/machines/${enc(x.name)}/close`, { save: !!x.profile });
       refreshMachines();
       agentInTab(x.name, false);
-      if (r.pending) { toast(`Агент остановлен. Изменений на проверку: ${r.changes}`, 'ok', 8000); location.hash = '#/decisions'; return; }
+      if (r.pending) { toast(`Агент остановлен. Изменений на проверку: ${r.changes}`, 'ok', 8000); location.hash = `#/agents?id=${enc(x.profile)}&tab=decisions`; return; }
       toast('Агент остановлен', 'ok');
     } catch (e) { toast(e.message, 'err', 12000); }
     await refresh();
@@ -142,14 +65,6 @@
     if (!c.ok) return;
     try { await api('DELETE', `/ui/sandbox/profiles/${enc(p.id)}`); toast(`Агент «${p.name}» удалён`, 'ok'); } catch (e) { toast(e.message, 'err'); }
     await refresh();
-  }
-
-  async function safer(x) {
-    try {
-      await api('PUT', `/ui/egress/machines/${enc(x.name)}`, { enabled: true, ask: true });
-      toast('Теперь новые адреса — только с вашего разрешения', 'ok', 8000);
-    } catch (e) { toast(e.message, 'err'); }
-    detailsAt = 0; await refresh();
   }
 
   // ---------- «Дать задачу»: task, folder, agent, trust ----------
@@ -264,111 +179,267 @@
 
   const create = (step) => agentWizard({ step, onDone: () => refresh() });
 
-  // ---------- render ----------
-  function row(label, value, tone) {
-    return h('div', { class: 'ag-row' }, h('span', { class: 'ag-row-label' }, label), h('span', { class: `ag-row-value${tone ? ` ${tone}` : ''}` }, value));
+  // ---------- render: the list on the left, the chosen agent on the right ----------
+  let selected = '';     // profile id
+  let tab = 'overview';  // overview | sessions | decisions
+  let vault = [];        // GET /ui/vault — secrets with their modes
+  let vaultAt = 0;
+  let copies = {};       // sandbox -> [{ dir, changes }] (review copies with changes)
+  let copiesAt = 0;
+  const NET = { strict: 'Только разрешённое — с жёсткой изоляцией: обойти фильтр нельзя', soft: 'Только разрешённое — без изоляции: фильтр через прокси', off: 'Без ограничений — как этот компьютер' };
+
+  async function loadSlow() {
+    if (Date.now() - vaultAt > 15000) {
+      vaultAt = Date.now();
+      try { vault = (await api('GET', '/ui/vault')).secrets || []; } catch {}
+    }
+    if (tab === 'decisions' && Date.now() - copiesAt > 10000) {
+      copiesAt = Date.now();
+      const mine = data.sandboxes.filter((x) => x.profile === selected && x.state === 'running');
+      const out = {};
+      await Promise.all(mine.map(async (x) => {
+        const r = await api('GET', `/ui/machines/${enc(x.name)}/review`).catch(() => null);
+        out[x.name] = (await Promise.all((r?.dirs || []).filter((d) => d.state === 'ready').map(async (dir) =>
+          ({ dir, changes: (await api('GET', `/ui/machines/${enc(x.name)}/review/${enc(dir.id)}`).catch(() => null))?.changes || [] })))).filter((c) => c.changes.length);
+      }));
+      copies = out;
+    }
   }
 
-  function card({ p, x, t }) {
-    const agent = p ? agentFor(p) : x.agent || x.agents?.find((a) => a.id !== 'terminal')?.id;
-    let st = status(x);
-    // A sleeping agent of a preset whose image is still being prepared.
-    const img = !x && p?.preset ? data.images?.[p.preset]?.[(p.net || 'strict') === 'strict' ? 'isolated' : 'plain'] : null;
-    if (img && !img.template) st = img.job?.status === 'running' ? ['busy', `образ: ${img.job.step}`] : img.job?.status === 'error' ? ['bad', 'образ не подготовлен'] : ['neutral', 'образ не готов'];
-    const [tone, where] = goes(x, t, p);
-    const r = x && risk[x.name];
-    const live = x && x.state === 'running' && !x.opening;
-    const title = p ? p.name : 'Разовая задача';
-    const sub = [AGENTS[agent] || 'без агента', x?.trust ? `доверие: ${TRUST[x.trust]?.title.toLowerCase()}` : null].filter(Boolean).join(' · ');
-    return h('article', { class: `ag-card${x ? ' live' : ''}${st[0] === 'warn' ? ' asks' : ''}` },
-      h('div', { class: 'ag-head' },
-        mark(MARKS[agent] || 'vm'),
-        h('div', { class: 'ag-title' }, h('b', {}, title), h('span', { class: 'muted small' }, sub),
-          h('span', { class: `ag-pill ${st[0]}` }, st[0] === 'busy' ? h('i', { class: 'spin' }) : null, st[1])),
-        // Settings and removal of the agent, at the top right of its card.
-        p ? h('span', { class: 'ag-tools' },
-          h('button', { class: 'btn ghost icon', title: 'Настройки агента: программа, изоляция, директории, секреты, доверие, задача', 'aria-label': `Настройки агента «${p.name}»`, onclick: () => agentWizard({ profile: p.id, onDone: () => refresh() }) }, ic('gear')),
-          h('button', { class: 'btn ghost icon danger', title: x ? 'Сначала остановите агента' : 'Удалить агента', 'aria-label': `Удалить агента «${p.name}»`, disabled: !!x, onclick: () => removeAgent(p) }, ic('trash'))) : null),
-      x?.task ? h('div', { class: 'ag-task-line', title: x.task }, `«${x.task}»`) : null,
-      h('div', { class: 'ag-rows' },
-        row('Видит', sees(x, t, p)),
-        row('Ходит', where, tone === 'bad' ? 'badc' : ''),
-        row('Ключи', keys(x, t, p)),
-        row('Доверие', trustText(x?.trust || p?.trust), (x?.trust || p?.trust) === 'trusted' ? 'warnc' : '')),
-      r?.lethal ? h('div', { class: 'ag-warn' }, 'Есть и ваши данные, и выход в интернет — агент может их отправить наружу.') : null,
-      h('div', { class: 'ag-actions' },
-        x
-          ? [h('button', { class: 'btn primary', disabled: !!x.opening, onclick: () => openSession(x) }, 'Открыть'),
-            h('button', { class: 'btn ghost icon', disabled: !live || !!isolated[x.name], title: 'Открыть агента в отдельной вкладке браузера', 'aria-label': 'Открыть агента в отдельной вкладке', onclick: () => openTab(x) }, ic('external')),
-            h('button', { class: 'btn', disabled: !!x.opening, onclick: () => stop(x) }, 'Остановить'),
-            live && r && r.untrustedLevel === 'open' ? h('button', { class: 'btn ghost', title: 'Включить фильтр сети: новые адреса — только с вашего разрешения', onclick: () => safer(x) }, ic('shield'), 'Сделать безопаснее') : null]
-          : [h('button', { class: 'btn ink', onclick: () => launch({ profile: p.id }) }, ic('play'), 'Дать задачу'),
-            h('a', { class: 'btn ghost', href: `#/profile?id=${enc(p.id)}`, title: 'Инструкции, MCP, skills и память агента' }, 'Что он знает')],
-        null));
+  const sessionsOf = (p) => data.sandboxes.filter((x) => x.profile === p.id);
+  const asksOf = (p) => {
+    const names = new Set(sessionsOf(p).map((x) => x.name));
+    return approvals.filter((a) => names.has(a.machine));
+  };
+  const imageOf = (p) => (p.preset ? data.images?.[p.preset]?.[(p.net || 'strict') === 'strict' ? 'isolated' : 'plain'] : null);
+  // The state of an agent in a word or two, for the list and the head.
+  function agentState(p) {
+    const open = sessionsOf(p);
+    if (asksOf(p).length) return ['warn', 'ждёт ответа'];
+    if (open.some((x) => x.opening)) return ['busy', open.find((x) => x.opening).opening];
+    if (open.length) return ['ok', open.length > 1 ? `работает · ${open.length}` : 'работает'];
+    const img = imageOf(p);
+    if (p.preset && !img?.template) return img?.job?.status === 'running' ? ['busy', 'готовится образ'] : ['neutral', 'образ не готов'];
+    return ['neutral', 'спит'];
   }
+  const programOf = (p) => AGENTS[p.agent] || data.agentTitles?.[p.agent]?.title || p.agent || '—';
+
+  function listPanel() {
+    const items = data.profiles.map((p) => {
+      const [tone, text] = agentState(p);
+      return h('div', { class: `machine ag-item${p.id === selected ? ' active' : ''}${tone === 'ok' ? ' running' : ''}`, role: 'button', tabindex: '0',
+        onclick: () => go(p.id), onkeydown: (e) => { if (e.key === 'Enter') go(p.id); } },
+        mark(MARKS[p.agent] || 'vm', true),
+        h('div', { class: 'name' }, p.name),
+        h('span', { class: `ag-pill ${tone}` }, tone === 'busy' ? h('i', { class: 'spin' }) : null, text),
+        h('div', { class: 'meta' }, [programOf(p), TRUST[p.trust]?.title].filter(Boolean).join(' · ')));
+    });
+    return h('section', { class: 'panel list-panel' },
+      h('div', { class: 'panel-head' }, h('h2', { class: 'h-ic' }, ic('bot'), 'Агенты'), guideButton(),
+        h('button', { class: 'btn primary icon', title: 'Создать агента', 'aria-label': 'Создать агента', onclick: () => create() }, ic('plus'))),
+      h('div', { class: 'machines' }, ...(items.length ? items : [h('div', { class: 'list-empty' }, 'Агентов пока нет.', h('br'), h('br'),
+        h('button', { class: 'btn primary', onclick: () => create() }, 'Создать первого'))])));
+  }
+
+  // ---------- «Обзор»: network, directories, secrets ----------
+  function overview(p) {
+    const t = tplOf(p.template);
+    const edit = (step) => h('button', { class: 'btn ghost small-btn', onclick: () => agentWizard({ profile: p.id, step, onDone: () => refresh() }) }, 'Изменить');
+    const card = (icon, title, step, ...body) => h('section', { class: 'card ag-ov' },
+      h('div', { class: 'card-head' }, h('h3', { class: 'h-ic' }, ic(icon), title), h('span', { class: 'spacer' }), edit(step)), ...body);
+    const net = p.net || (t?.egress?.enabled ? (t.egress.strict ? 'strict' : 'soft') : t ? 'off' : null);
+    const listIds = p.net ? (p.lists || []) : (t?.egress?.lists || []);
+    const unknown = { careful: 'запрещены, без вопросов', normal: 'агент спросит вас', trusted: 'пропускаются без вопросов' }[p.trust] || '—';
+    const life = [p.idleMinutes ? `после ${p.idleMinutes} мин простоя` : null, p.ttlHours ? `через ${p.ttlHours} ч` : p.trust === 'careful' ? 'через 2 ч' : null].filter(Boolean).join(', ') || 'только кнопкой «Закончить»';
+    const netCard = card('globe', 'Сеть', 'net',
+      h('div', { class: 'kv' },
+        h('div', {}, h('div', { class: 'k' }, 'Режим'), h('div', { class: 'v' }, NET[net] || '—')),
+        h('div', {}, h('div', { class: 'k' }, 'Неизвестные адреса'), h('div', { class: 'v' }, `${TRUST[p.trust]?.title || '—'}: ${unknown}`)),
+        h('div', {}, h('div', { class: 'k' }, 'Песочница удаляется'), h('div', { class: 'v' }, life))),
+      net === 'off' ? h('p', { class: 'muted small' }, 'Белые списки не нужны: фильтр выключен.')
+        : h('div', { class: 'ws-field' }, h('div', { class: 'label-like' }, 'Белые списки'),
+          listIds.length ? h('div', { class: 'chips' }, ...listIds.map((id) => h('a', { class: 'chip', href: '#/egress?tab=lists' }, lists[id] || id)))
+            : h('span', { class: 'muted small' }, 'Не подключено ни одного — только серверы самого агента.')));
+    const dirs = p.folders?.length ? p.folders : p.folder ? [{ hostPath: p.folder, mode: 'review' }] : [];
+    const dirCard = card('folder', 'Директории', 'dirs',
+      dirs.length ? h('div', { class: 'ag-rowsl' }, ...dirs.map((f) => h('div', { class: 'ag-dir' }, ic('folder'),
+        h('span', { class: 'mono ellipsis', title: f.hostPath }, short(f.hostPath)),
+        h('span', { class: `tag ${f.mode === 'ro' ? 'ok' : 'accent'}` }, f.mode === 'ro' ? 'только чтение' : 'копия с проверкой'))))
+        : h('p', { class: 'muted small' }, 'Агенту не дано ни одной папки компьютера.'),
+      h('p', { class: 'muted small' }, 'В каждой сессии — свежая копия папки; на диск изменения попадают только после вашей проверки.'));
+    const names = Array.isArray(p.secrets) ? p.secrets : (t?.secrets || []);
+    const secCard = card('key', 'Секреты', 'secrets',
+      names.length ? h('div', { class: 'ag-rowsl' }, ...names.map((n) => {
+        const x = vault.find((v) => v.name === n);
+        return h('div', { class: 'ag-dir' }, ic('key'), h('b', { class: 'mono' }, n),
+          x ? h('span', { class: 'muted small ellipsis' }, x.mode === 'gateway' ? `через шлюз → ${x.upstream}` : x.mode === 'substitute' ? `подстановка: ${(x.hosts || []).join(', ')}` : `переменная ${x.envVar} — агент видит значение`)
+            : h('span', { class: 'small badc' }, 'нет в хранилище'));
+      })) : h('p', { class: 'muted small' }, 'Секретов нет.'),
+      h('p', { class: 'muted small' }, 'Через шлюз агент пользуется ключом, но не видит его значения.'));
+    const img = imageOf(p);
+    const prog = h('section', { class: 'card ag-ov' },
+      h('div', { class: 'card-head' }, h('h3', { class: 'h-ic' }, ic('box'), 'Программа'), h('span', { class: 'spacer' }), edit('program')),
+      h('div', { class: 'kv' },
+        h('div', {}, h('div', { class: 'k' }, 'Агент'), h('div', { class: 'v' }, programOf(p))),
+        h('div', {}, h('div', { class: 'k' }, 'Образ'), h('div', { class: 'v' }, p.preset ? (img?.template ? `готов · ${tplOf(img.template)?.title || ''}` : img?.job?.status === 'running' ? `готовится: ${img.job.step}` : 'не готов — подготовится при запуске') : t ? `шаблон «${t.title}»` : '—')),
+        h('div', {}, h('div', { class: 'k' }, 'Память'), h('div', { class: 'v' }, h('a', { href: `#/profile?id=${enc(p.id)}` }, `${p.files || 0} файлов — что он знает`)))));
+    return [h('div', { class: 'ag-ov-grid' }, netCard, dirCard, secCard, prog)];
+  }
+
+  // ---------- «Сессии»: open sandboxes, their programs open in a browser tab ----------
+  async function openProgram(x, id, btn) {
+    const w = agentTab();
+    if (btn) btn.disabled = true;
+    try { goAgent(w, (await api('POST', `/ui/machines/${enc(x.name)}/agents/${enc(id)}/start`, {})).url); }
+    catch (e) { if (w) w.close(); toast(e.message, 'err', 10000); }
+    if (btn) btn.disabled = false;
+  }
+  function sessions(p) {
+    const open = sessionsOf(p);
+    if (!open.length) {
+      return [h('section', { class: 'card ws-empty' }, ic('play'), h('h3', {}, 'Сессий сейчас нет'),
+        h('p', { class: 'muted' }, 'Дайте агенту задачу — откроется чистая копия, и программы агента можно будет открыть отсюда.'),
+        h('button', { class: 'btn primary', onclick: () => launch({ profile: p.id }) }, ic('play'), 'Дать задачу'))];
+    }
+    return open.map((x) => {
+      const asks = approvals.filter((a) => a.machine === x.name).length;
+      const busy = !!x.opening || x.state !== 'running' || !!isolated[x.name];
+      const programs = (x.agents || []).map((a) => {
+        const b = h('button', { type: 'button', class: 'aw-tile ag-prog', disabled: busy, title: `Открыть ${a.title || a.id} в отдельной вкладке браузера`,
+          onclick: () => openProgram(x, a.id, b) },
+          h('span', { class: 'aw-tile-ic' }, mark(a.mark || 'term')),
+          h('span', { class: 'aw-tile-text' }, h('b', {}, a.title || AGENTS[a.id] || a.id), h('span', { class: 'muted small' }, 'открыть в новой вкладке ↗')));
+        return b;
+      });
+      const [tone, text] = isolated[x.name] ? ['bad', 'остановлена вами'] : x.opening ? ['busy', x.opening] : asks ? ['warn', `ждёт ответа: ${asks}`] : x.state === 'running' ? ['ok', 'работает'] : ['neutral', x.state];
+      return h('section', { class: 'card ag-sess' },
+        h('div', { class: 'card-head' },
+          h('div', { class: 'ag-title' }, h('b', { class: 'mono' }, x.name),
+            h('span', { class: 'muted small' }, [`открыта ${ago(x.createdAt)} назад`, x.expiresAt ? `закроется через ${Math.max(0, Math.round((x.expiresAt - Date.now()) / 60000))} мин` : null].filter(Boolean).join(' · '))),
+          h('span', { class: 'spacer' }), h('span', { class: `ag-pill ${tone}` }, tone === 'busy' ? h('i', { class: 'spin' }) : null, text)),
+        x.task ? h('div', { class: 'ag-task-line', title: x.task }, `«${x.task}»`) : null,
+        h('div', { class: 'label-like' }, 'Программы в песочнице'),
+        h('div', { class: 'aw-tiles' }, ...programs),
+        h('div', { class: 'ag-actions' },
+          h('a', { class: 'btn', href: `#/session?name=${enc(x.name)}` }, ic('list'), 'Контроль: что делает, что просит'),
+          h('span', { class: 'spacer' }),
+          h('button', { class: 'btn primary', disabled: !!x.opening, onclick: () => stop(x) }, 'Закончить и проверить')));
+    });
+  }
+
+  // ---------- «Решения»: what this agent waits for ----------
+  async function decide(a, decision) {
+    try { await api('POST', `/ui/approvals/${a.id}`, { decision }); } catch (e) { toast(e.message, 'err'); }
+    await refresh();
+  }
+  function decisions(p) {
+    const asks = asksOf(p).map((a) => h('section', { class: 'dc-card' },
+      h('div', { class: 'dc-meta' }, h('b', { class: 'mono' }, a.machine), h('span', {}, a.kind === 'net' ? 'хочет зайти на сайт' : 'хочет вызвать API')),
+      h('div', { class: 'dc-title' }, h('span', { class: 'mono' }, a.title)),
+      h('div', { class: 'dc-actions' },
+        a.kind === 'net' ? [h('button', { class: 'btn ink', onclick: () => decide(a, 'always') }, 'Разрешить всегда'), h('button', { class: 'btn', onclick: () => decide(a, 'once') }, 'На 10 минут')]
+          : h('button', { class: 'btn ink', onclick: () => decide(a, 'once') }, 'Разрешить'),
+        h('button', { class: 'btn danger-outline', onclick: () => decide(a, 'deny') }, 'Запретить'))));
+    const mem = data.pending.filter((x) => x.profile === p.id).map((x) => h('section', { class: 'dc-card row' },
+      h('div', { class: 'dc-grow' }, h('div', { class: 'dc-meta' }, h('span', {}, 'хочет запомнить')),
+        h('div', { class: 'dc-title' }, `${x.changes.length} изменений в памяти и настройках агента`)),
+      h('a', { class: 'btn primary', href: `#/review?id=${enc(x.id)}` }, 'Посмотреть и решить')));
+    const proj = Object.entries(copies).flatMap(([name, list]) => list.map((c) => h('section', { class: 'dc-card row' },
+      h('div', { class: 'dc-grow' }, h('div', { class: 'dc-meta' }, h('b', { class: 'mono' }, name), h('span', {}, 'хочет записать изменения в проект')),
+        h('div', { class: 'dc-title', title: c.dir.hostPath }, `${c.changes.length} файлов в ${short(c.dir.hostPath).split(/[\\/]/).pop()}`),
+        c.dir.readonly ? h('div', { class: 'muted small' }, 'Папка дана только для чтения — на диск не записывается.') : null),
+      c.dir.readonly ? null : h('a', { class: 'btn primary', href: `#/dirs?tab=folders&machine=${enc(name)}` }, 'Посмотреть и применить'))));
+    const all = [...asks, ...mem, ...proj];
+    return all.length ? all : [h('section', { class: 'card ws-empty' }, ic('shield'), h('h3', {}, 'Всё решено'),
+      h('p', { class: 'muted' }, 'Когда агент попросит новый сайт, захочет что-то запомнить или записать в проект, вопрос появится здесь и во вкладке «Решения» песочницы.'))];
+  }
+
+  function detailPanel() {
+    const p = data.profiles.find((x) => x.id === selected);
+    if (!p) {
+      return h('section', { class: 'panel detail-panel' }, h('div', { class: 'empty-state' }, h('div', { class: 'big' }, ic('bot')),
+        h('p', {}, data.profiles.length ? 'Выберите агента слева.' : 'Создайте первого агента: программа, изоляция, директории и секреты — в одном окне.'),
+        h('button', { class: 'btn primary', onclick: () => create() }, ic('plus'), 'Создать агента')));
+    }
+    const [tone, text] = agentState(p);
+    const nAsk = asksOf(p).length + data.pending.filter((x) => x.profile === p.id).length;
+    const TABS = [['overview', 'Обзор', 0], ['sessions', 'Сессии', sessionsOf(p).length], ['decisions', 'Решения', nAsk]];
+    const body = { overview, sessions, decisions }[tab](p);
+    return h('section', { class: 'panel detail-panel' },
+      h('div', { class: 'detail-head' },
+        mark(MARKS[p.agent] || 'vm'),
+        h('div', { class: 'ag-title' }, h('h2', {}, p.name), h('span', { class: 'muted small' }, [programOf(p), TRUST[p.trust] ? `доверие: ${TRUST[p.trust].title.toLowerCase()}` : null].filter(Boolean).join(' · '))),
+        h('span', { class: `ag-pill ${tone}` }, tone === 'busy' ? h('i', { class: 'spin' }) : null, text),
+        h('div', { class: 'actions' },
+          h('button', { class: 'btn primary', onclick: () => launch({ profile: p.id }) }, ic('play'), 'Дать задачу'),
+          h('button', { class: 'btn ghost icon', title: 'Настройки агента', 'aria-label': 'Настройки агента', onclick: () => agentWizard({ profile: p.id, onDone: () => refresh() }) }, ic('gear')),
+          h('button', { class: 'btn ghost icon danger', title: sessionsOf(p).length ? 'Сначала закончите его сессии' : 'Удалить агента', 'aria-label': 'Удалить агента', disabled: sessionsOf(p).length > 0, onclick: () => removeAgent(p) }, ic('trash')))),
+      h('nav', { class: 'tabs' }, ...TABS.map(([id, label, n]) => h('button', { class: `tab${tab === id ? ' active' : ''}`, onclick: () => { tab = id; copiesAt = 0; sync(); refresh(); } },
+        label, n ? h('span', { class: `nav-count${id === 'decisions' ? ' attn' : ''}` }, String(n)) : null))),
+      h('div', { class: 'tab-body' }, ...body));
+  }
+
+  function sync() { history.replaceState(null, '', `#/agents?id=${enc(selected)}${tab !== 'overview' ? `&tab=${tab}` : ''}`); }
+  function go(id) { selected = id; sync(); render(); }
 
   function render() {
     if (!root || !data) return;
-    const y = root.scrollTop;
-    // «Создать агента» is in the header; here — how it works.
-    const head = [sandboxHeader('agents', data), h('div', { class: 'ws-head ag-toolbar' },
-      h('span', { class: 'muted small' }, 'Новый агент — кнопка «Создать агента» вверху.'), h('span', { class: 'spacer' }), guideButton())];
-
-    const items = [];
-    for (const p of data.profiles) {
-      const open = data.sandboxes.filter((x) => x.profile === p.id);
-      if (!open.length) items.push({ p, x: null, t: tplOf(p.template) });
-      for (const x of open) items.push({ p, x, t: tplOf(x.template) });
-    }
-    for (const x of data.sandboxes.filter((s) => !s.profile || !data.profiles.some((p) => p.id === s.profile))) items.push({ p: null, x, t: tplOf(x.template) });
-    // Working ones first, then the ones asking, then the sleeping ones.
-    items.sort((a, b) => (!!b.x - !!a.x) || ((b.x?.createdAt || 0) - (a.x?.createdAt || 0)));
-
-    const asks = approvals.length + data.pending.length;
-    const banner = asks ? h('a', { class: 'ag-banner', href: '#/decisions' },
-      h('b', {}, asks === 1 ? 'Одно решение ждёт вас' : `${asks} решений ждут вас`),
-      h('span', {}, 'Агенты не могут продолжить без вашего ответа'), h('span', { class: 'spacer' }), h('span', {}, 'Открыть →')) : null;
-
-    fill(root, head, banner,
-      items.length ? h('div', { class: 'ag-grid' }, ...items.map(card))
-        : h('section', { class: 'card ws-empty' }, ic('users'), h('h3', {}, 'Агентов пока нет'),
-          h('p', { class: 'muted' }, 'Нажмите «Создать агента»: машина, изоляция, директории, секреты, шаблон и задача — в одном окне. Подробнее — «?» рядом с кнопкой.'),
-          h('button', { class: 'btn primary', onclick: () => create() }, ic('plus'), 'Создать агента')));
-    root.scrollTop = y;
+    if (!data.profiles.some((p) => p.id === selected)) selected = data.profiles[0]?.id || '';
+    const scroll = root.querySelector('.tab-body')?.scrollTop || 0;
+    fill(root, h('div', { class: 'layout ag-layout' }, listPanel(), detailPanel()));
+    const tb = root.querySelector('.tab-body');
+    if (tb) tb.scrollTop = scroll;
   }
 
   async function refresh() {
-    try { await load(); } catch { return; }
+    try { await load(); await loadSlow(); } catch { return; }
     lastSig = ''; render();
   }
 
   async function poll() {
     if (!root || document.hidden || document.querySelector('dialog[open]')) return;
-    try { await load(); } catch { return; }
-    const sig = JSON.stringify([data.sandboxes.map((x) => [x.name, x.state, x.opening, Math.floor((Date.now() - x.createdAt) / 60000)]), data.profiles.map((p) => [p.id, p.updatedAt]),
-      data.templates.map((t) => [t.id, t.job?.step]), data.images, data.pending.length, approvals.map((a) => a.id), Object.keys(isolated), risk, folders]);
+    try { await load(); await loadSlow(); } catch { return; }
+    const sig = JSON.stringify([selected, tab, data.sandboxes.map((x) => [x.name, x.state, x.opening, x.profile]), data.profiles.map((p) => [p.id, p.updatedAt, p.files]),
+      data.images, data.pending.map((x) => [x.id, x.profile]), approvals.map((a) => a.id), Object.keys(isolated), vault.map((v) => [v.name, v.mode]), copies, Math.floor(Date.now() / 60000)]);
     if (sig === lastSig) return;
     lastSig = sig;
     render();
   }
 
-  // ---------- «Песочница»: the head shared by «Агенты», «Решения» and «Шаблоны» ----------
-  // The algorithm with what is done already, then the tabs. d = GET /ui/sandbox.
-  const GUIDE_KEY = 'smolvm.sandboxGuide';
-  window.sandboxHeader = function sandboxHeader(active, d) {
-    const asks = (window.liveApprovals || 0) + d.pending.length;
-    const tabs = [
-      ['agents', 'Агенты', '#/agents', d.profiles.length, false],
-      ['sessions', 'Сессии', '#/session', d.sandboxes.length, false],
-      ['templates', 'Шаблоны', '#/sandbox', d.templates.length, false],
-      ['decisions', 'Решения', '#/decisions', asks, true],
-    ];
-    return h('div', { class: 'sx-section' },
-      h('div', { class: 'ws-head-text' },
-        h('h1', {}, 'Песочница'),
-        h('p', { class: 'muted' }, 'Агенты работают в чистых машинах: каждая задача — новая копия, ваши файлы меняются только после проверки.')),
-      h('nav', { class: 'section-nav sx-tabs-nav' }, ...tabs.map(([id, title, href, n, attn]) => h('a', { class: id === active ? 'active' : '', href },
-        title, n ? h('span', { class: `nav-count${attn ? ' attn' : ''}` }, String(n)) : null))));
+  // ---------- «Песочница»: the panel on the left, shared by sessions, templates and decisions ----------
+  // active: { kind: 'session' | 'template' | 'decisions' | 'new-template', id }. live: approvals (optional).
+  window.sandboxSide = function sandboxSide(d, active, live = window.liveApprovalsList || []) {
+    const asksAll = (window.liveApprovals || 0) + d.pending.length;
+    const item = ({ on, href, icon, name, sub, pill, cls = '' }) => h('a', { class: `machine ag-item sb-item${on ? ' active' : ''} ${cls}`, href },
+      icon, h('div', { class: 'name' }, name), pill || h('span'), h('div', { class: 'meta' }, sub || ''));
+    const pillOf = (tone, text) => h('span', { class: `ag-pill ${tone}` }, tone === 'busy' ? h('i', { class: 'spin' }) : null, text);
+    const sessions = d.sandboxes.map((x) => {
+      const prof = d.profiles.find((p) => p.id === x.profile);
+      const asks = live.filter((a) => a.machine === x.name).length;
+      const tone = x.opening ? ['busy', 'открывается'] : asks ? ['warn', 'ждёт ответа'] : x.state === 'running' ? ['ok', 'работает'] : ['neutral', x.state === 'missing' ? 'пропала' : 'на паузе'];
+      const mins = Math.max(0, Math.round((Date.now() - x.createdAt) / 60000));
+      return item({ on: active.kind === 'session' && active.id === x.name, href: `#/session?name=${enc(x.name)}`,
+        icon: mark(MARKS[x.agent] || 'vm', true), name: prof ? prof.name : 'Разовая задача',
+        sub: [AGENTS[x.agent] || x.agent, mins < 60 ? `${mins} мин` : `${Math.floor(mins / 60)} ч`].filter(Boolean).join(' · '), pill: pillOf(...tone), cls: tone[0] === 'ok' ? 'running' : '' });
+    });
+    const templates = d.templates.map((t) => {
+      const running = t.creating || t.job?.status === 'running' || t.upgrade?.status === 'running';
+      const tone = running ? ['busy', 'готовится'] : t.missing || t.job?.status === 'error' ? ['bad', 'ошибка'] : t.updates?.length ? ['warn', 'есть обновление'] : ['neutral', 'готов'];
+      return item({ on: active.kind === 'template' && active.id === t.id, href: `#/sandbox?id=${enc(t.id)}`,
+        icon: h('span', { class: 'mark m-icon m-list' }, ic('box')), name: t.title,
+        sub: t.auto ? 'образ программы' : `из машины ${t.source}`, pill: pillOf(...tone) });
+    });
+    return h('section', { class: 'panel list-panel' },
+      h('div', { class: 'panel-head' }, h('h2', { class: 'h-ic' }, ic('box'), 'Песочница')),
+      h('div', { class: 'machines' },
+        item({ on: active.kind === 'decisions', href: '#/decisions', icon: h('span', { class: 'mark m-icon m-list' }, ic('shield')), name: 'Решения',
+          sub: 'что ждёт вашего ответа', pill: asksAll ? h('span', { class: 'nav-count attn' }, String(asksAll)) : null }),
+        h('div', { class: 'sb-group' }, 'Сессии', h('span', { class: 'muted' }, String(d.sandboxes.length))),
+        ...(sessions.length ? sessions : [h('div', { class: 'sb-empty muted small' }, 'Сейчас никто не работает. «Дать задачу» — в разделе «Агенты».')]),
+        h('div', { class: 'sb-group' }, 'Шаблоны', h('span', { class: 'muted' }, String(d.templates.length))),
+        ...templates,
+        h('a', { class: `machine ag-item sb-item sb-add${active.kind === 'new-template' ? ' active' : ''}`, href: '#/sandbox?new=1' },
+          h('span', { class: 'mark m-icon m-list' }, ic('plus')), h('div', { class: 'name' }, 'Новый шаблон'), h('span'), h('div', { class: 'meta' }, 'из машины с агентами'))));
   };
 
   // «?» next to «Создать агента»: how an agent is started, and what the window does.
@@ -475,14 +546,17 @@
   pages.agents = {
     render(el, p) {
       root = el;
-      // Links of the guide: #/agents?create=machine|template|task open «Создать агента» on that step.
+      el.classList.add('page-agents');
+      selected = p?.get('id') || selected;
+      tab = ['overview', 'sessions', 'decisions'].includes(p?.get('tab')) ? p.get('tab') : 'overview';
+      // Links of the guide: #/agents?create=… open «Создать агента» on that step.
       const step = p?.get('create');
       if (step) { history.replaceState(null, '', '#/agents'); setTimeout(() => create(step), 0); }
       fill(el, h('p', { class: 'muted' }, 'Загрузка…'));
-      detailsAt = 0;
-      load().then(() => { lastSig = ''; render(); }).catch((e) => fill(el, h('div', { class: 'error' }, e.message)));
+      vaultAt = 0; copiesAt = 0;
+      refresh().catch((e) => fill(el, h('div', { class: 'error' }, e.message)));
       timer = setInterval(poll, 3000);
-      return () => { clearInterval(timer); root = null; };
+      return () => { clearInterval(timer); el.classList.remove('page-agents'); root = null; };
     },
   };
 })();

@@ -2195,7 +2195,7 @@ function route() {
   for (const k of Object.keys(pages)) $(`#page-${k}`).hidden = k !== id;
   // The session, profile and review screens belong to «Агенты»; «Песочница» has its own link.
   document.body.dataset.page = id;
-  const navId = ['agents', 'decisions', 'session', 'review', 'profile', 'work'].includes(id) ? 'sandbox' : id === 'log' ? 'egress' : id;
+  const navId = ['agents', 'profile', 'work'].includes(id) ? 'agents' : ['decisions', 'session', 'review'].includes(id) ? 'sandbox' : id === 'log' ? 'egress' : id;
   document.querySelectorAll('#pagenav a').forEach((a) => a.classList.toggle('active', a.dataset.page === navId));
   if (id !== 'machines') pageCleanup = pages[id].render($(`#page-${id}`), params) || null;
 }
@@ -2227,6 +2227,7 @@ async function pollLive() {
     const changed = isoSig !== JSON.stringify(Object.keys(state.isolated || {}).sort());
     state.isolated = r.isolated || {};
     renderApprovals(r.approvals || []);
+    window.liveApprovalsList = r.approvals || [];
     setDecisionsBadge((r.approvals || []).length);
     if (changed) { renderList(); const m = current(); if (m) updateDetailHead(m); }
   } catch {} finally { liveBusy = false; }

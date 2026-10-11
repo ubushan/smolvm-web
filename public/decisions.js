@@ -122,17 +122,20 @@
 
   function render() {
     if (!root || !data) return;
-    const y = root.scrollTop;
+    const y = root.querySelector('.tab-body')?.scrollTop || 0;
     const cards = [...approvals.map(askCard), ...data.pending.map(memoryCard), ...copies.map(projectCard)];
-    fill(root, sandboxHeader('decisions', data), h('div', { class: 'dc-wrap' },
-      h('div', { class: 'dc-main' },
-        h('div', { class: 'ws-head-text' },
-          h('h2', {}, 'Агенты спрашивают'),
-          h('p', { class: 'muted' }, 'Всё, что агенты не могут сделать сами. Ответьте — и они продолжат работу.')),
-        ...(cards.length ? cards : [h('section', { class: 'card ws-empty' }, ic('shield'), h('h3', {}, 'Всё решено'),
-          h('p', { class: 'muted' }, 'Когда агент захочет на новый сайт, запомнить навык или записать изменения в проект, вопрос появится здесь.'))])),
-      side()));
-    root.scrollTop = y;
+    // The panel of the section on the left, every decision of every agent on the right.
+    fill(root, h('div', { class: 'layout ag-layout' }, sandboxSide(data, { kind: 'decisions' }, approvals),
+      h('section', { class: 'panel detail-panel' },
+        h('div', { class: 'detail-head' }, h('span', { class: 'mark m-icon' }, ic('shield')),
+          h('div', { class: 'ag-title' }, h('h2', {}, 'Решения'), h('span', { class: 'muted small' }, 'Всё, что агенты не могут сделать сами. Ответьте — и они продолжат работу.'))),
+        h('div', { class: 'tab-body' }, h('div', { class: 'dc-wrap' },
+          h('div', { class: 'dc-main' },
+            ...(cards.length ? cards : [h('section', { class: 'card ws-empty' }, ic('shield'), h('h3', {}, 'Всё решено'),
+              h('p', { class: 'muted' }, 'Когда агент захочет на новый сайт, запомнить навык или записать изменения в проект, вопрос появится здесь.'))])),
+          side())))));
+    const tb = root.querySelector('.tab-body');
+    if (tb) tb.scrollTop = y;
     countdown();
   }
 
@@ -164,11 +167,12 @@
   pages.decisions = {
     render(el) {
       root = el; slowAt = 0;
+      el.classList.add('page-agents');
       fill(el, h('p', { class: 'muted' }, 'Загрузка…'));
       load().then(() => { lastSig = ''; render(); }).catch((e) => fill(el, h('div', { class: 'error' }, e.message)));
       timer = setInterval(poll, 2000);
       tick = setInterval(countdown, 1000);
-      return () => { clearInterval(timer); clearInterval(tick); root = null; };
+      return () => { clearInterval(timer); clearInterval(tick); el.classList.remove('page-agents'); root = null; };
     },
   };
 })();

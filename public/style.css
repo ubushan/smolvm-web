@@ -1166,7 +1166,6 @@ body[data-page="decisions"] #approvals, body[data-page="session"] #approvals { d
 .ag-dot.trusted { background: var(--warn); }
 .ag-check, .dialog-body label.ag-check { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; font-size: 14px; color: var(--text); cursor: pointer; }
 .ag-check input { margin-top: 3px; width: 16px; height: 16px; flex: none; }
-.sx-empty .ic { width: 28px; height: 28px; opacity: .7; }
 .ag-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
 .ag-step { display: flex; gap: 14px; padding: 18px; background: var(--panel); border: 1px solid var(--border); border-radius: 16px; }
 .ag-step > div { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; font-size: 13.5px; color: var(--text-2); }
@@ -1216,17 +1215,6 @@ body[data-page="decisions"] #approvals, body[data-page="session"] #approvals { d
 .sx-task { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sx-switch { width: auto; min-width: 0; max-width: 240px; }
 .sx-body { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; flex: 1; min-height: 0; }
-.sx-agent { display: flex; flex-direction: column; min-width: 0; min-height: 520px; height: calc(100vh - 290px); background: var(--term-bg); border-radius: 14px; overflow: hidden; border: 1px solid var(--border); }
-.sx-bar { display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 14px; border-bottom: 1px solid #263044; color: #C9CFDB; font-size: 13px; }
-.sx-bar .btn { color: #C9CFDB; }
-.sx-bar .btn:hover:not(:disabled) { background: rgba(255, 255, 255, .06); color: #FFFFFF; }
-.sx-bar-title { font-weight: 600; }
-.sx-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
-.sx-tab { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 8px; border: 0; background: none; color: #8A93A6; font: inherit; font-size: 13px; cursor: pointer; }
-.sx-tab.on { background: rgba(255, 255, 255, .08); color: #FFFFFF; font-weight: 600; }
-.sx-frame { flex: 1; width: 100%; border: 0; background: var(--term-bg); }
-.sx-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; color: #C9CFDB; text-align: center; font-size: 14px; }
-.sx-empty pre { max-width: 100%; white-space: pre-wrap; color: #FFB4A6; text-align: left; }
 .sx-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; overflow: auto; max-height: calc(100vh - 290px); }
 .sx-ask { background: var(--warn-soft); border: 1px solid var(--warn-border); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
 .sx-ask > .small { color: var(--warn); }
@@ -1241,7 +1229,6 @@ body[data-page="decisions"] #approvals, body[data-page="session"] #approvals { d
   .dc-wrap, .sx-body { grid-template-columns: minmax(0, 1fr); }
   .dc-side { position: static; }
   .sx-side { max-height: none; }
-  .sx-agent { height: 70vh; min-height: 420px; }
   .ag-trust { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 640px) {
@@ -1316,10 +1303,6 @@ body[data-page="decisions"] #approvals, body[data-page="session"] #approvals { d
 .sx-section .ws-head-text { flex: none; }
 .sx-section h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -.01em; }
 .sx-section .ws-head-text p { margin: 4px 0 0; }
-.sx-tabs-nav { margin-top: 0; }
-.sx-tabs-nav a { display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 8px; color: var(--muted); font-size: 13.5px; font-weight: 600; text-decoration: none; white-space: nowrap; }
-.sx-tabs-nav a:hover { color: var(--text); }
-.sx-tabs-nav a.active { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
 .ag-toolbar { padding: 0; }
 
 .sx-section.compact { gap: 10px; }
@@ -1422,3 +1405,37 @@ body[data-page="decisions"] #approvals, body[data-page="session"] #approvals { d
 .ag-head { flex-wrap: nowrap; align-items: flex-start; }
 .aw-col.aw-narrow { max-width: 640px; }
 .ag-title b { white-space: normal; overflow-wrap: anywhere; }
+
+/* «Агенты»: like «Машины» — the list on the left, the agent on the right */
+.page.page-agents { padding: 0; max-width: none; overflow: hidden; }
+.layout.ag-layout { height: 100%; }
+.ag-item { grid-template-columns: auto minmax(0, 1fr) auto; }
+.ag-item .ag-pill { font-size: 11px; padding: 2px 8px; }
+.detail-panel .detail-head > .mark { width: 40px; height: 40px; border-radius: 11px; }
+.detail-panel .detail-head .ag-title h2 { margin: 0; }
+.ag-ov-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; align-items: start; }
+.ag-ov { display: flex; flex-direction: column; gap: 10px; }
+.ag-ov .kv > div { flex-basis: 100%; }
+.ag-rowsl { display: flex; flex-direction: column; gap: 8px; }
+.ag-sess { display: flex; flex-direction: column; gap: 10px; }
+.ag-sess .aw-tiles { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.ag-prog .aw-tile-text .small { color: var(--accent-2); }
+
+/* «Сеанс»: the programs of the sandbox, each opens in a browser tab */
+.sx-programs { align-self: start; }
+.sx-progs { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.sx-prog-open { color: var(--accent-2); }
+
+.sx-tabs-nav { margin-top: 0; }
+.sx-tabs-nav a { display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 8px; color: var(--muted); font-size: 13.5px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.sx-tabs-nav a:hover { color: var(--text); }
+.sx-tabs-nav a.active { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
+
+/* «Песочница»: the panel of the section */
+.sb-group { display: flex; align-items: center; justify-content: space-between; padding: 14px 10px 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.sb-item { text-decoration: none; color: var(--text); }
+.sb-item .mark.m-list { width: 26px; height: 26px; }
+.sb-add { border: 1px dashed var(--border-strong); color: var(--muted); margin-top: 4px; }
+.sb-empty { padding: 6px 10px; }
+.page-agents .dc-wrap { grid-template-columns: minmax(0, 1fr) 260px; }
+.page-agents .dc-side { position: static; }
