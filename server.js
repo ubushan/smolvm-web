@@ -28,6 +28,8 @@ const agents = require('./lib/agents');
 const agentproxy = require('./lib/agentproxy');
 const smolfile = require('./lib/smolfile');
 const review = require('./lib/review');
+const gitwork = require('./lib/gitwork');
+const tasks = require('./lib/tasks');
 const sandbox = require('./lib/sandbox');
 const audit = require('./lib/audit');
 const egress = require('./lib/egress');
@@ -452,6 +454,12 @@ setInterval(async () => {
       try { r = await sandbox.close(d.name, { save: true }, sandboxHooks); }
       catch (e) {
         if (e.status !== 409) { audit.notify({ machine: d.name, text: `Песочницу ${d.name} не удалось закрыть (${d.why}): ${e.message}` }); continue; }
+        // Work of the agent not yet taken as a branch is never thrown away by itself.
+        if (gitwork.list(d.name).some((x) => ['working', 'ready'].includes(x.state))) {
+          sandbox.holdDue(d.name);
+          audit.notify({ machine: d.name, text: `Песочница ${d.name} не закрыта (${d.why}): ${e.message}. Работа агента не забрана — закройте её сами.` });
+          continue;
+        }
         r = await sandbox.close(d.name, { save: false }, sandboxHooks).catch(() => null);
         note = ' Машина не была запущена — изменения профиля не забраны.';
       }
@@ -479,7 +487,7 @@ function suggestFolders(q, limit = 30) {
 // Everything smolvm-web keeps about a machine that is gone.
 async function forgetMachine(name) {
   cfg.forgetMachine(name); await vault.forgetMachine(name); egress.forgetMachine(name); dirs.forgetMachine(name); agents.forget(name);
-  agentproxy.closeFor(`${name}/`); smolfile.forget(name); review.forget(name); sandbox.forget(name);
+  agentproxy.closeFor(`${name}/`); smolfile.forget(name); review.forget(name); gitwork.forget(name); sandbox.forget(name);
   limits.forget(name); isolation.set(name, null);
 }
 async function deleteMachine(name) {
@@ -846,6 +854,51 @@ const UI = [
       else if (op === 'reject') { r = await review.reject(name, id, body.paths); res.auditDetail = { copy: id, files: r.reverted }; }
       else if (op === 'pull') r = await review.reject(name, id, [], { onlyHostAhead: true });
       else { await review.copyIn(name, id); r = { copied: true }; }
+      sendJson(res, 200, r);
+    } catch (e) { err(res, e); }
+  }],
+  // ---- tasks: a sandbox with what it was opened for and what came of it ----
+  ['GET', /^\/ui\/tasks$/, async (req, res) => sendJson(res, 200, { tasks: await tasks.list() })],
+  ['POST', /^\/ui\/tasks$/, async (req, res) => {
+    const b = await readJson(req);
+    res.auditDone = true;
+    try { sendJson(res, 200, await tasks.open({ template: String(b.template || ''), profile: b.profile ? String(b.profile) : null, agent: b.agent ? String(b.agent) : null,
+      trust: b.trust ? String(b.trust) : null, task: b.task ? String(b.task) : null, folders: Array.isArray(b.folders) ? b.folders : undefined,
+      idleMinutes: b.idleMinutes, ttlHours: b.ttlHours, persistent: !!b.persistent }, sandboxHooks)); } catch (e) { err(res, e); }
+  }],
+  ['GET', /^\/ui\/tasks\/(t-[0-9a-f]+)$/, async (req, res, m) => {
+    try { sendJson(res, 200, await tasks.detail(m[1])); } catch (e) { err(res, e); }
+  }],
+  ['DELETE', /^\/ui\/tasks\/(t-[0-9a-f]+)$/, (req, res, m) => {
+    try { tasks.remove(m[1]); sendJson(res, 200, { ok: true }); } catch (e) { err(res, e); }
+  }],
+  ['POST', /^\/ui\/tasks\/(t-[0-9a-f]+)\/(finish|close|reset|accept|discard)$/, async (req, res, m) => {
+    const b = await readJson(req);
+    const id = m[1]; const op = m[2];
+    if (op === 'close' || op === 'reset') res.auditDone = true;
+    try {
+      let r;
+      if (op === 'finish') r = await tasks.finish(id);
+      else if (op === 'close') r = await tasks.close(id, { save: b.save !== false }, sandboxHooks);
+      else if (op === 'reset') r = await tasks.reset(id, sandboxHooks);
+      else r = await tasks.decide(id, op);
+      if (r.git) res.auditDetail = { task: id, branches: r.git.map((x) => `${x.branch}: ${x.state}`) };
+      sendJson(res, 200, r);
+    } catch (e) { err(res, e); }
+  }],
+  // ---- git work: the agent's result as a branch smolvm/<id> in the host repository ----
+  ['GET', /^\/ui\/git-inspect$/, async (req, res, _m, url) => sendJson(res, 200, await gitwork.inspect(url.searchParams.get('path') || ''))],
+  ['GET', /^\/ui\/git$/, (req, res, _m, url) => sendJson(res, 200, { items: gitwork.list(url.searchParams.get('machine') || '') })],
+  ['GET', /^\/ui\/git\/([\w-]+)$/, async (req, res, m) => {
+    try { sendJson(res, 200, await gitwork.changes(m[1])); } catch (e) { err(res, e); }
+  }],
+  ['GET', /^\/ui\/git\/([\w-]+)\/diff$/, async (req, res, m, url) => {
+    try { sendJson(res, 200, await gitwork.fileDiff(m[1], url.searchParams.get('path'))); } catch (e) { err(res, e); }
+  }],
+  ['POST', /^\/ui\/git\/([\w-]+)\/(finish|accept|discard)$/, async (req, res, m) => {
+    try {
+      const r = await gitwork[m[2]](m[1]);
+      res.auditDetail = { branch: r.branch, commits: r.commits, state: r.state };
       sendJson(res, 200, r);
     } catch (e) { err(res, e); }
   }],

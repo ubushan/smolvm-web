@@ -1439,3 +1439,24 @@ body[data-page="decisions"] #approvals, body[data-page="session"] #approvals { d
 .sb-empty { padding: 6px 10px; }
 .page-agents .dc-wrap { grid-template-columns: minmax(0, 1fr) 260px; }
 .page-agents .dc-side { position: static; }
+
+/* «Задачи» */
+.tk-sum { display: flex; flex-wrap: wrap; gap: 2px; align-items: baseline; }
+.tk-commits summary { cursor: pointer; color: var(--muted); }
+.tk-commits > div { padding: 3px 0 3px 4px; overflow-wrap: anywhere; }
+.tk-files { grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); }
+.tk-files .rv-item { padding: 10px 12px; }
+.tk-files .rv-item.danger { padding: 9px 11px; }
+.tk-merge { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--ok-soft); }
+.tk-merge code { overflow-wrap: anywhere; }
+.tk-dirs { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.tk-dir { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+.tk-dir-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
+.tk-dir-info:empty { display: none; }
+.tk-mode { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tk-mode-opt { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--text); cursor: pointer; font: inherit; }
+.tk-mode-opt.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: var(--accent-soft); }
+@media (max-width: 900px) { .tk-files { grid-template-columns: minmax(0, 1fr); } .tk-mode { grid-template-columns: 1fr; } }
+#page-tasks .detail-head { flex-wrap: wrap; }
+#page-tasks .detail-head .ag-title { flex: 1 1 320px; min-width: 0; }
+#page-tasks .detail-head .actions { flex-wrap: wrap; justify-content: flex-end; }

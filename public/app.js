@@ -2182,8 +2182,8 @@ setInterval(() => { if (!document.hidden) refreshPendingReviews(); }, 15000);
 
 function routeParams() {
   const m = location.hash.match(/^#\/(\w*)(?:\?(.*))?$/);
-  // No hash at all: the start page is «Агенты»; «#/» stays the machines list.
-  if (!location.hash || location.hash === '#') return { page: 'agents', params: new URLSearchParams() };
+  // No hash at all: the start page is «Задачи»; «#/» stays the machines list.
+  if (!location.hash || location.hash === '#') return { page: 'tasks', params: new URLSearchParams() };
   return { page: (m && m[1]) || 'machines', params: new URLSearchParams((m && m[2]) || '') };
 }
 function route() {

@@ -39,6 +39,7 @@
     [/ignore (all |the )?(previous|prior|above) instructions|игнорируй (все )?(предыдущие|прошлые) инструкции|do not (tell|mention|show) the user|не сообщай пользователю/i, 'похоже на prompt injection'],
   ];
   const suspicion = (line) => SUSPICIOUS.find(([re]) => re.test(line))?.[1] || null;
+  window.diffSuspicion = suspicion; // the branch diff of «Задачи»
 
   async function load(id) {
     const data = await api('GET', '/ui/sandbox');
