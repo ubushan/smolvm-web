@@ -1460,3 +1460,13 @@ body[data-page="decisions"] #approvals, body[data-page="session"] #approvals { d
 #page-tasks .detail-head { flex-wrap: wrap; }
 #page-tasks .detail-head .ag-title { flex: 1 1 320px; min-width: 0; }
 #page-tasks .detail-head .actions { flex-wrap: wrap; justify-content: flex-end; }
+
+/* «Проекты» */
+.pj-form { display: flex; flex-direction: column; gap: 14px; }
+.pj-log { max-height: 260px; white-space: pre-wrap; }
+.pj-tasks { display: flex; flex-direction: column; }
+.pj-task { display: flex; justify-content: space-between; gap: 12px; padding: 8px 4px; border-top: 1px solid var(--border); color: var(--text); text-decoration: none; min-width: 0; }
+.pj-task:first-child { border-top: 0; }
+.pj-task:hover { background: var(--panel-2); }
+#page-projects .detail-head { flex-wrap: wrap; }
+#page-projects .detail-head .ag-title { flex: 1 1 280px; min-width: 0; }

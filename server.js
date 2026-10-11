@@ -30,6 +30,7 @@ const smolfile = require('./lib/smolfile');
 const review = require('./lib/review');
 const gitwork = require('./lib/gitwork');
 const tasks = require('./lib/tasks');
+const projects = require('./lib/projects');
 const sandbox = require('./lib/sandbox');
 const audit = require('./lib/audit');
 const egress = require('./lib/egress');
@@ -864,7 +865,24 @@ const UI = [
     res.auditDone = true;
     try { sendJson(res, 200, await tasks.open({ template: String(b.template || ''), profile: b.profile ? String(b.profile) : null, agent: b.agent ? String(b.agent) : null,
       trust: b.trust ? String(b.trust) : null, task: b.task ? String(b.task) : null, folders: Array.isArray(b.folders) ? b.folders : undefined,
-      idleMinutes: b.idleMinutes, ttlHours: b.ttlHours, persistent: !!b.persistent }, sandboxHooks)); } catch (e) { err(res, e); }
+      idleMinutes: b.idleMinutes, ttlHours: b.ttlHours, persistent: !!b.persistent, project: b.project ? String(b.project) : null }, sandboxHooks)); } catch (e) { err(res, e); }
+  }],
+  // ---- projects: a repository with its agent, trust and prepared template ----
+  ['GET', /^\/ui\/projects$/, (req, res) => sendJson(res, 200, { projects: projects.list() })],
+  ['POST', /^\/ui\/projects$/, async (req, res) => {
+    try { sendJson(res, 200, await projects.create(await readJson(req))); } catch (e) { err(res, e); }
+  }],
+  ['GET', /^\/ui\/projects\/(pr-[0-9a-f]+)$/, (req, res, m) => {
+    try { sendJson(res, 200, projects.get(m[1])); } catch (e) { err(res, e); }
+  }],
+  ['PUT', /^\/ui\/projects\/(pr-[0-9a-f]+)$/, async (req, res, m) => {
+    try { sendJson(res, 200, await projects.update(m[1], await readJson(req))); } catch (e) { err(res, e); }
+  }],
+  ['DELETE', /^\/ui\/projects\/(pr-[0-9a-f]+)$/, (req, res, m) => {
+    try { projects.remove(m[1]); sendJson(res, 200, { ok: true }); } catch (e) { err(res, e); }
+  }],
+  ['POST', /^\/ui\/projects\/(pr-[0-9a-f]+)\/build$/, (req, res, m) => {
+    try { sendJson(res, 200, projects.build(m[1], sandboxHooks)); } catch (e) { err(res, e); }
   }],
   ['GET', /^\/ui\/tasks\/(t-[0-9a-f]+)$/, async (req, res, m) => {
     try { sendJson(res, 200, await tasks.detail(m[1])); } catch (e) { err(res, e); }

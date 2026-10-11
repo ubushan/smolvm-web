@@ -8,6 +8,7 @@
   let root = null;
   let tasks = [];        // GET /ui/tasks
   let sbx = null;        // GET /ui/sandbox: profiles, open sandboxes with their programs
+  let projects = [];     // GET /ui/projects
   let selected = '';
   let tab = '';          // changes | agent | did | decisions; '' — chosen by status
   let timer = null;
@@ -36,9 +37,10 @@
   const isOpen = (t) => OPEN.includes(t.status);
 
   async function load() {
-    const [r, d] = await Promise.all([api('GET', '/ui/tasks'), api('GET', '/ui/sandbox').catch(() => sbx)]);
+    const [r, d, pr] = await Promise.all([api('GET', '/ui/tasks'), api('GET', '/ui/sandbox').catch(() => sbx), api('GET', '/ui/projects').catch(() => ({ projects }))]);
     tasks = r.tasks || [];
     sbx = d;
+    projects = pr.projects || [];
     if (!cur()) selected = tasks[0]?.id || '';
     const t = cur();
     if (!t) return;
@@ -333,7 +335,7 @@
       ['История', tasks.filter((t) => ['done', 'lost'].includes(t.status))],
     ];
     const item = (t) => {
-      const sub = [AGENTS[t.agent] || t.agent, t.persistent ? 'постоянная' : null, t.result.commits ? plural(t.result.commits, 'коммит', 'коммита', 'коммитов') : null,
+      const sub = [projects.find((p) => p.id === t.project)?.name || AGENTS[t.agent] || t.agent, t.persistent ? 'постоянная' : null, t.result.commits ? plural(t.result.commits, 'коммит', 'коммита', 'коммитов') : null,
         ago(t.closedAt || t.createdAt)].filter(Boolean).join(' · ');
       return h('a', { class: `machine ag-item sb-item${t0?.id === t.id ? ' active' : ''}${t.status === 'working' ? ' running' : ''}`, href: `#/tasks?id=${enc(t.id)}` },
         mark(MARKS[t.agent] || 'vm', true), h('div', { class: 'name', title: t.text || '' }, t.title), pill(t.status), h('div', { class: 'meta' }, sub));
@@ -386,10 +388,10 @@
   }
 
   // ---------- «Новая задача» ----------
-  // from: a task to repeat (its agent, folders, text, trust, mode).
+  // from: a task to repeat (its agent, folders, text, trust, mode), or { project }.
   async function newTask(from = null) {
-    let d;
-    try { d = sbx || await api('GET', '/ui/sandbox'); } catch (e) { toast(e.message, 'err'); return; }
+    let d; let prs;
+    try { [d, prs] = await Promise.all([sbx || api('GET', '/ui/sandbox'), api('GET', '/ui/projects').then((r) => r.projects).catch(() => [])]); } catch (e) { toast(e.message, 'err'); return; }
     if (!d.profiles.length) {
       const c = await confirmDialog('Сначала нужен агент', 'Агент — это программа (Claude Code, Codex…), её изоляция, ключи и память. Задачи даются агенту.', false, '', 'Создать агента');
       if (c.ok) agentWizard({ onDone: () => refresh() });
@@ -397,10 +399,12 @@
     }
     let profile = from?.profile && d.profiles.some((p) => p.id === from.profile) ? from.profile : d.profiles[0].id;
     const prof = () => d.profiles.find((p) => p.id === profile);
-    let trust = from?.trust || prof()?.trust || 'normal';
+    let project = from?.project && prs.some((p) => p.id === from.project) ? from.project : '';
+    const projOf = () => prs.find((p) => p.id === project) || null;
+    let trust = from?.trust || projOf()?.trust || prof()?.trust || 'normal';
     let persistent = !!from?.persistent;
     const startFolders = (p) => (p?.folders?.length ? p.folders : p?.folder ? [{ hostPath: p.folder, mode: 'review' }] : []).map((f) => ({ ...f }));
-    let folders = from ? from.folders.map(({ hostPath, mode }) => ({ hostPath, mode })) : startFolders(prof());
+    let folders = from?.folders ? from.folders.map(({ hostPath, mode }) => ({ hostPath, mode })) : startFolders(prof());
 
     const who = h('select', { class: 'input', id: 'tk-who' }, d.profiles.map((p) => h('option', { value: p.id }, `${p.name}${p.agent ? ` — ${AGENTS[p.agent] || p.agent}` : ''}`)));
     who.value = profile;
@@ -412,6 +416,28 @@
         h('button', { type: 'button', class: 'btn ghost small-btn', onclick: () => { folders.push({ hostPath: '', mode: 'review' }); drawDirs(); dirsBox.querySelector('.tk-dir:last-of-type input')?.focus(); } }, ic('plus'), 'Папка'));
     };
     drawDirs();
+    // A project brings its agent, repository and template: those fields give way to a summary.
+    const projSel = h('select', { class: 'input', id: 'tk-project' }, h('option', { value: '' }, 'Без проекта — выбрать агента и папки'),
+      prs.map((p) => h('option', { value: p.id }, p.name === base(p.hostPath) ? p.name : `${p.name} — ${base(p.hostPath)}`)));
+    projSel.value = project;
+    const projInfo = h('div', { class: 'small muted' });
+    const whoField = h('label', { class: 'ws-field', for: 'tk-who' }, 'Агент', who);
+    const dirsField = h('div', { class: 'ws-field' }, h('div', { class: 'label-like' }, 'Проект'), dirsBox,
+      h('div', { class: 'muted small' }, 'Git-репозиторий: агент получает текущий код без истории, результат возвращается веткой — ваша папка не меняется. Папка без git — рабочая копия с проверкой по файлам.'));
+    const drawProject = () => {
+      const p = projOf();
+      whoField.hidden = !!p; dirsField.hidden = !!p;
+      if (!p) { projInfo.replaceChildren(); return; }
+      const ag = d.profiles.find((x) => x.id === p.profile);
+      const tpl = p.build?.status === 'running' ? `шаблон собирается (${p.build.step}) — задача откроется из образа агента, без подготовки`
+        : p.templateReady ? 'из шаблона проекта: зависимости уже установлены' : p.setup ? 'шаблона нет — из образа агента, без подготовки' : 'из образа агента';
+      projInfo.replaceChildren(`Агент «${ag?.name || '—'}», репозиторий `, h('span', { class: 'mono' }, p.hostPath), `; откроется ${tpl}. Результат — ветка в репозитории.`);
+    };
+    projSel.addEventListener('change', () => {
+      project = projSel.value;
+      if (projOf()?.trust) { trust = projOf().trust; const nb = window.agentUi.trustPicker(trust, (v) => { trust = v; }); trustBox.replaceWith(nb); trustBox = nb; }
+      drawProject();
+    });
     who.addEventListener('change', () => { profile = who.value; if (!from) { folders = startFolders(prof()); drawDirs(); } trustBox.replaceWith(trustBox = window.agentUi.trustPicker(trust = prof()?.trust || trust, (v) => { trust = v; })); });
     let trustBox = window.agentUi.trustPicker(trust, (v) => { trust = v; });
     const mode = h('div', { class: 'tk-mode', role: 'radiogroup' });
@@ -424,12 +450,12 @@
     const tabBox = h('input', { type: 'checkbox', id: 'tk-tab', checked: inTab });
     const go = h('button', { class: 'btn primary ag-go' }, ic('play'), 'Начать');
     const dlg = h('dialog', { class: 'dialog ws-dialog ag-dialog' },
-      h('header', {}, h('h3', {}, from ? 'Повторить задачу' : 'Новая задача'), h('button', { type: 'button', class: 'btn ghost icon', title: 'Закрыть', 'aria-label': 'Закрыть', onclick: () => dlg.close() }, ic('x'))),
+      h('header', {}, h('h3', {}, from?.id ? 'Повторить задачу' : 'Новая задача'), h('button', { type: 'button', class: 'btn ghost icon', title: 'Закрыть', 'aria-label': 'Закрыть', onclick: () => dlg.close() }, ic('x'))),
       h('div', { class: 'dialog-body' },
         h('label', { class: 'ws-field', for: 'tk-text' }, 'Что сделать', text),
-        h('label', { class: 'ws-field', for: 'tk-who' }, 'Агент', who),
-        h('div', { class: 'ws-field' }, h('div', { class: 'label-like' }, 'Проект'), dirsBox,
-          h('div', { class: 'muted small' }, 'Git-репозиторий: агент получает текущий код без истории, результат возвращается веткой — ваша папка не меняется. Папка без git — рабочая копия с проверкой по файлам.')),
+        prs.length ? h('label', { class: 'ws-field', for: 'tk-project' }, 'Проект', projSel, projInfo) : null,
+        whoField,
+        dirsField,
         h('div', { class: 'ws-field' }, h('div', { class: 'label-like' }, 'Как работаем'), mode),
         h('div', { class: 'ws-field' }, h('div', { class: 'label-like' }, 'Насколько вы ему доверяете'), trustBox),
         h('label', { class: 'ag-check', for: 'tk-tab' }, tabBox, h('span', {}, 'Сразу открыть агента в отдельной вкладке браузера')),
@@ -437,11 +463,12 @@
     dlg.addEventListener('close', () => dlg.remove());
     document.body.append(dlg);
     dlg.showModal();
+    drawProject();
     setTimeout(() => text.focus(), 0);
 
     go.addEventListener('click', async () => {
       const list = folders.filter((f) => f.hostPath.trim()).map((f) => ({ hostPath: f.hostPath.trim(), mode: f.mode }));
-      const p = prof();
+      const p = projOf() ? d.profiles.find((x) => x.id === projOf().profile) : prof();
       const wantTab = tabBox.checked && !!p?.agent;
       const w = wantTab ? agentTab() : null;
       if (trust === 'trusted') {
@@ -451,7 +478,8 @@
       try { localStorage.setItem('smolvm.agentTab', tabBox.checked ? '1' : '0'); } catch {}
       go.disabled = true; go.replaceChildren(h('i', { class: 'spin' }), 'Открываю машину…');
       try {
-        const r = await api('POST', '/ui/tasks', { profile, agent: p?.agent || null, trust, task: text.value.trim() || null, folders: list, persistent });
+        const r = await api('POST', '/ui/tasks', projOf() ? { project, trust, task: text.value.trim() || null, persistent }
+          : { profile, agent: p?.agent || null, trust, task: text.value.trim() || null, folders: list, persistent });
         dlg.close();
         if (wantTab && r.url) { agentInTab(r.name, true); goAgent(w, r.url); } else if (w) w.close();
         refreshMachines();

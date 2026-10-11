@@ -59,6 +59,7 @@
     </div>
     <nav class="pagenav" id="pagenav">
       <a href="#/tasks" data-page="tasks" title="Что агенты делают и что из этого вышло: ветки на проверку, решения, сессии"><svg class="ic"><use href="#i-list"/></svg>Задачи</a>
+      <a href="#/projects" data-page="projects" title="Репозитории: агент, доверие и подготовленный шаблон для задач"><svg class="ic"><use href="#i-branch"/></svg>Проекты</a>
       <a href="#/agents" data-page="agents" title="Ваши агенты: сеть, директории, секреты, сессии и решения каждого"><svg class="ic"><use href="#i-bot"/></svg>Агенты</a>
       <a href="#/session" data-page="sandbox" title="Сессии агентов, шаблоны машин и решения"><svg class="ic"><use href="#i-box"/></svg>Песочница<span class="nav-badge" id="nav-decisions" hidden></span></a>
       <a href="#/" data-page="machines"><svg class="ic"><use href="#i-server"/></svg>Машины</a>
@@ -109,6 +110,7 @@
   </main>
 
   <main class="page" id="page-tasks" hidden></main>
+  <main class="page" id="page-projects" hidden></main>
   <main class="page" id="page-agents" hidden></main>
   <main class="page" id="page-decisions" hidden></main>
   <main class="page" id="page-work" hidden></main>
@@ -447,6 +449,7 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
   <script src="/session.js"></script>
   <script src="/review.js"></script>
   <script src="/tasks.js"></script>
+  <script src="/projects.js"></script>
   <script src="/profile.js"></script>
   <script src="/agents.js"></script>
   <script src="/agentwizard.js"></script>
