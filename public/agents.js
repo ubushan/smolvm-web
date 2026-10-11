@@ -67,7 +67,7 @@
   let tab = 'overview';  // overview | tasks
   let vault = [];        // GET /ui/vault — secrets with their modes
   let vaultAt = 0;
-  const NET = { strict: 'Только разрешённое — с жёсткой изоляцией: обойти фильтр нельзя', soft: 'Только разрешённое — без изоляции: фильтр через прокси', off: 'Без ограничений — как этот компьютер' };
+  const NET = { strict: 'Только разрешённое — обойти нельзя', soft: 'Только разрешённое, без изоляции — можно выйти напрямую в обход', off: 'Без ограничений — куда угодно' };
 
   async function loadSlow() {
     if (Date.now() - vaultAt > 15000) {
