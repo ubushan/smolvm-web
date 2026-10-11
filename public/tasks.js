@@ -532,6 +532,18 @@
 
   window.newTask = (from) => newTask(from);
 
+  // The former session screen: its address leads to the task of that machine.
+  pages.session = {
+    render(el, p) {
+      const name = p.get('name');
+      api('GET', '/ui/tasks').then((r) => {
+        const t = (r.tasks || []).find((x) => x.machine === name || (x.machines || []).includes(name));
+        location.replace(t ? `#/tasks?id=${enc(t.id)}` : '#/tasks');
+      }).catch(() => location.replace('#/tasks'));
+      return null;
+    },
+  };
+
   pages.tasks = {
     render(el, p) {
       root = el; busy = '';

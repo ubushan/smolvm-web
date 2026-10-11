@@ -439,12 +439,12 @@
       foot.querySelectorAll('button').forEach((b) => { b.disabled = true; });
       foot.append(h('span', { class: 'muted small' }, h('i', { class: 'spin' }), ' Запускается…'));
       try {
-        const r = await api('POST', '/ui/sandbox/open', { profile: id, agent: st.agent, trust: st.trust, template: ownTpl() ? st.template : null });
+        const r = await api('POST', '/ui/tasks', { profile: id, agent: st.agent, trust: st.trust, template: ownTpl() ? st.template : null });
         dlg.close();
         if (tab && r.url) { agentInTab(r.name, true); goAgent(tab, r.url); } else if (tab) tab.close();
         toast('Агент запущен', 'ok');
         refreshMachines();
-        location.hash = `#/session?name=${enc(r.name)}`;
+        location.hash = `#/tasks?id=${enc(r.taskId)}`;
       } catch (e) {
         if (tab) tab.close();
         toast(e.message, 'err', 12000);

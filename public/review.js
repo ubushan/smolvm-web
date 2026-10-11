@@ -66,7 +66,7 @@
       }
     } catch (e) { toast(e.message, 'err'); return; }
     await load('');
-    if (!cur) { location.hash = '#/agents'; return; }
+    if (!cur) { location.hash = '#/decisions'; return; }
     render();
   }
 
@@ -105,7 +105,7 @@
     if (!cur) {
       fill(root, h('section', { class: 'card ws-empty' }, ic('list'), h('h3', {}, 'Проверять нечего'),
         h('p', { class: 'muted' }, 'Когда агент закончит задачу, то, что он хочет запомнить, появится здесь.'),
-        h('a', { class: 'btn primary', href: '#/agents' }, 'К агентам')));
+        h('a', { class: 'btn primary', href: '#/decisions' }, 'Во входящие')));
       return;
     }
     if (location.hash !== `#/review?id=${enc(cur.id)}`) history.replaceState(null, '', `#/review?id=${enc(cur.id)}`);
