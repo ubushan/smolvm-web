@@ -1,12 +1,14 @@
 'use strict';
-// Page «Решения» (#/decisions): everything the agents cannot do without a person —
-// network and API requests waiting right now, memory and settings an agent wants
-// to keep (profile review), project changes waiting in review copies.
+// «Входящие» (#/decisions): everything the agents cannot do without a person —
+// network and API requests waiting right now, task branches waiting for a decision,
+// memory and settings an agent wants to keep (profile review), project changes
+// waiting in review copies.
 
 (() => {
   let root = null;
   let data = null;       // GET /ui/sandbox
   let approvals = [];    // GET /ui/live
+  let tasks = [];        // GET /ui/tasks
   let copies = [];       // [{ machine, dir, changes }]
   let today = [];        // audit entries of the decisions made today
   let slowAt = 0;
@@ -28,8 +30,8 @@
   };
 
   async function load() {
-    const [d, live] = await Promise.all([api('GET', '/ui/sandbox'), api('GET', '/ui/live').catch(() => ({}))]);
-    data = d; approvals = live.approvals || [];
+    const [d, live, t] = await Promise.all([api('GET', '/ui/sandbox'), api('GET', '/ui/live').catch(() => ({})), api('GET', '/ui/tasks').catch(() => ({ tasks }))]);
+    data = d; approvals = live.approvals || []; tasks = t.tasks || [];
     // Review copies and the audit: every 10 s.
     if (Date.now() - slowAt > 10000) {
       slowAt = Date.now();
@@ -73,6 +75,18 @@
         b('danger-outline', 'Запретить', 'deny')));
   }
 
+  // A closed task whose branch waits: accept or discard on the task screen.
+  function branchCard(t) {
+    const g = t.git.filter((x) => x.state === 'ready');
+    const n = g.reduce((s, x) => s + (x.commits || 0), 0);
+    return h('article', { class: 'dc-card row' },
+      h('div', { class: 'dc-grow' },
+        h('div', { class: 'dc-meta' }, h('b', {}, AGENTS[t.agent] || t.agent || 'агент'), h('span', {}, 'закончил задачу')),
+        h('div', { class: 'dc-title' }, t.title),
+        h('div', { class: 'muted small' }, `${plural(n, 'коммит', 'коммита', 'коммитов')} в ${g.map((x) => `${base(x.hostPath)} (${x.branch})`).join(', ')} · ваша папка не менялась`)),
+      h('a', { class: 'btn primary', href: `#/tasks?id=${enc(t.id)}` }, 'Посмотреть и решить'));
+  }
+
   function memoryCard(x) {
     const p = data.profiles.find((y) => y.id === x.profile);
     const exec = x.changes.filter((c) => risky(c.path) && c.kind !== 'deleted');
@@ -101,20 +115,17 @@
   }
 
   function side() {
-    const working = data.sandboxes.map((x) => {
-      const asks = approvals.some((a) => a.machine === x.name);
-      return h('div', { class: 'dc-side-card' },
-        h('b', {}, who(x.name)),
-        h('span', { class: `small ${asks ? 'warnc' : 'muted'}` }, asks ? 'ждёт вашего ответа' : x.opening || (x.task ? `«${x.task.slice(0, 60)}»` : 'работает')),
-        h('a', { class: 'small', href: `#/session?name=${enc(x.name)}` }, 'Открыть агента'));
-    });
+    const working = tasks.filter((t) => !t.closedAt).map((t) => h('div', { class: 'dc-side-card' },
+      h('b', {}, t.title),
+      h('span', { class: `small ${t.status === 'waiting' ? 'warnc' : 'muted'}` }, t.status === 'waiting' ? 'ждёт вашего ответа' : t.status === 'opening' ? 'открывается' : AGENTS[t.agent] || 'работает'),
+      h('a', { class: 'small', href: `#/tasks?id=${enc(t.id)}` }, 'Открыть задачу')));
     const said = today.slice(0, 8).map((e) => h('div', {},
       e.action.replace(/^подтверждение: /, '').replace(/^ревью: /, 'проект: ').replace(/^песочницы: изменения профиля/, 'память агента:'),
       e.detail?.title ? h('span', { class: 'mono' }, ` ${e.detail.title}`) : null,
       e.machine ? h('span', { class: 'muted' }, ` · ${who(e.machine)}`) : null));
     return h('aside', { class: 'dc-side' },
       h('div', { class: 'label-like' }, 'Сейчас работают'),
-      ...(working.length ? working : [h('div', { class: 'muted small' }, 'Никто. ', h('a', { href: '#/agents' }, 'Дать задачу'))]),
+      ...(working.length ? working : [h('div', { class: 'muted small' }, 'Никто. ', h('a', { href: '#/tasks?new=1' }, 'Новая задача'))]),
       h('div', { class: 'label-like dc-gap' }, 'Решено сегодня'),
       h('div', { class: 'dc-said small' }, ...(said.length ? said : [h('span', { class: 'muted' }, 'Пока ничего')])),
       h('a', { class: 'small', href: '#/audit' }, 'Вся история →'));
@@ -123,16 +134,16 @@
   function render() {
     if (!root || !data) return;
     const y = root.querySelector('.tab-body')?.scrollTop || 0;
-    const cards = [...approvals.map(askCard), ...data.pending.map(memoryCard), ...copies.map(projectCard)];
-    // The panel of the section on the left, every decision of every agent on the right.
-    fill(root, h('div', { class: 'layout ag-layout' }, sandboxSide(data, { kind: 'decisions' }, approvals),
+    const branches = tasks.filter((t) => t.closedAt && t.git.some((g) => g.state === 'ready'));
+    const cards = [...approvals.map(askCard), ...branches.map(branchCard), ...data.pending.map(memoryCard), ...copies.map(projectCard)];
+    fill(root, h('div', { class: 'layout dc-only' },
       h('section', { class: 'panel detail-panel' },
-        h('div', { class: 'detail-head' }, h('span', { class: 'mark m-icon' }, ic('shield')),
-          h('div', { class: 'ag-title' }, h('h2', {}, 'Решения'), h('span', { class: 'muted small' }, 'Всё, что агенты не могут сделать сами. Ответьте — и они продолжат работу.'))),
+        h('div', { class: 'detail-head' }, h('span', { class: 'mark m-icon' }, ic('bell')),
+          h('div', { class: 'ag-title' }, h('h2', {}, 'Входящие'), h('span', { class: 'muted small' }, 'Всё, что агенты не могут сделать сами: запросы, ветки на проверку, память. Ответьте — и они продолжат работу.'))),
         h('div', { class: 'tab-body' }, h('div', { class: 'dc-wrap' },
           h('div', { class: 'dc-main' },
             ...(cards.length ? cards : [h('section', { class: 'card ws-empty' }, ic('shield'), h('h3', {}, 'Всё решено'),
-              h('p', { class: 'muted' }, 'Когда агент захочет на новый сайт, запомнить навык или записать изменения в проект, вопрос появится здесь.'))])),
+              h('p', { class: 'muted' }, 'Когда агент захочет на новый сайт, закончит задачу с изменениями в проекте или захочет запомнить навык, вопрос появится здесь.'))])),
           side())))));
     const tb = root.querySelector('.tab-body');
     if (tb) tb.scrollTop = y;
@@ -157,7 +168,7 @@
   async function poll() {
     if (!root || document.hidden) return;
     try { await load(); } catch { return; }
-    const sig = JSON.stringify([approvals.map((a) => [a.id, a.waiting]), data.pending.map((x) => [x.id, x.changes.length]),
+    const sig = JSON.stringify([approvals.map((a) => [a.id, a.waiting]), data.pending.map((x) => [x.id, x.changes.length]), tasks.map((t) => [t.id, t.status, t.git.map((g) => g.state)]),
       copies.map((c) => [c.machine, c.dir.id, c.changes.length]), today.length, data.sandboxes.map((x) => [x.name, x.opening])]);
     if (sig === lastSig) return;
     lastSig = sig;

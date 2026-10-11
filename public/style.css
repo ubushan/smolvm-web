@@ -1470,3 +1470,16 @@ body[data-page="decisions"] #approvals, body[data-page="session"] #approvals { d
 .pj-task:hover { background: var(--panel-2); }
 #page-projects .detail-head { flex-wrap: wrap; }
 #page-projects .detail-head .ag-title { flex: 1 1 280px; min-width: 0; }
+
+/* ⚙ menu */
+.admin-menu { width: 280px; }
+.admin-menu button { align-items: flex-start; }
+.admin-menu button > span { display: flex; flex-direction: column; gap: 1px; }
+.admin-menu button.on { background: var(--accent-soft); }
+.admin-menu .ic { margin-top: 2px; flex: none; }
+.admin-menu hr { border: 0; border-top: 1px solid var(--border); margin: 4px 2px; }
+#btn-settings.active { color: var(--text); background: var(--panel-2); }
+/* The header wraps when narrow: its fixed height must give way too. */
+@media (max-width: 1240px) { .topbar { height: auto; min-height: 60px; } }
+.dc-only { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 480px) { .topbar { gap: 8px; padding: 8px 12px; } }

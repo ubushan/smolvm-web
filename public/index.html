@@ -58,15 +58,10 @@
       <div id="health" class="health"><span class="dot"></span><span></span></div>
     </div>
     <nav class="pagenav" id="pagenav">
-      <a href="#/tasks" data-page="tasks" title="Что агенты делают и что из этого вышло: ветки на проверку, решения, сессии"><svg class="ic"><use href="#i-list"/></svg>Задачи</a>
+      <a href="#/tasks" data-page="tasks" title="Что агенты делают и что из этого вышло"><svg class="ic"><use href="#i-list"/></svg>Задачи</a>
+      <a href="#/decisions" data-page="decisions" title="Что ждёт вашего решения: запросы агентов, ветки на проверку, память агентов"><svg class="ic"><use href="#i-bell"/></svg>Входящие<span class="nav-badge" id="nav-decisions" hidden></span></a>
       <a href="#/projects" data-page="projects" title="Репозитории: агент, доверие и подготовленный шаблон для задач"><svg class="ic"><use href="#i-branch"/></svg>Проекты</a>
-      <a href="#/agents" data-page="agents" title="Ваши агенты: сеть, директории, секреты, сессии и решения каждого"><svg class="ic"><use href="#i-bot"/></svg>Агенты</a>
-      <a href="#/session" data-page="sandbox" title="Сессии агентов, шаблоны машин и решения"><svg class="ic"><use href="#i-box"/></svg>Песочница<span class="nav-badge" id="nav-decisions" hidden></span></a>
-      <a href="#/" data-page="machines"><svg class="ic"><use href="#i-server"/></svg>Машины</a>
-      <a href="#/egress" data-page="egress" title="Allow list ресурсов интернета для машин"><svg class="ic"><use href="#i-globe"/></svg>Сеть</a>
-      <a href="#/secrets" data-page="secrets" title="Хранилище API-ключей и токенов"><svg class="ic"><use href="#i-key"/></svg>Секреты</a>
-      <a href="#/audit" data-page="audit" title="Журнал действий: команды, изменения файлов, экспорт в SIEM, оповещения"><svg class="ic"><use href="#i-shield"/></svg>Аудит</a>
-      <a href="#/dirs" data-page="dirs" title="Разрешённые директории хоста и права пользователей"><svg class="ic"><use href="#i-folder"/></svg>Директории</a>
+      <a href="#/audit" data-page="audit" title="Журнал действий: команды, изменения файлов, экспорт в SIEM, оповещения"><svg class="ic"><use href="#i-shield"/></svg>Журнал</a>
     </nav>
     <button id="proxy-chip" class="chip" hidden title="Настройки сети и прокси"></button>
     <div class="spacer"></div>
@@ -74,9 +69,8 @@
       <button id="btn-notif" class="btn ghost notif-btn" type="button" aria-haspopup="dialog" aria-expanded="false" title="Последние оповещения: решения, журнал сети, аудит"><svg class="ic"><use href="#i-bell"/></svg><span class="notif-label">Уведомления</span><span class="nav-badge" id="notif-count" hidden></span></button>
       <div class="notif-panel" id="notif-panel" role="dialog" aria-label="Уведомления" hidden></div>
     </div>
-    <button id="btn-settings" class="btn ghost icon" title="Настройки: прокси, сертификаты, репозитории, секреты, smolvm" aria-label="Настройки"><svg class="ic"><use href="#i-gear"/></svg></button>
+    <button id="btn-settings" class="btn ghost icon" title="Управление: агенты, шаблоны, машины, сеть, секреты, папки, настройки" aria-label="Управление" aria-haspopup="menu"><svg class="ic"><use href="#i-gear"/></svg></button>
     <button id="btn-theme" class="btn ghost icon" title="Тема: светлая, тёмная или как в системе" aria-label="Тема" aria-haspopup="menu"><svg class="ic"><use href="#i-contrast"/></svg></button>
-    <button id="btn-create-agent" class="btn primary" title="Создать агента: программа, изоляция, директории, секреты, доверие и задача — в одном окне"><svg class="ic"><use href="#i-plus"/></svg>Создать агента</button>
   </header>
 
   <div id="host-warning" class="notice host-warning" hidden></div>

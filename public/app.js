@@ -1255,7 +1255,7 @@ $('#btn-create').addEventListener('click', openCreate);
 // The empty detail panel is re-rendered: its button is found by delegation.
 document.addEventListener('click', (e) => { if (e.target.closest('#btn-create-empty')) openCreate(); });
 // «Создать агента» in the header: the agent window from any page; the open page catches up after.
-$('#btn-create-agent').addEventListener('click', () => agentWizard({ onDone: () => { if (['agents', 'sandbox', 'session'].includes(state.page)) route(); } }));
+const createAgent = () => agentWizard({ onDone: () => { if (['agents', 'sandbox', 'session', 'tasks', 'projects'].includes(state.page)) route(); } });
 document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => b.closest('dialog').close()));
 
 const lines = (s) => s.split('\n').map((x) => x.trim()).filter(Boolean);
@@ -1720,7 +1720,32 @@ $('#form-settings').addEventListener('submit', async (e) => {
   } catch (ex) { err.textContent = ex.message; err.hidden = false; }
 });
 
-$('#btn-settings').addEventListener('click', () => openSettings());
+// ⚙: what is set up once and rarely visited — agents, templates, machines, network,
+// secrets, folders — and the settings window.
+const ADMIN_PAGES = { agents: 'agents', profile: 'agents', work: 'agents', sandbox: 'sandbox', session: 'sandbox', machines: 'machines', egress: 'egress', log: 'egress', secrets: 'secrets', dirs: 'dirs' };
+$('#btn-settings').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const old = document.querySelector('.admin-menu');
+  if (old) { old.remove(); return; }
+  const here = ADMIN_PAGES[state.page];
+  const go = (href) => { menu.remove(); location.hash = href; };
+  const item = (id, href, icon, label, hint) => h('button', { type: 'button', role: 'menuitem', class: here === id ? 'on' : '', onclick: () => go(href) },
+    ic(icon), h('span', {}, h('b', {}, label), h('span', { class: 'muted small' }, hint)));
+  const menu = h('div', { class: 'theme-menu admin-menu', role: 'menu' },
+    item('agents', '#/agents', 'bot', 'Агенты', 'программа, изоляция, ключи, память'),
+    item('sandbox', '#/sandbox', 'box', 'Шаблоны', 'образы программ и снимки машин'),
+    item('machines', '#/', 'server', 'Машины', 'все microVM, консоль, файлы'),
+    item('egress', '#/egress', 'globe', 'Сеть', 'белые списки и журнал соединений'),
+    item('secrets', '#/secrets', 'key', 'Секреты', 'API-ключи и токены'),
+    item('dirs', '#/dirs', 'folder', 'Папки', 'какие папки можно давать машинам'),
+    h('hr'),
+    h('button', { type: 'button', role: 'menuitem', onclick: () => { menu.remove(); createAgent(); } }, ic('plus'), h('span', {}, h('b', {}, 'Создать агента'))),
+    h('button', { type: 'button', role: 'menuitem', onclick: () => { menu.remove(); openSettings(); } }, ic('sliders'), h('span', {}, h('b', {}, 'Настройки…'), h('span', { class: 'muted small' }, 'smolvm, прокси, сертификаты, репозитории, SIEM'))));
+  const r = $('#btn-settings').getBoundingClientRect();
+  menu.style.top = `${r.bottom + 6}px`; menu.style.left = `${Math.max(8, Math.min(r.right - 280, innerWidth - 288))}px`;
+  document.body.append(menu);
+  setTimeout(() => document.addEventListener('click', function off(ev) { if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('click', off); } }), 0);
+});
 $('#proxy-chip').addEventListener('click', () => openSettings('proxy'));
 
 // ---------- vault ----------
@@ -2166,7 +2191,7 @@ pages.secrets = {
 };
 let pageCleanup = null;
 
-// «Решения» badge: requests waiting for a person and profile changes waiting for review.
+// «Входящие» badge: requests waiting for a person, profile changes and task branches waiting for review.
 let pendingReviews = 0;
 function setDecisionsBadge(approvals) {
   window.liveApprovals = approvals;
@@ -2175,7 +2200,11 @@ function setDecisionsBadge(approvals) {
   b.hidden = !n; b.textContent = n;
 }
 async function refreshPendingReviews() {
-  try { pendingReviews = ((await api('GET', '/ui/sandbox')).pending || []).length; } catch {}
+  try {
+    const [s, t] = await Promise.all([api('GET', '/ui/sandbox'), api('GET', '/ui/tasks').catch(() => ({ tasks: [] }))]);
+    pendingReviews = (s.pending || []).length + (t.tasks || []).filter((x) => x.closedAt && x.git.some((g) => g.state === 'ready')).length;
+    setDecisionsBadge(window.liveApprovals || 0);
+  } catch {}
 }
 refreshPendingReviews();
 setInterval(() => { if (!document.hidden) refreshPendingReviews(); }, 15000);
@@ -2195,8 +2224,9 @@ function route() {
   for (const k of Object.keys(pages)) $(`#page-${k}`).hidden = k !== id;
   // The session, profile and review screens belong to «Агенты»; «Песочница» has its own link.
   document.body.dataset.page = id;
-  const navId = ['agents', 'profile', 'work'].includes(id) ? 'agents' : ['decisions', 'session', 'review'].includes(id) ? 'sandbox' : id === 'log' ? 'egress' : id;
+  const navId = id === 'review' ? 'decisions' : id;
   document.querySelectorAll('#pagenav a').forEach((a) => a.classList.toggle('active', a.dataset.page === navId));
+  $('#btn-settings').classList.toggle('active', !!ADMIN_PAGES[id]);
   if (id !== 'machines') pageCleanup = pages[id].render($(`#page-${id}`), params) || null;
 }
 window.addEventListener('hashchange', route);
