@@ -61,11 +61,11 @@
 
   function newFile() {
     const hint = { instructions: '.claude/CLAUDE.md', mcp: '.smolvm-profile/claude-mcp.json', skills: '.claude/skills/имя/SKILL.md', agents: '.claude/agents/имя.md', memory: '.claude/projects/имя/memory/заметка.md', hooks: '.claude/hooks/имя.sh', other: '' }[section];
-    const inp = h('input', { class: 'input mono', id: 'pf-new-path', value: hint, placeholder: 'путь от домашней папки агента' });
+    const inp = h('input', { class: 'input mono', id: 'pf-new-path', value: hint, placeholder: 'путь от домашней директории агента' });
     const dlg = h('dialog', { class: 'dialog small' },
       h('header', {}, h('h3', {}, 'Новый файл профиля'), h('button', { type: 'button', class: 'btn ghost icon', 'aria-label': 'Закрыть', onclick: () => dlg.close() }, ic('x'))),
       h('div', { class: 'dialog-body' }, h('label', { for: 'pf-new-path' }, 'Путь (от ~ агента)', inp),
-        h('p', { class: 'muted small' }, 'Попадёт в домашнюю папку агента при следующей задаче. Файл вне стандартных путей профиля обратно не забирается — при закрытии он будет показан как удалённый.')),
+        h('p', { class: 'muted small' }, 'Попадёт в домашнюю директорию агента при следующей задаче. Файл вне стандартных путей профиля обратно не забирается — при закрытии он будет показан как удалённый.')),
       h('footer', {}, h('button', { class: 'btn', onclick: () => dlg.close() }, 'Отмена'), h('button', { class: 'btn primary', onclick: async () => {
         const p = inp.value.trim().replace(/^~\//, '');
         if (!p) return;

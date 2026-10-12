@@ -1,19 +1,14 @@
 'use strict';
 // «Создать агента» / настройки агента: one wide window of a fixed height, step by step:
-//   Программа → Изоляция → Папки → Секреты → Доверие → Агент
+//   Программа → Политика → Директории → Секреты → Агент
 // The program is an agent preset. smolvm-web keeps one image per preset (with or without
 // hard isolation) and prepares it once, in the background; every task opens a clean copy
 // of it. The agent's own network, directories and secrets are applied to each copy.
 // A template made from your own machine can be chosen instead of a preset.
 
 (() => {
-  const TITLES = { program: 'Программа', net: 'Изоляция', dirs: 'Папки', secrets: 'Секреты', trust: 'Доверие', task: 'Агент' };
-  const STEPS = ['program', 'net', 'dirs', 'secrets', 'trust', 'task'];
-  const NET_MODES = [
-    ['strict', 'Только разрешённое', 'Агент ходит только на адреса из белых списков. Всё остальное блокирует сама smolvm — обойти нельзя. Рекомендуется.'],
-    ['soft', 'Только разрешённое, без изоляции', 'Белые списки действуют только для программ, которые идут через прокси. Агент может выйти в интернет напрямую, в обход фильтра.'],
-    ['off', 'Без ограничений', 'Фильтра нет: агент ходит куда угодно, как этот компьютер.'],
-  ];
+  const TITLES = { program: 'Программа', policy: 'Политика', dirs: 'Директории', secrets: 'Секреты', task: 'Агент' };
+  const STEPS = ['program', 'policy', 'dirs', 'secrets', 'task'];
   const DIR_MODES = { review: 'Копия с проверкой', ro: 'Только чтение' };
   const base = (p) => String(p || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p;
   let presetsCache = null;
@@ -38,13 +33,14 @@
 
   window.agentWizard = async function agentWizard({ profile = null, step = null, onDone } = {}) {
     const ui = window.agentUi;
-    let d; let eg; let vault;
+    let d; let eg; let vault; let pl;
     try {
-      [d, presetsCache, eg, vault] = await Promise.all([
+      [d, presetsCache, eg, vault, pl] = await Promise.all([
         api('GET', '/ui/sandbox'),
         presetsCache || api('GET', '/ui/profiles').then((r) => r.profiles),
         api('GET', '/ui/egress').catch(() => ({ lists: [], defaults: {} })),
         api('GET', '/ui/vault').catch(() => ({ secrets: [] })),
+        api('GET', '/ui/policies').catch(() => ({ policies: [], summaries: {} })),
       ]);
     } catch (e) { toast(e.message, 'err'); return; }
     const presets = presetsCache;
@@ -72,11 +68,17 @@
       name: prof?.name || '', trust: prof?.trust || 'normal',
       idle: prof?.idleMinutes ?? 0, ttl: prof?.ttlHours ?? 0,
       review: prof ? !prof.autoSave : true, from: '', inTab: false,
+      // The policy: the agent's, else its former trust level (the built-in policies have its ids).
+      policy: prof?.policy || prof?.trust || 'normal',
     };
     try { st.inTab = localStorage.getItem('smolvm.agentTab') === '1'; } catch {}
     // A template of your own machine carries its isolation: the mode is fixed by it.
     const ownTpl = () => (st.template ? tplOf(st.template) : null);
-    const isolated = () => st.net === 'strict';
+    const polOf = (id) => (pl.policies || []).find((x) => x.id === id) || null;
+    // The network of the chosen policy (an agent before policies: its own).
+    const netMode = () => polOf(st.policy)?.net?.mode || st.net;
+    const isolated = () => netMode() === 'strict';
+    const trustOf = (p) => (!p ? st.trust : p.net.mode === 'off' || p.net.unknown === 'allow' ? 'trusted' : p.net.unknown === 'ask' ? 'normal' : 'careful');
     // The image the agent will run from: { ready, template, job } or null.
     const image = () => {
       if (ownTpl()) return { ready: tplReady(ownTpl()), template: st.template };
@@ -137,17 +139,16 @@
 
     function subOf(id) {
       if (id === 'program') return ownTpl() ? ownTpl().title : presetOf(st.preset)?.title;
-      if (id === 'net') return NET_MODES.find(([v]) => v === st.net)?.[1];
+      if (id === 'policy') return polOf(st.policy)?.name || '—';
       if (id === 'dirs') return st.dirs.length ? st.dirs.map((f) => base(f.hostPath)).join(', ') : 'нет';
       if (id === 'secrets') return st.secrets.length ? st.secrets.join(', ') : 'нет';
-      if (id === 'trust') return ui.TRUST[st.trust]?.title;
       return st.name;
     }
 
     function draw() {
       while (!canGo(st.step)) st.step = STEPS[Math.max(0, STEPS.indexOf(st.step) - 1)];
       drawSteps();
-      const v = { program: programStep, net: netStep, dirs: dirsStep, secrets: secretsStep, trust: trustStep, task: taskStep }[st.step]();
+      const v = { program: programStep, policy: policyStep, dirs: dirsStep, secrets: secretsStep, task: taskStep }[st.step]();
       body.replaceChildren(...v.body.flat().filter(Boolean));
       foot.replaceChildren(...v.foot.flat().filter(Boolean));
       follow();
@@ -164,7 +165,7 @@
 
     const go = (id) => {
       // Leaving «Программа»/«Изоляция»: the image starts getting ready while the rest is filled in.
-      if (['program', 'net'].includes(st.step) && id !== st.step && STEPS.indexOf(id) > STEPS.indexOf('net')) ensureImage();
+      if (['program', 'policy'].includes(st.step) && id !== st.step && STEPS.indexOf(id) > STEPS.indexOf('policy')) ensureImage();
       st.step = id; draw();
     };
     const nextOf = () => STEPS[STEPS.indexOf(st.step) + 1];
@@ -189,6 +190,7 @@
         onclick: () => {
           st.template = t.id; st.preset = null;
           st.net = t.egress?.enabled ? (t.egress?.strict ? 'strict' : 'soft') : 'off';
+          if (polOf(st.policy) && (polOf(st.policy).net.mode === 'strict') !== (st.net === 'strict')) st.policy = st.net === 'strict' ? 'normal' : 'trusted';
           draw();
         },
       }));
@@ -207,34 +209,39 @@
       };
     }
 
-    // ---------- 2. Изоляция ----------
-    function netStep() {
-      const fixed = !!ownTpl(); // the hard isolation of your template is in its checkpoint
-      const cards = h('div', { class: 'aw-cards', role: 'radiogroup' }, ...NET_MODES.map(([v, t, desc]) => {
-        const off = fixed && (v === 'strict') !== (st.net === 'strict');
-        return h('button', {
-          type: 'button', role: 'radio', 'aria-checked': String(st.net === v), class: `aw-card${st.net === v ? ' on' : ''}`, disabled: off,
-          title: off ? 'Изоляция зашита в шаблон вашей машины — поменять её здесь нельзя' : '', onclick: () => { st.net = v; draw(); },
-        }, h('b', {}, t), h('span', { class: 'muted small' }, desc));
-      }));
-      const lists = h('div', { class: 'aw-lists' });
-      if (st.net !== 'off' && window.egressListsPicker) {
-        window.egressListsPicker(lists, {
-          selected: st.lists,
-          onToggle: (id, on) => { st.lists = on ? [...new Set([...st.lists, id])] : st.lists.filter((x) => x !== id); },
-        });
-      }
+    // ---------- 2. Политика ----------
+    function policyStep() {
+      const fixed = ownTpl(); // the hard isolation of your template is in its checkpoint
+      const tplStrict = !!(fixed?.egress?.enabled && fixed?.egress?.strict);
+      const tiles = (pl.policies || []).map((p) => {
+        const off = !!fixed && (p.net.mode === 'strict') !== tplStrict;
+        return tile({ on: st.policy === p.id, disabled: off, title: off ? 'Изоляция зашита в шаблон вашей машины — эта политика к нему не подходит' : p.about || '',
+          icon: policyIcon(p), name: p.name, sub: pl.summaries?.[p.id] || '', onclick: () => { st.policy = p.id; draw(); } });
+      });
+      const add = plusTile('Новая политика', '⚙ → «Политики»', () => { dlg.close(); location.hash = '#/policies?new=1'; });
+      const p = polOf(st.policy);
+      const kv = (k, v) => h('div', {}, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v));
+      const listNames = (ids) => (ids === 'default' ? 'для новых машин' : (ids || []).map((id) => (eg.lists || []).find((l) => l.id === id)?.name || id).join(', ') || 'нет');
       return {
         body: [
-          h('p', { class: 'muted' }, 'Куда агент сможет ходить в интернет в каждой своей задаче.'), cards,
+          h('p', { class: 'muted' }, 'С какими ограничениями агент работает в каждой задаче: сеть, директории, права в машине, процессы, сроки. В самой задаче политику можно выбрать другую.'),
+          h('div', { class: 'aw-tiles', role: 'radiogroup' }, ...tiles, add),
+          p ? card(`Что разрешает «${p.name}»`, h('a', { class: 'small', href: `#/policies?id=${enc(p.id)}`, onclick: () => dlg.close() }, 'открыть политику →'),
+            h('div', { class: 'kv aw-kv' },
+              kv('Сеть', { strict: 'только разрешённое — обойти нельзя', soft: 'только разрешённое, без изоляции', off: 'без ограничений' }[p.net.mode]),
+              p.net.mode === 'off' ? null : kv('Незнакомые адреса', { deny: 'запрещать', ask: 'спрашивать вас', allow: 'пропускать' }[p.net.unknown]),
+              p.net.mode === 'off' ? null : kv('Белые списки', listNames(p.net.lists)),
+              kv('Права в машине', p.account.sudo ? 'sudo (root)' : 'без root'),
+              kv('Запрещённые программы', p.processes.deny.length ? p.processes.deny.join(', ') : 'нет'),
+              kv('Журнал процессов', p.processes.journal ? 'ведётся' : 'нет'),
+              kv('Срок задачи', p.time.ttlHours ? `${p.time.ttlHours} ч` : 'без срока'))) : null,
           st.preset && !fixed ? h('div', { class: 'muted small' }, 'С жёсткой изоляцией и без неё у программы разные образы — нужный подготовится сам.') : null,
-          st.net === 'off' ? null : card('Белые списки', null, h('p', { class: 'muted small' }, 'Что ещё агенту можно, кроме серверов самой программы (API модели, вход по подписке) — они разрешаются автоматически.'), lists),
         ],
         foot: [back(), h('span', { class: 'spacer' }), ...saveBtns(), next()],
       };
     }
 
-    // ---------- 3. Папки ----------
+    // ---------- 3. Директории ----------
     function dirsStep() {
       const home = state.info?.home || '\u0000';
       const add = () => openFolderDialog({ fixedMachine: '__new', sandbox: true, mode: 'review',
@@ -242,22 +249,22 @@
       const rows = st.dirs.map((f) => h('div', { class: 'aw-row' },
         h('span', { class: 'mark m-icon' }, ic('folder')),
         h('div', { class: 'aw-row-text' }, h('b', { class: 'mono ellipsis', title: f.hostPath }, f.hostPath.replace(home, '~')),
-          h('span', { class: 'muted small' }, f.mode === 'ro' ? 'агент видит копию; на компьютер ничего не записывается' : 'git-репозиторий — результат веткой; папка без git — копия, изменения после проверки')),
+          h('span', { class: 'muted small' }, f.mode === 'ro' ? 'агент видит копию; на компьютер ничего не записывается' : 'git-репозиторий — результат веткой; директория без git — копия, изменения после проверки')),
         h('span', { class: `tag ${f.mode === 'ro' ? 'ok' : 'accent'}` }, DIR_MODES[f.mode] || f.mode),
         h('button', { type: 'button', class: 'btn ghost small-btn', onclick: () => openFolderDialog({ fixedMachine: '__new', sandbox: true, hostPath: f.hostPath, mode: f.mode,
           onDone: (b) => { Object.assign(f, { hostPath: b.hostPath, mode: b.mode === 'ro' ? 'ro' : 'review' }); draw(); } }) }, 'Изменить'),
         h('button', { type: 'button', class: 'btn ghost icon danger', title: 'Убрать', 'aria-label': `Убрать ${base(f.hostPath)}`, onclick: () => { st.dirs = st.dirs.filter((x) => x !== f); draw(); } }, ic('x'))));
       return {
         body: [
-          h('p', { class: 'muted' }, 'Какие папки компьютера агент получает в каждой задаче. Папку можно дать и в самой задаче, а для репозитория удобнее «Проекты».'),
-          card('Папки агента', h('button', { type: 'button', class: 'btn small-btn', onclick: add }, ic('plus'), 'Дать доступ к папке'),
+          h('p', { class: 'muted' }, 'Какие директории компьютера агент получает в каждой задаче. Директорию можно дать и в самой задаче, а для репозитория удобнее «Проекты».'),
+          card('Директории агента', h('button', { type: 'button', class: 'btn small-btn', onclick: add }, ic('plus'), 'Дать доступ к директории'),
             rows.length ? h('div', { class: 'aw-rows' }, ...rows) : h('p', { class: 'muted small' }, 'Пока ни одной: агент получит только чистую машину.')),
-          card('Как агент получает папку', null,
+          card('Как агент получает директорию', null,
             h('ul', { class: 'small aw-hints' },
-              h('li', {}, h('b', {}, 'Git-репозиторий'), ' — текущий код без истории; работа агента возвращается веткой, ваша папка не меняется, пока вы не нажмёте «Влить».'),
-              h('li', {}, h('b', {}, 'Копия с проверкой'), ' — для папки без git: агент правит копию, на диск попадёт только то, что вы примете.'),
+              h('li', {}, h('b', {}, 'Git-репозиторий'), ' — текущий код без истории; работа агента возвращается веткой, ваша директория не меняется, пока вы не нажмёте «Влить».'),
+              h('li', {}, h('b', {}, 'Копия с проверкой'), ' — для директории без git: агент правит копию, на диск попадёт только то, что вы примете.'),
               h('li', {}, h('b', {}, 'Только чтение'), ' — агент видит копию; на компьютер из неё ничего не записывается.'),
-              h('li', { class: 'muted' }, 'Прямой доступ «Чтение и запись» в задаче невозможен: smolvm не подключает папки к машине из образа.'))),
+              h('li', { class: 'muted' }, 'Прямой доступ «Чтение и запись» в задаче невозможен: smolvm не подключает директории к машине из образа.'))),
         ],
         foot: [back(), h('span', { class: 'spacer' }), ...saveBtns(), next()],
       };
@@ -273,7 +280,7 @@
       }));
       const add = plusTile('Новый секрет', 'ключ модели или токен', () => newSecret(), vault.ok === false);
       // smolvm's own substitution needs a copy without the filter (strict egress under serve).
-      const clash = st.net !== 'off' ? (vault.secrets || []).filter((x) => st.secrets.includes(x.name) && x.mode === 'substitute').map((x) => x.name) : [];
+      const clash = netMode() !== 'off' ? (vault.secrets || []).filter((x) => st.secrets.includes(x.name) && x.mode === 'substitute').map((x) => x.name) : [];
       return {
         body: [
           h('p', { class: 'muted' }, 'Ключи моделей и токены из «Секретов». Агент пользуется ими через шлюз и не видит значений. Отметьте нужные.'),
@@ -281,9 +288,9 @@
           vault.ok === false ? h('div', { class: 'error small' }, vault.error) : null,
           h('div', { class: 'aw-tiles' }, ...tiles, add),
           clash.length ? h('div', { class: 'ag-prep bad' }, h('b', {}, `${clash.join(', ')}: режим «Подстановка smolvm» не работает вместе с фильтром «Сеть»`),
-            h('span', {}, 'Переведите секрет в режим «Шлюз smolvm-web» на странице «Секреты» («Изменить»), снимите его здесь или выберите на шаге «Изоляция» «Без ограничений».')) : null,
+            h('span', {}, 'Переведите секрет в режим «Шлюз smolvm-web» на странице «Секреты» («Изменить»), снимите его здесь или выберите политику с сетью «Без ограничений».')) : null,
         ],
-        foot: [back(), h('span', { class: 'spacer' }), ...saveBtns(), h('button', { class: 'btn primary', disabled: clash.length > 0, onclick: () => go('trust') }, 'Дальше →')],
+        foot: [back(), h('span', { class: 'spacer' }), ...saveBtns(), h('button', { class: 'btn primary', disabled: clash.length > 0, onclick: () => go('task') }, 'Дальше →')],
       };
     }
 
@@ -334,36 +341,7 @@
       setTimeout(() => (sel.value ? value : sel).focus(), 0);
     }
 
-    // ---------- 5. Доверие и время жизни ----------
-    function trustStep() {
-      const num = (id, value, max, onIn) => {
-        const x = h('input', { class: 'input aw-num', id, type: 'number', min: 0, max, value: value || '' });
-        x.addEventListener('input', () => onIn(Math.max(0, Math.min(max, Math.floor(Number(x.value) || 0)))));
-        return x;
-      };
-      const idleOn = h('input', { type: 'checkbox', id: 'aw-idle-on', checked: st.idle > 0 });
-      const ttlOn = h('input', { type: 'checkbox', id: 'aw-ttl-on', checked: st.ttl > 0 });
-      const idleIn = num('aw-idle', st.idle || 30, 7 * 24 * 60, (v) => { idleOn.checked = v > 0; st.idle = v; });
-      const ttlIn = num('aw-ttl', st.ttl || 8, 30 * 24, (v) => { ttlOn.checked = v > 0; st.ttl = v; });
-      idleOn.addEventListener('change', () => { st.idle = idleOn.checked ? Number(idleIn.value) || 30 : 0; });
-      ttlOn.addEventListener('change', () => { st.ttl = ttlOn.checked ? Number(ttlIn.value) || 8 : 0; });
-      return {
-        body: [
-          h('p', { class: 'muted' }, 'Насколько вы доверяете агенту: что делать с адресами, которых нет в белых списках.'),
-          ui.trustPicker(st.trust, (id) => { st.trust = id; draw(); }),
-          h('div', { class: 'aw-life' },
-            h('b', {}, 'Когда удалять песочницу'),
-            h('span', { class: 'muted small' }, '«Закончить» в сессии удаляет её сразу. А если забыть — вот что сделает smolvm-web сам; то, что агент запомнил, всё равно уйдёт к вам на проверку.'),
-            h('div', { class: 'aw-life-row' }, idleOn, h('label', { for: 'aw-idle-on' }, 'После простоя агента'), idleIn, h('span', { class: 'muted' }, 'мин'),
-              h('span', { class: 'muted small' }, '— агент не ходит в сеть и не обращается к модели')),
-            h('div', { class: 'aw-life-row' }, ttlOn, h('label', { for: 'aw-ttl-on' }, 'В любом случае через'), ttlIn, h('span', { class: 'muted' }, 'ч')),
-            st.trust === 'careful' && !st.ttl ? h('span', { class: 'muted small' }, 'Уровень «Осторожно» сам ограничивает жизнь песочницы двумя часами.') : null),
-        ],
-        foot: [back(), h('span', { class: 'spacer' }), ...saveBtns(), next()],
-      };
-    }
-
-    // ---------- 6. Задача ----------
+    // ---------- 5. Агент ----------
     function taskStep() {
       const tpl = ownTpl() || tplOf(image()?.template);
       const ids = tpl ? agentsOf(tpl) : (presetOf(st.preset)?.agents || []).map((a) => a.id).filter((id) => id !== 'terminal');
@@ -418,8 +396,8 @@
       if (oldServer) { toast(RESTART, 'err', 15000); return; }
       if (!st.name.trim()) { toast('Дайте агенту имя', 'err'); go('task'); $('#aw-name')?.focus(); return; }
       if (!programOk()) { toast('Выберите программу', 'err'); go('program'); return; }
-      if (start && st.trust === 'trusted') {
-        const c = await confirmDialog('Пропускать неизвестные адреса?', 'Агент сможет ходить куда угодно в интернете и ничего не будет спрашивать. Всё, что он увидит в копиях папок, он сможет отправить наружу.', false, '', 'Да, доверяю');
+      if (start && trustOf(polOf(st.policy)) === 'trusted') {
+        const c = await confirmDialog('Пропускать неизвестные адреса?', 'Агент сможет ходить куда угодно в интернете и ничего не будет спрашивать. Всё, что он увидит в копиях директорий, он сможет отправить наружу.', false, '', 'Да, доверяю');
         if (!c.ok) return;
       }
       ensureImage();
@@ -427,8 +405,8 @@
       const tab = start && st.inTab ? agentTab() : null;
       const fields = {
         name: st.name.trim(), preset: st.preset, template: ownTpl() ? st.template : null, agent: st.agent,
-        net: st.net, lists: st.lists, secrets: st.secrets, folders: st.dirs, folder: null,
-        trust: st.trust, idleMinutes: st.idle, ttlHours: st.ttl,
+        net: netMode(), lists: st.lists, secrets: st.secrets, folders: st.dirs, folder: null,
+        trust: trustOf(polOf(st.policy)), policy: st.policy,
       };
       let id = prof?.id;
       try {
@@ -446,7 +424,7 @@
       foot.querySelectorAll('button').forEach((b) => { b.disabled = true; });
       foot.append(h('span', { class: 'muted small' }, h('i', { class: 'spin' }), ' Запускается…'));
       try {
-        const r = await api('POST', '/ui/tasks', { profile: id, agent: st.agent, trust: st.trust, template: ownTpl() ? st.template : null });
+        const r = await api('POST', '/ui/tasks', { profile: id, agent: st.agent, policy: st.policy, template: ownTpl() ? st.template : null });
         dlg.close();
         if (tab && r.url) { agentInTab(r.name, true); goAgent(tab, r.url); } else if (tab) tab.close();
         toast('Агент запущен', 'ok');

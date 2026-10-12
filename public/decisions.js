@@ -83,7 +83,7 @@
       h('div', { class: 'dc-grow' },
         h('div', { class: 'dc-meta' }, h('b', {}, AGENTS[t.agent] || t.agent || 'агент'), h('span', {}, 'закончил задачу')),
         h('div', { class: 'dc-title' }, t.title),
-        h('div', { class: 'muted small' }, `${plural(n, 'коммит', 'коммита', 'коммитов')} в ${g.map((x) => `${base(x.hostPath)} (${x.branch})`).join(', ')} · ваша папка не менялась`)),
+        h('div', { class: 'muted small' }, `${plural(n, 'коммит', 'коммита', 'коммитов')} в ${g.map((x) => `${base(x.hostPath)} (${x.branch})`).join(', ')} · ваша директория не менялась`)),
       h('a', { class: 'btn primary', href: `#/tasks?id=${enc(t.id)}` }, 'Посмотреть и решить'));
   }
 

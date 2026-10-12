@@ -7,6 +7,7 @@
   let root = null;
   let data = null;       // GET /ui/sandbox
   let tasks = [];        // GET /ui/tasks
+  let policies = [];     // GET /ui/policies
   let lists = {};        // egress list id -> name
   let timer = null;
   let lastSig = '';
@@ -24,8 +25,8 @@
   const short = (p) => String(p || '').replace(/^\/(Users|home)\/[^/]+/, '~').replace(/^[A-Z]:\\Users\\[^\\]+/i, '~');
 
   async function load() {
-    const [d, t] = await Promise.all([api('GET', '/ui/sandbox'), api('GET', '/ui/tasks').catch(() => ({ tasks }))]);
-    data = d; tasks = t.tasks || [];
+    const [d, t, pl] = await Promise.all([api('GET', '/ui/sandbox'), api('GET', '/ui/tasks').catch(() => ({ tasks })), api('GET', '/ui/policies').catch(() => ({ policies }))]);
+    data = d; tasks = t.tasks || []; policies = pl.policies || [];
     if (!Object.keys(lists).length) {
       try { lists = Object.fromEntries(((await api('GET', '/ui/egress')).lists || []).map((l) => [l.id, l.name])); } catch {}
     }
@@ -67,7 +68,6 @@
   let tab = 'overview';  // overview | tasks
   let vault = [];        // GET /ui/vault — secrets with their modes
   let vaultAt = 0;
-  const NET = { strict: 'Только разрешённое — обойти нельзя', soft: 'Только разрешённое, без изоляции — можно выйти напрямую в обход', off: 'Без ограничений — куда угодно' };
 
   async function loadSlow() {
     if (Date.now() - vaultAt > 15000) {
@@ -82,12 +82,70 @@
   // The state of an agent in a word or two, for the list and the head.
   function agentState(p) {
     const open = tasksOf(p).filter((t) => !t.closedAt);
+    if (open.some((t) => state.isolated?.[t.machine])) return ['bad', 'изолирован'];
     if (open.some((t) => t.status === 'waiting')) return ['warn', 'ждёт ответа'];
     if (open.some((t) => t.status === 'opening')) return ['busy', 'открывается'];
     if (open.length) return ['ok', open.length > 1 ? `работает · ${open.length}` : 'работает'];
     const img = imageOf(p);
     if (p.preset && !img?.template) return img?.job?.status === 'running' ? ['busy', 'готовится образ'] : ['neutral', 'образ не готов'];
+    if (riskOf(p).lethal) return ['bad', 'риск утечки'];
     return ['neutral', 'спит'];
+  }
+
+  // Does the agent get a model key in its tasks: a gateway secret to a model provider
+  // (or a local model). The terminal alone needs none.
+  const NEEDS_MODEL = new Set(['claude', 'opencode', 'opencode-tui', 'dsh', 'codex', 'pi', 'hermes']);
+  const MODEL_HOSTS = /anthropic\.com|deepseek\.com|openai\.com|openrouter\.ai|googleapis\.com|generativelanguage/;
+  function modelKeyMissing(p) {
+    if (!NEEDS_MODEL.has(p.agent)) return false;
+    const t = p.preset ? null : tplOf(p.template);
+    const names = Array.isArray(p.secrets) ? p.secrets : (t?.secrets || []);
+    return !names.some((n) => {
+      const x = vault.find((v) => v.name === n);
+      return x && x.mode === 'gateway' && (x.model || MODEL_HOSTS.test(String(x.upstream || '')));
+    });
+  }
+
+  // The leak risk of an agent («смертельная триада») from what it is given: private data
+  // (secrets, directories), untrusted content and a way out (the network of its policy).
+  function riskOf(p) {
+    const pol = policies.find((x) => x.id === (p.policy || p.trust)) || null;
+    const t = p.preset ? null : tplOf(p.template);
+    const secrets = Array.isArray(p.secrets) ? p.secrets : (t?.secrets || []);
+    const dirs = p.folders?.length ? p.folders : p.folder ? [{ hostPath: p.folder, mode: 'review' }] : [];
+    const privateData = [...secrets.map((n) => `секрет ${n}`),
+      ...dirs.map((f) => `директория ${String(f.hostPath).split(/[\\/]/).filter(Boolean).pop()}${f.mode === 'ro' ? ' (чтение)' : ''}`)];
+    const mode = pol?.net.mode || p.net || 'strict';
+    const unknown = pol?.net.unknown || { careful: 'deny', normal: 'ask', trusted: 'allow' }[p.trust] || 'deny';
+    let untrustedLevel; let untrustedWhy;
+    if (mode === 'off') { untrustedLevel = 'open'; untrustedWhy = 'сеть без ограничений — агент читает любой сайт'; }
+    else if (unknown === 'allow') { untrustedLevel = 'open'; untrustedWhy = 'незнакомые адреса пропускаются'; }
+    else { untrustedLevel = 'limited'; untrustedWhy = `только белые списки${unknown === 'ask' ? ', остальное — с вашего подтверждения' : ''}`; }
+    let exfilLevel = untrustedLevel;
+    let exfilWhy = untrustedLevel === 'open' ? 'может отправить данные на любой адрес' : 'только на адреса из белых списков';
+    const tplIsolated = t ? !!(t.egress?.enabled && t.egress?.strict) : true;
+    if (exfilLevel === 'limited' && (mode === 'soft' || !tplIsolated)) {
+      exfilLevel = 'open';
+      exfilWhy = mode === 'soft' ? 'фильтр без изоляции — программа без прокси выйдет напрямую' : 'шаблон машины без жёсткой изоляции — фильтр можно обойти';
+    }
+    const has = privateData.length > 0;
+    const lethal = has && untrustedLevel === 'open' && exfilLevel === 'open';
+    return { privateData, untrustedLevel, untrustedWhy, exfilLevel, exfilWhy, lethal, limited: has && !lethal, policy: pol };
+  }
+
+  function riskCard(p) {
+    const tri = riskOf(p);
+    if (!tri.lethal) return riskLine(tri);
+    const LV = { open: ['badc', '●'], limited: ['warnc', '◐'], none: ['okc', '○'] };
+    const row = (level, label, text) => h('div', {}, h('span', { class: LV[level][0] }, `${LV[level][1]} `), h('b', {}, label), h('span', { class: 'muted' }, ` — ${text}`));
+    return h('section', { class: 'card ag-risk' },
+      h('div', { class: 'card-head' }, h('h3', { class: 'h-ic badc' }, ic('shield'), 'Риск утечки: все три звена'), h('span', { class: 'spacer' }),
+        h('button', { class: 'btn danger needs-admin', onclick: () => agentWizard({ profile: p.id, step: 'policy', onDone: () => refresh() }) }, 'Сменить политику')),
+      h('div', { class: 'risk-rows small' },
+        row('open', 'Приватные данные', tri.privateData.slice(0, 4).join(', ') + (tri.privateData.length > 4 ? ` и ещё ${tri.privateData.length - 4}` : '')),
+        row(tri.untrustedLevel, 'Недоверенный контент', tri.untrustedWhy),
+        row(tri.exfilLevel, 'Выход наружу', tri.exfilWhy)),
+      h('p', { class: 'muted small' }, `У агента есть приватные данные, он читает недоверенный интернет и может отправить их наружу${tri.policy ? ` — так разрешает политика «${tri.policy.name}»` : ''}. Выберите политику с белыми списками и изоляцией (например, «Обычно») — или уберите секреты и директории.`));
   }
   const programOf = (p) => AGENTS[p.agent] || data.agentTitles?.[p.agent]?.title || p.agent || '—';
 
@@ -99,10 +157,11 @@
         mark(MARKS[p.agent] || 'vm', true),
         h('div', { class: 'name' }, p.name),
         h('span', { class: `ag-pill ${tone}` }, tone === 'busy' ? h('i', { class: 'spin' }) : null, text),
-        h('div', { class: 'meta' }, [programOf(p), TRUST[p.trust]?.title].filter(Boolean).join(' · ')));
+        h('div', { class: 'meta' }, [programOf(p), policies.find((x) => x.id === (p.policy || p.trust))?.name].filter(Boolean).join(' · ')));
     });
     return h('section', { class: 'panel list-panel' },
       h('div', { class: 'panel-head' }, h('h2', { class: 'h-ic' }, ic('bot'), 'Агенты'), guideButton(),
+        h('button', { class: 'btn ghost icon danger needs-operator', title: 'Остановить всех агентов: изолировать все работающие машины (kill switch)', 'aria-label': 'Остановить всех агентов', onclick: () => window.isolateAll() }, ic('shield')),
         h('button', { class: 'btn primary icon needs-admin', title: 'Создать агента', 'aria-label': 'Создать агента', onclick: () => create() }, ic('plus'))),
       h('div', { class: 'machines' }, ...(items.length ? items : [h('div', { class: 'list-empty' }, 'Агентов пока нет.', h('br'), h('br'),
         h('button', { class: 'btn primary', onclick: () => create() }, 'Создать первого'))])));
@@ -113,29 +172,34 @@
     const t = tplOf(p.template);
     const edit = (step) => h('button', { class: 'btn ghost small-btn needs-admin', onclick: () => agentWizard({ profile: p.id, step, onDone: () => refresh() }) }, 'Изменить');
     const card = (icon, title, step, ...body) => h('section', { class: 'card ag-ov' },
-      h('div', { class: 'card-head' }, h('h3', { class: 'h-ic' }, ic(icon), title), h('span', { class: 'spacer' }), edit(step)), ...body);
-    const net = p.net || (t?.egress?.enabled ? (t.egress.strict ? 'strict' : 'soft') : t ? 'off' : null);
-    const listIds = p.net ? (p.lists || []) : (t?.egress?.lists || []);
-    const unknown = { careful: 'запрещены, без вопросов', normal: 'агент спросит вас', trusted: 'пропускаются без вопросов' }[p.trust] || '—';
-    const life = [p.idleMinutes ? `после ${p.idleMinutes} мин простоя` : null, p.ttlHours ? `через ${p.ttlHours} ч` : p.trust === 'careful' ? 'через 2 ч' : null].filter(Boolean).join(', ') || 'только кнопкой «Закончить»';
-    const netCard = card('globe', 'Сеть', 'net',
-      h('div', { class: 'kv' },
-        h('div', {}, h('div', { class: 'k' }, 'Режим'), h('div', { class: 'v' }, NET[net] || '—')),
-        h('div', {}, h('div', { class: 'k' }, 'Неизвестные адреса'), h('div', { class: 'v' }, `${TRUST[p.trust]?.title || '—'}: ${unknown}`)),
-        h('div', {}, h('div', { class: 'k' }, 'Песочница удаляется'), h('div', { class: 'v' }, life))),
-      net === 'off' ? h('p', { class: 'muted small' }, 'Белые списки не нужны: фильтр выключен.')
-        : h('div', { class: 'ws-field' }, h('div', { class: 'label-like' }, 'Белые списки'),
-          listIds.length ? h('div', { class: 'chips' }, ...listIds.map((id) => h('a', { class: 'chip', href: '#/egress?tab=lists' }, lists[id] || id)))
-            : h('span', { class: 'muted small' }, 'Не подключено ни одного — только серверы самого агента.')));
+      h('div', { class: 'card-head' }, h('h3', { class: 'h-ic' }, typeof icon === 'string' ? ic(icon) : icon, title), h('span', { class: 'spacer' }), edit(step)), ...body);
+    // The policy: the agent's, else its former trust level (the built-in policies have its ids).
+    const pol = policies.find((x) => x.id === (p.policy || p.trust)) || null;
+    const kv = (k, v) => h('div', {}, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v));
+    const netCard = card(pol ? h('span', { class: `pc-${pol.color || 'gray'} pc-glyph` }, ic(pol.builtin ? 'shield' : 'sliders')) : 'shield', pol ? `Политика «${pol.name}»` : 'Политика', 'policy',
+      pol ? h('div', { class: 'kv' },
+        kv('Сеть', { strict: 'только разрешённое — обойти нельзя', soft: 'только разрешённое, без изоляции', off: 'без ограничений' }[pol.net.mode]),
+        pol.net.mode === 'off' ? null : kv('Незнакомые адреса', { deny: 'запрещать', ask: 'спрашивать вас', allow: 'пропускать' }[pol.net.unknown]),
+        pol.net.mode === 'off' ? null : kv('Белые списки', pol.net.lists === 'default' ? 'для новых машин' : (pol.net.lists || []).map((id) => lists[id] || id).join(', ') || 'нет'),
+        kv('Права в машине', pol.account.sudo ? 'sudo (root)' : 'без root'),
+        kv('Запрещённые программы', pol.processes.deny.length ? pol.processes.deny.join(', ') : 'нет'),
+        kv('Срок задачи', pol.time.ttlHours ? `${pol.time.ttlHours} ч` : 'без срока'))
+        : h('p', { class: 'muted small' }, 'Политика не выбрана — «Изменить».'),
+      pol ? h('a', { class: 'small', href: `#/policies?id=${enc(pol.id)}` }, 'открыть политику →') : null);
     const dirs = p.folders?.length ? p.folders : p.folder ? [{ hostPath: p.folder, mode: 'review' }] : [];
     const dirCard = card('folder', 'Директории', 'dirs',
       dirs.length ? h('div', { class: 'ag-rowsl' }, ...dirs.map((f) => h('div', { class: 'ag-dir' }, ic('folder'),
         h('span', { class: 'mono ellipsis', title: f.hostPath }, short(f.hostPath)),
         h('span', { class: `tag ${f.mode === 'ro' ? 'ok' : 'accent'}` }, f.mode === 'ro' ? 'только чтение' : 'копия с проверкой'))))
-        : h('p', { class: 'muted small' }, 'Агенту не дано ни одной папки компьютера.'),
-      h('p', { class: 'muted small' }, 'В каждой сессии — свежая копия папки; на диск изменения попадают только после вашей проверки.'));
+        : h('p', { class: 'muted small' }, 'Агенту не дано ни одной директории компьютера.'),
+      h('p', { class: 'muted small' }, 'В каждой задаче — свежая копия: git-репозиторий возвращается веткой, остальное — после вашей проверки.'));
     const names = Array.isArray(p.secrets) ? p.secrets : (t?.secrets || []);
+    const noKey = modelKeyMissing(p);
     const secCard = card('key', 'Секреты', 'secrets',
+      noKey ? h('div', { class: 'ag-keywarn small' },
+        h('b', {}, 'Агенту не выбран ключ модели. '),
+        'Добавьте ключ провайдера модели в «Секреты» (режим «Шлюз») и выберите его в настройках агента — он подхватит ключ в следующей задаче. Без ключа агент может войти напрямую через сервер вендора (подписка, OAuth), если сеть его политики это позволяет.',
+        h('div', { class: 'row' }, h('button', { class: 'btn small-btn needs-admin', onclick: () => agentWizard({ profile: p.id, step: 'secrets', onDone: () => refresh() }) }, ic('key'), 'Выбрать ключ'))) : null,
       names.length ? h('div', { class: 'ag-rowsl' }, ...names.map((n) => {
         const x = vault.find((v) => v.name === n);
         return h('div', { class: 'ag-dir' }, ic('key'), h('b', { class: 'mono' }, n),
@@ -143,6 +207,7 @@
             : h('span', { class: 'small badc' }, 'нет в хранилище'));
       })) : h('p', { class: 'muted small' }, 'Секретов нет.'),
       h('p', { class: 'muted small' }, 'Через шлюз агент пользуется ключом, но не видит его значения.'));
+    if (noKey) secCard.classList.add('ag-warn');
     const img = imageOf(p);
     const prog = h('section', { class: 'card ag-ov' },
       h('div', { class: 'card-head' }, h('h3', { class: 'h-ic' }, ic('box'), 'Программа'), h('span', { class: 'spacer' }), edit('program')),
@@ -150,7 +215,7 @@
         h('div', {}, h('div', { class: 'k' }, 'Агент'), h('div', { class: 'v' }, programOf(p))),
         h('div', {}, h('div', { class: 'k' }, 'Образ'), h('div', { class: 'v' }, p.preset ? (img?.template ? `готов · ${tplOf(img.template)?.title || ''}` : img?.job?.status === 'running' ? `готовится: ${img.job.step}` : 'не готов — подготовится при запуске') : t ? `шаблон «${t.title}»` : '—')),
         h('div', {}, h('div', { class: 'k' }, 'Память'), h('div', { class: 'v' }, h('a', { href: `#/profile?id=${enc(p.id)}` }, `${p.files || 0} файлов — что он знает`)))));
-    return [h('div', { class: 'ag-ov-grid' }, netCard, dirCard, secCard, prog)];
+    return [riskCard(p), h('div', { class: 'ag-ov-grid' }, netCard, dirCard, secCard, prog)];
   }
 
   // ---------- «Задачи»: what this agent was given, each opens on «Задачи» ----------
@@ -167,6 +232,34 @@
       h('span', { class: `small ${['waiting', 'review'].includes(t.status) ? 'warnc' : 'muted'}` }, `${STATUS[t.status] || t.status}${t.result.commits ? ` · ${t.result.commits} комм.` : ''}`)))))];
   }
 
+  // Kill switch for an agent: every machine of its open tasks — connections cut, gateway
+  // tokens replaced, pending approvals refused, the machine paused.
+  const machinesOf = (p) => tasksOf(p).filter((t) => !t.closedAt && t.machine).map((t) => t.machine);
+  function isolationButton(p) {
+    const all = machinesOf(p);
+    const iso = all.filter((n) => state.isolated?.[n]);
+    const live = all.filter((n) => !state.isolated?.[n] && ['running', 'paused'].includes(state.machines.find((m) => m.name === n)?.state));
+    const call = async (names, on) => {
+      let done = 0;
+      for (const n of names) { try { await api('POST', `/ui/machines/${enc(n)}/isolate`, { on }); done++; } catch (e) { toast(`${n}: ${e.message}`, 'err'); } }
+      await pollLive(); await refreshMachines(); await refresh();
+      return done;
+    };
+    if (iso.length) {
+      return h('button', { class: 'btn needs-operator', title: 'Вернуть машинам агента сеть и токены шлюза; они останутся на паузе', onclick: async () => {
+        const n = await call(iso, false);
+        toast(`Изоляция снята: ${n}. Возобновите машины задач и перезапустите программы — у них новые токены`, 'ok', 10000);
+      } }, ic('shield'), 'Снять изоляцию');
+    }
+    if (!live.length) return null;
+    return h('button', { class: 'btn danger-outline needs-operator', title: 'Kill switch: оборвать все соединения машин агента, заменить токены шлюза, отклонить ожидающие подтверждения и поставить машины на паузу', onclick: async () => {
+      const c = await confirmDialog(`Изолировать агента «${p.name}»?`, `Машины его задач (${live.join(', ')}): все соединения оборвутся, токены шлюза заменятся, ожидающие подтверждения будут отклонены, машины встанут на паузу. Снять изоляцию можно здесь же.`, false, '', 'Изолировать');
+      if (!c.ok) return;
+      const n = await call(live, true);
+      toast(`Агент «${p.name}» изолирован: машин — ${n}`, 'ok', 10000);
+    } }, ic('shield'), 'Изолировать');
+  }
+
   function detailPanel() {
     const p = data.profiles.find((x) => x.id === selected);
     if (!p) {
@@ -180,9 +273,10 @@
     return h('section', { class: 'panel detail-panel' },
       h('div', { class: 'detail-head' },
         mark(MARKS[p.agent] || 'vm'),
-        h('div', { class: 'ag-title' }, h('h2', {}, p.name), h('span', { class: 'muted small' }, [programOf(p), TRUST[p.trust] ? `доверие: ${TRUST[p.trust].title.toLowerCase()}` : null].filter(Boolean).join(' · '))),
+        h('div', { class: 'ag-title' }, h('h2', {}, p.name), h('span', { class: 'muted small' }, [programOf(p), policies.find((x) => x.id === (p.policy || p.trust)) ? `политика «${policies.find((x) => x.id === (p.policy || p.trust)).name}»` : null].filter(Boolean).join(' · '))),
         h('span', { class: `ag-pill ${tone}` }, tone === 'busy' ? h('i', { class: 'spin' }) : null, text),
         h('div', { class: 'actions' },
+          isolationButton(p),
           h('button', { class: 'btn primary needs-operator', onclick: () => launch({ profile: p.id }) }, ic('play'), 'Дать задачу'),
           h('button', { class: 'btn ghost icon needs-admin', title: 'Настройки агента', 'aria-label': 'Настройки агента', onclick: () => agentWizard({ profile: p.id, onDone: () => refresh() }) }, ic('gear')),
           h('button', { class: 'btn ghost icon danger needs-admin', title: sessionsOf(p).length ? 'Сначала закончите его сессии' : 'Удалить агента', 'aria-label': 'Удалить агента', disabled: sessionsOf(p).length > 0, onclick: () => removeAgent(p) }, ic('trash')))),
@@ -211,7 +305,7 @@
   async function poll() {
     if (!root || document.hidden || document.querySelector('dialog[open]')) return;
     try { await load(); await loadSlow(); } catch { return; }
-    const sig = JSON.stringify([selected, tab, tasks.map((t) => [t.id, t.status, t.profile]), data.profiles.map((p) => [p.id, p.updatedAt, p.files]),
+    const sig = JSON.stringify([selected, tab, Object.keys(state.isolated || {}), state.machines.map((m) => [m.name, m.state]), tasks.map((t) => [t.id, t.status, t.profile]), data.profiles.map((p) => [p.id, p.updatedAt, p.files]),
       data.images, vault.map((v) => [v.name, v.mode]), Math.floor(Date.now() / 60000)]);
     if (sig === lastSig) return;
     lastSig = sig;
@@ -242,11 +336,11 @@
   function guideButton() {
     const step = (n, title, text) => h('li', {}, h('b', {}, title), ' — ', text);
     return helpButton('Как запустить агента',
-      h('p', {}, 'Всё делается в одном окне «Создать агента», шаг за шагом. Готовое (секрет, белый список, папку) можно выбрать, недостающее — создать там же: плитка с «+».'),
+      h('p', {}, 'Всё делается в одном окне «Создать агента», шаг за шагом. Готовое (секрет, белый список, директорию) можно выбрать, недостающее — создать там же: плитка с «+».'),
       h('ol', {},
         step(1, 'Программа', 'Claude Code, Codex, DSH, OpenCode… Её образ smolvm-web готовит один раз (несколько минут) и дальше открывает каждую задачу в чистой копии за секунды. Можно выбрать и шаблон своей машины.'),
         step(2, 'Изоляция', 'куда агент ходит в интернет: только разрешённое (рекомендуется) или без ограничений, и какие белые списки подключить — их можно поправить или создать тут же.'),
-        step(3, 'Директории', 'какие папки компьютера получает агент. В каждой задаче — свежая копия: с проверкой (на диск — после вашего «Применить») или только для чтения.'),
+        step(3, 'Директории', 'какие директории компьютера получает агент. В каждой задаче — свежая копия: с проверкой (на диск — после вашего «Применить») или только для чтения.'),
         step(4, 'Секреты', 'ключи моделей и токены. Агент пользуется ими через шлюз и не видит значений.'),
         step(5, 'Доверие', 'что делать с адресами вне белых списков: запрещать, спрашивать или пропускать; когда удалять песочницу — после простоя или через заданное время.'),
         step(6, 'Агент', 'имя агента и его память. «Создать и запустить» открывает первую задачу — сессию с агентом.')),

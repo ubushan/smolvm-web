@@ -58,10 +58,11 @@
       <div id="health" class="health"><span class="dot"></span><span></span></div>
     </div>
     <nav class="pagenav" id="pagenav">
+      <a href="#/agents" data-page="agents" title="Агенты: программа, политика, ключи, память — и их задачи"><svg class="ic"><use href="#i-bot"/></svg>Агенты</a>
       <a href="#/tasks" data-page="tasks" title="Что агенты делают и что из этого вышло"><svg class="ic"><use href="#i-list"/></svg>Задачи</a>
       <a href="#/decisions" data-page="decisions" title="Что ждёт вашего решения: запросы агентов, ветки на проверку, память агентов"><svg class="ic"><use href="#i-bell"/></svg>Входящие<span class="nav-badge" id="nav-decisions" hidden></span></a>
-      <a href="#/projects" data-page="projects" title="Репозитории: агент, доверие и подготовленный шаблон для задач"><svg class="ic"><use href="#i-branch"/></svg>Проекты</a>
-      <a href="#/audit" data-page="audit" title="Журнал действий: команды, изменения файлов, экспорт в SIEM, оповещения"><svg class="ic"><use href="#i-shield"/></svg>Журнал</a>
+      <a href="#/policies" data-page="policies" title="Политики: сеть, директории, права в машине, процессы, сроки"><svg class="ic"><use href="#i-shield"/></svg>Политики</a>
+      <a href="#/audit" data-page="audit" title="Журнал действий: команды, изменения файлов, процессы, соединения, экспорт в SIEM"><svg class="ic"><use href="#i-list"/></svg>Журнал</a>
     </nav>
     <button id="proxy-chip" class="chip" hidden title="Настройки сети и прокси"></button>
     <div class="spacer"></div>
@@ -69,7 +70,7 @@
       <button id="btn-notif" class="btn ghost notif-btn" type="button" aria-haspopup="dialog" aria-expanded="false" title="Последние оповещения: решения, журнал сети, аудит"><svg class="ic"><use href="#i-bell"/></svg><span class="notif-label">Уведомления</span><span class="nav-badge" id="notif-count" hidden></span></button>
       <div class="notif-panel" id="notif-panel" role="dialog" aria-label="Уведомления" hidden></div>
     </div>
-    <button id="btn-settings" class="btn ghost icon" title="Управление: агенты, шаблоны, машины, сеть, секреты, папки, настройки" aria-label="Управление" aria-haspopup="menu"><svg class="ic"><use href="#i-gear"/></svg></button>
+    <button id="btn-settings" class="btn ghost icon" title="Управление: агенты, шаблоны, машины, сеть, секреты, директории, настройки" aria-label="Управление" aria-haspopup="menu"><svg class="ic"><use href="#i-gear"/></svg></button>
     <button id="btn-theme" class="btn ghost icon" title="Тема: светлая, тёмная или как в системе" aria-label="Тема" aria-haspopup="menu"><svg class="ic"><use href="#i-contrast"/></svg></button>
   </header>
 
@@ -85,7 +86,6 @@
         </div>
         <button id="btn-refresh" class="btn ghost icon" title="Обновить"><svg class="ic"><use href="#i-refresh"/></svg></button>
         <button id="btn-create" class="btn primary icon" title="Создать машину" aria-label="Создать машину"><svg class="ic"><use href="#i-plus"/></svg></button>
-        <button id="btn-isolate-all" class="btn ghost icon danger" title="Остановить всех агентов: изолировать все работающие машины (kill switch)"><svg class="ic"><use href="#i-shield"/></svg></button>
       </div>
       <div id="machines" class="machines"></div>
       <footer class="list-foot">
@@ -105,6 +105,7 @@
 
   <main class="page" id="page-tasks" hidden></main>
   <main class="page" id="page-projects" hidden></main>
+  <main class="page" id="page-policies" hidden></main>
   <main class="page" id="page-agents" hidden></main>
   <main class="page" id="page-decisions" hidden></main>
   <main class="page" id="page-work" hidden></main>
@@ -219,7 +220,7 @@ cmd = ["sh", "-c", "while true; do sleep 3600; done"]
 
 [network]
 allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
-          <label>Папка проекта <span class="muted small">(для относительных путей в volumes, например ./src — необязательно)</span>
+          <label>Директория проекта <span class="muted small">(для относительных путей в volumes, например ./src — необязательно)</span>
             <input name="smolfileBase" class="input mono" placeholder="/Users/me/project"></label>
           <small class="muted">Поддерживаются ключи smolvm: image, cmd, env, cpus, memory, net, ports, volumes, init, [network] allow_hosts/allow_cidrs, [restart] и др. Неизвестные ключи — ошибка, как в smolvm. Команды init выполнятся один раз при первом запуске (от root, после настройки прокси).</small>
         </div>
@@ -247,9 +248,9 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
             <label class="check"><input type="checkbox" name="egressStrict"> Жёсткая изоляция <span class="muted small">— всё, что идёт мимо фильтра, блокирует сама smolvm: обойти нельзя</span></label>
           </div>
           <div id="create-dirs-wrap">
-            <div class="label-like">Папки компьютера <span class="muted small">(что агент увидит в машине)</span></div>
+            <div class="label-like">Директории компьютера <span class="muted small">(что агент увидит в машине)</span></div>
             <div id="create-folders" class="folder-list"></div>
-            <div><button type="button" class="btn" id="btn-create-folder"><svg class="ic"><use href="#i-plus"/></svg>Дать доступ к папке</button></div>
+            <div><button type="button" class="btn" id="btn-create-folder"><svg class="ic"><use href="#i-plus"/></svg>Дать доступ к директории</button></div>
           </div>
         </div>
 
@@ -263,7 +264,7 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
           <label>Порты (host:guest, через запятую)<input name="ports" class="input mono" placeholder="8080:80, 2222:22"></label>
           <label>Переменные окружения (KEY=VALUE, по строке)<textarea name="env" class="input mono" rows="3" placeholder="FOO=bar"></textarea></label>
           <label>Тома smolvm (для опытных: host:guest[:ro], по строке)<textarea name="mounts" class="input mono" rows="2" id="mounts-input" placeholder="/Users/me/data:/data:ro"></textarea>
-            <small class="muted">Подключаются как есть, без проверки доступа агента и без ревью. Чтобы дать агенту папку, используйте «Дать доступ к папке» в разделе «Изоляция агента».</small></label>
+            <small class="muted">Подключаются как есть, без проверки доступа агента и без ревью. Чтобы дать агенту директорию, используйте «Дать доступ к директории» в разделе «Изоляция агента».</small></label>
           <label>Разрешённые хосты egress (через запятую)<input name="allowedHosts" class="input mono" placeholder="registry.npmjs.org, pypi.org"></label>
           <div class="grid2">
             <label>Рабочая директория<input name="workdir" class="input mono" placeholder="/work"></label>
@@ -399,7 +400,7 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
               <label>GitHub releases: вместо https://github.com<input name="repoGithub" class="input mono" placeholder="https://artifactory.corp/artifactory/github-remote" spellcheck="false"></label>
             </div>
             <label class="check"><input type="checkbox" name="repoGuestAuth"> Передавать пользователя и токен в машину для pip/npm/apt/Go <span class="muted small">(агент сможет их прочитать; не нужно, если репозитории читаются анонимно)</span></label>
-            <p class="muted small">Логин к реестру образов передаётся smolvm на хосте (как <code>docker login</code>) и в машину не попадает. Адреса репозиториев автоматически разрешены фильтру «Сеть». Для <code>https://</code>-репозиториев машина получает сертификаты, которым доверяет этот компьютер (внутренний CA — тоже). smolvm serve, запущенный smolvm-web (<code>--autostart</code>), подхватывает логин сразу; если вы запускаете его сами, задайте ему <code>DOCKER_CONFIG=&lt;папка настроек smolvm-web&gt;/docker</code>.</p>
+            <p class="muted small">Логин к реестру образов передаётся smolvm на хосте (как <code>docker login</code>) и в машину не попадает. Адреса репозиториев автоматически разрешены фильтру «Сеть». Для <code>https://</code>-репозиториев машина получает сертификаты, которым доверяет этот компьютер (внутренний CA — тоже). smolvm serve, запущенный smolvm-web (<code>--autostart</code>), подхватывает логин сразу; если вы запускаете его сами, задайте ему <code>DOCKER_CONFIG=&lt;директория настроек smolvm-web&gt;/docker</code>.</p>
 
           </section>
           </form>
@@ -453,6 +454,7 @@ allow_hosts = ["pypi.org", "files.pythonhosted.org"]'></textarea>
   <script src="/tasks.js"></script>
   <script src="/projects.js"></script>
   <script src="/access.js"></script>
+  <script src="/policies.js"></script>
   <script src="/profile.js"></script>
   <script src="/agents.js"></script>
   <script src="/agentwizard.js"></script>

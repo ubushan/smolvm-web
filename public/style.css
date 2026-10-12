@@ -1554,3 +1554,36 @@ body[data-merge="no"] .needs-merge { display: none !important; }
 .chips a.lst-host:hover { color: var(--accent); }
 #access-settings .btn.ghost.danger { color: var(--bad); background: transparent; border-color: transparent; }
 #access-settings .btn.ghost.danger:hover { background: var(--bad-soft); }
+
+/* ⚙ → «Политики» */
+.pl-form { display: flex; flex-direction: column; gap: 16px; }
+.pl-sec .pl-sec-head { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.pl-sec .pl-sec-head + .pol-row { border-top: 0; }
+.pol-row.pl-col { flex-direction: column; align-items: stretch; gap: 10px; }
+.pol-row.pl-col .ws-field { flex: 1; }
+.pl-sec .pol-row > .seg { flex: none; }
+.pl-sec .pol-row > .input[type=number] { width: 150px; flex: none; }
+.pl-actions { padding-top: 4px; }
+@media (max-width: 760px) { .pl-sec .pol-row { flex-wrap: wrap; } .pl-sec .pol-row > .seg { width: 100%; overflow-x: auto; } }
+/* An agent's leak risk when all three links are open. */
+.card.ag-risk { border-color: var(--bad); background: var(--bad-soft); }
+.ag-risk .risk-rows { display: flex; flex-direction: column; gap: 4px; }
+/* Policy colours: the icon's tile and glyph. */
+.pc-green { --pc: var(--ok); }
+.pc-blue { --pc: var(--accent); }
+.pc-red { --pc: var(--bad); }
+.pc-yellow { --pc: var(--warn); }
+.pc-gray { --pc: var(--muted); }
+.pc-purple { --pc: #9b6bff; }
+.mark.pc { color: var(--pc); background: color-mix(in srgb, var(--pc) 16%, transparent); border-color: color-mix(in srgb, var(--pc) 35%, transparent); }
+.mark.pc .ic { color: var(--pc); stroke: var(--pc); }
+.pc-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--pc); vertical-align: middle; margin-right: 6px; }
+.pc-swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+.pc-swatch { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font: inherit; font-size: 12.5px; cursor: pointer; }
+.pc-swatch.on { border-color: var(--pc); box-shadow: 0 0 0 1px var(--pc); background: color-mix(in srgb, var(--pc) 12%, transparent); }
+.pc-swatch:disabled { cursor: default; opacity: .7; }
+.pc-glyph { display: inline-flex; color: var(--pc); }
+.pc-glyph .ic { color: var(--pc); stroke: var(--pc); }
+/* An agent's card that needs attention (no model key). */
+.card.ag-warn { border-color: var(--warn); box-shadow: 0 0 0 1px color-mix(in srgb, var(--warn) 40%, transparent); }
+.ag-keywarn { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--warn-soft); color: var(--text); }

@@ -32,6 +32,8 @@ const gitwork = require('./lib/gitwork');
 const tasks = require('./lib/tasks');
 const projects = require('./lib/projects');
 const access = require('./lib/access');
+const policies = require('./lib/policies');
+require('./lib/procwatch').start();
 const sandbox = require('./lib/sandbox');
 const audit = require('./lib/audit');
 const egress = require('./lib/egress');
@@ -178,8 +180,8 @@ const AUDIT_LABELS = [
   [/^(PUT|POST|DELETE) \/ui\/egress/, 'сеть: изменение'],
   [/^(PUT|POST|DELETE) \/ui\/dirs/, 'директории: изменение'],
   [/^PUT \/ui\/machines\/[^/]+\/limits$/, 'лимиты машины'],
-  [/^POST \/ui\/machines\/[^/]+\/folders$/, 'доступ к папке: выдан'],
-  [/^DELETE \/ui\/machines\/[^/]+\/folders\//, 'доступ к папке: отозван'],
+  [/^POST \/ui\/machines\/[^/]+\/folders$/, 'доступ к директории: выдан'],
+  [/^DELETE \/ui\/machines\/[^/]+\/folders\//, 'доступ к директории: отозван'],
   [/^PUT \/ui\/settings$/, 'настройки прокси/сертификатов'],
   [/^POST \/ui\/host\/repair-rootfs$/, 'починка rootfs smolvm (Windows)'],
   [/^PUT \/ui\/audit\/settings$/, 'настройки аудита'],
@@ -191,6 +193,9 @@ const AUDIT_LABELS = [
   [/^POST \/ui\/sandbox\/templates\/[\w-]+\/upgrade$/, 'песочницы: обновление агентов шаблона'],
   [/^PUT \/ui\/sandbox\/policy$/, 'песочницы: политика по умолчанию'],
   [/^PUT \/ui\/access\/policy$/, 'политика администратора'],
+  [/^POST \/ui\/policies$/, 'политика создана'],
+  [/^PUT \/ui\/policies\//, 'политика изменена'],
+  [/^DELETE \/ui\/policies\//, 'политика удалена'],
   [/^PUT \/ui\/access\/users\//, 'учётная запись: создана или изменена'],
   [/^DELETE \/ui\/access\/users\//, 'учётная запись удалена'],
   [/^POST \/ui\/(tasks\/t-[0-9a-f]+|git\/[\w-]+)\/merge$/, 'слияние ветки задачи'],
@@ -399,7 +404,7 @@ async function lethalTrifecta(name) {
   const privateData = [
     ...secrets.map((s) => `секрет ${s.name}`),
     ...(dm?.dirs || []).map((d) => `директория ${d.id}`),
-    ...hostMounts.map((x) => `папка ${x.source || x.host || ''}${x.readonly ? ' (чтение)' : ''}`),
+    ...hostMounts.map((x) => `директория ${x.source || x.host || ''}${x.readonly ? ' (чтение)' : ''}`),
   ];
 
   // smolvm's policy: only this computer, a list of hosts/ranges, or nothing.
@@ -485,7 +490,7 @@ setInterval(async () => {
   } catch {} finally { closingDue = false; }
 }, 60000).unref();
 
-// Host folders for the path field of «Дать доступ к папке»: subfolders of what was typed.
+// Host folders for the path field of «Дать доступ к директории»: subfolders of what was typed.
 const norm = (p) => (process.platform === 'win32' || process.platform === 'darwin' ? String(p).toLowerCase() : String(p));
 function suggestFolders(q, limit = 30) {
   const home = require('os').homedir();
@@ -550,7 +555,7 @@ const ROUTES = [
     const secretNames = Array.isArray(body._webSecrets) ? body._webSecrets.map(String) : [];
     const eg = body._webEgress && typeof body._webEgress === 'object' ? body._webEgress : null;
     const dirIds = Array.isArray(body._webDirs) ? body._webDirs.map(String) : [];
-    // «Папки» of the create dialog: mounted (ro/rw) or review copies made at first start.
+    // «Директории» of the create dialog: mounted (ro/rw) or review copies made at first start.
     const folderList = (Array.isArray(body._webFolders) ? body._webFolders : []).map((f) => ({ hostPath: String(f?.hostPath || ''), mode: String(f?.mode || ''), guestPath: f?.guestPath ? String(f.guestPath) : undefined }));
     const mountFolders = folderList.filter((f) => f.mode === 'ro' || f.mode === 'rw').map((f) => ({ ...f, level: f.mode }));
     const reviewFolders = folderList.filter((f) => f.mode === 'review');
@@ -943,6 +948,17 @@ const UI = [
     const b = await readJson(req);
     try { const p = access.setPolicy(b); res.auditDetail = p; sendJson(res, 200, p); } catch (e) { err(res, e); }
   }],
+  // ---- policies: named restrictions — network, folders, the account in the machine, processes, time ----
+  ['GET', /^\/ui\/policies$/, (req, res) => sendJson(res, 200, { policies: policies.list(), summaries: Object.fromEntries(policies.list().map((p) => [p.id, policies.summary(p)])) })],
+  ['POST', /^\/ui\/policies$/, async (req, res) => {
+    try { const p = policies.create(await readJson(req)); res.auditDetail = { policy: p.id, name: p.name }; sendJson(res, 200, p); } catch (e) { err(res, e); }
+  }],
+  ['PUT', /^\/ui\/policies\/([\w-]+)$/, async (req, res, m) => {
+    try { const p = policies.update(m[1], await readJson(req)); res.auditDetail = { policy: p.id, name: p.name, net: p.net, sudo: p.account.sudo, deny: p.processes.deny }; sendJson(res, 200, p); } catch (e) { err(res, e); }
+  }],
+  ['DELETE', /^\/ui\/policies\/([\w-]+)$/, (req, res, m) => {
+    try { policies.remove(m[1]); res.auditDetail = { policy: m[1] }; sendJson(res, 200, { ok: true }); } catch (e) { err(res, e); }
+  }],
   // ---- tasks: a sandbox with what it was opened for and what came of it ----
   ['GET', /^\/ui\/tasks$/, async (req, res) => sendJson(res, 200, { tasks: await tasks.list() })],
   ['POST', /^\/ui\/tasks$/, async (req, res) => {
@@ -950,7 +966,7 @@ const UI = [
     res.auditDone = true;
     try { sendJson(res, 200, await tasks.open({ template: String(b.template || ''), profile: b.profile ? String(b.profile) : null, agent: b.agent ? String(b.agent) : null,
       trust: b.trust ? String(b.trust) : null, task: b.task ? String(b.task) : null, folders: Array.isArray(b.folders) ? b.folders : undefined,
-      idleMinutes: b.idleMinutes, ttlHours: b.ttlHours, persistent: !!b.persistent, project: b.project ? String(b.project) : null }, sandboxHooks)); } catch (e) { err(res, e); }
+      idleMinutes: b.idleMinutes, ttlHours: b.ttlHours, persistent: !!b.persistent, project: b.project ? String(b.project) : null, policy: b.policy ? String(b.policy) : null }, sandboxHooks)); } catch (e) { err(res, e); }
   }],
   // ---- projects: a repository with its agent, trust and prepared template ----
   ['GET', /^\/ui\/projects$/, (req, res) => sendJson(res, 200, { projects: projects.list() })],
@@ -1073,7 +1089,7 @@ const UI = [
   ['POST', /^\/ui\/sandbox\/profiles$/, async (req, res) => {
     const b = await readJson(req);
     try { sendJson(res, 200, await sandbox.createProfile({ name: b.name, from: b.from ? String(b.from) : null, template: b.template ? String(b.template) : null, agent: b.agent ? String(b.agent) : null, task: b.task, folder: b.folder, folders: b.folders, trust: b.trust, idleMinutes: b.idleMinutes, ttlHours: b.ttlHours,
-      preset: b.preset, net: b.net, lists: b.lists, secrets: b.secrets })); } catch (e) { err(res, e); }
+      preset: b.preset, net: b.net, lists: b.lists, secrets: b.secrets, policy: b.policy })); } catch (e) { err(res, e); }
   }],
   ['PUT', /^\/ui\/sandbox\/profiles\/([\w-]+)$/, async (req, res, m) => {
     const b = await readJson(req);
@@ -1456,7 +1472,7 @@ const UI = [
   ['DELETE', /^\/ui\/dirs\/([^/]+)$/, async (req, res, m) => {
     try { dirs.deleteDir(decodeURIComponent(m[1])); sendJson(res, 200, { deleted: true }); } catch (e) { sendJson(res, 400, { error: e.message }); }
   }],
-  // ---- «Дать доступ к папке»: one call registers, attaches and applies ----
+  // ---- «Дать доступ к директории»: one call registers, attaches and applies ----
   ['GET', /^\/ui\/folders\/check$/, (req, res, _m, url) => sendJson(res, 200, dirs.checkFolder(url.searchParams.get('path')))],
   ['GET', /^\/ui\/folders\/suggest$/, (req, res, _m, url) => sendJson(res, 200, { paths: suggestFolders(url.searchParams.get('q') || '', url.searchParams.get('all') ? 1000 : 30) })],
   ['GET', /^\/ui\/machines\/([^/]+)\/folders$/, async (req, res, m) => {
@@ -1482,7 +1498,7 @@ const UI = [
     const clash = (p, q) => p === q || p.startsWith(`${q}/`) || q.startsWith(`${p}/`);
     const others = [...dirs.folders(name).filter((f) => f.guestPath && norm(f.hostPath) !== norm(c.real)), ...review.list(name).filter((d) => norm(d.hostPath) !== norm(c.real))];
     const hit = others.find((f) => clash(f.guestPath, guestPath));
-    if (hit) return sendJson(res, 400, { error: `Путь в машине ${guestPath} уже занят папкой ${hit.hostPath}` });
+    if (hit) return sendJson(res, 400, { error: `Путь в машине ${guestPath} уже занят директорией ${hit.hostPath}` });
     try {
       // Switching between a mount and a review copy of the same folder: drop the other kind.
       const sameDir = dirs.folders(name).find((f) => f.hostPath && norm(f.hostPath) === norm(c.real) && !f.removed);

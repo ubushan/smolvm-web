@@ -9,6 +9,7 @@
   let tasks = [];        // GET /ui/tasks
   let sbx = null;        // GET /ui/sandbox: profiles, open sandboxes with their programs
   let projects = [];     // GET /ui/projects
+  let policies = [];     // GET /ui/policies (their colours)
   let selected = '';
   let tab = '';          // changes | agent | did | decisions; '' — chosen by status
   let timer = null;
@@ -37,7 +38,8 @@
   const isOpen = (t) => OPEN.includes(t.status);
 
   async function load() {
-    const [r, d, pr] = await Promise.all([api('GET', '/ui/tasks'), api('GET', '/ui/sandbox').catch(() => sbx), api('GET', '/ui/projects').catch(() => ({ projects }))]);
+    const [r, d, pr, pl] = await Promise.all([api('GET', '/ui/tasks'), api('GET', '/ui/sandbox').catch(() => sbx), api('GET', '/ui/projects').catch(() => ({ projects })), api('GET', '/ui/policies').catch(() => ({ policies }))]);
+    policies = pl.policies || [];
     tasks = r.tasks || [];
     sbx = d;
     projects = pr.projects || [];
@@ -123,13 +125,13 @@
   // Into the branch each repository's task started from; uncommitted work of yours is never touched.
   async function mergeAll(t) {
     const into = [...new Set(t.git.filter((g) => ['ready', 'accepted'].includes(g.state)).map((g) => g.baseRef || '?'))].join(', ');
-    const c = await confirmDialog(`Влить в ${into}?`, 'Ветка задачи вольётся в ветку, с которой задача началась: перемоткой, если там ничего не менялось, иначе merge-коммитом. Если эта ветка открыта в папке, файлы обновятся — незакоммиченных изменений в папке быть не должно. При конфликте ничего не меняется.', false, '', 'Влить');
+    const c = await confirmDialog(`Влить в ${into}?`, 'Ветка задачи вольётся в ветку, с которой задача началась: перемоткой, если там ничего не менялось, иначе merge-коммитом. Если эта ветка открыта в директории, файлы обновятся — незакоммиченных изменений в директории быть не должно. При конфликте ничего не меняется.', false, '', 'Влить');
     if (!c.ok) return;
     await act(t, 'Вливаю…', async () => { await post(t, 'merge', { how: 'merge' }); toast(`Влито в ${into}`, 'ok'); });
   }
   async function mergeOne(t, g, how) {
     const c = await confirmDialog(how === 'squash' ? `Одним коммитом в ${g.baseRef}?` : `Влить в ${g.baseRef}?`,
-      `${how === 'squash' ? `Все изменения ветки ${g.branch} станут одним коммитом «${t.title}» в ${g.baseRef}.` : `Ветка ${g.branch} вольётся в ${g.baseRef}: перемоткой или merge-коммитом.`} Если ${g.baseRef} открыта в папке, файлы обновятся — незакоммиченных изменений быть не должно. При конфликте ничего не меняется.`, false, '', how === 'squash' ? 'Одним коммитом' : 'Влить');
+      `${how === 'squash' ? `Все изменения ветки ${g.branch} станут одним коммитом «${t.title}» в ${g.baseRef}.` : `Ветка ${g.branch} вольётся в ${g.baseRef}: перемоткой или merge-коммитом.`} Если ${g.baseRef} открыта в директории, файлы обновятся — незакоммиченных изменений быть не должно. При конфликте ничего не меняется.`, false, '', how === 'squash' ? 'Одним коммитом' : 'Влить');
     if (!c.ok) return;
     await act(t, 'Вливаю…', async () => {
       await api('POST', `/ui/git/${enc(g.id)}/merge`, { how, title: t.title });
@@ -165,7 +167,7 @@
   // ---------- the chosen task ----------
   function head(t) {
     const mins = Math.max(0, Math.round(((t.closedAt || Date.now()) - t.createdAt) / 60000));
-    const meta = [AGENTS[t.agent] || t.agent, profOf(t.profile)?.name ? `агент «${profOf(t.profile).name}»` : null, t.persistent ? 'постоянная' : null,
+    const meta = [AGENTS[t.agent] || t.agent, profOf(t.profile)?.name ? `агент «${profOf(t.profile).name}»` : null, t.policy ? `политика «${t.policy.name}»` : null, t.persistent ? 'постоянная' : null,
       t.closedAt ? `закрыта ${ago(t.closedAt)}` : `${mins < 60 ? `${mins} мин` : `${Math.floor(mins / 60)} ч ${mins % 60} мин`}`].filter(Boolean).join(' · ');
     const dis = !!busy;
     const btn = (label, cls, onclick, title = '', disabled = dis) => h('button', { class: `btn ${cls} needs-operator`, title, disabled, onclick }, label);
@@ -191,7 +193,7 @@
       ];
     } else {
       btns = [
-        btn('Повторить', 'ghost', () => newTask(t), 'Новая задача с тем же агентом, папками и текстом'),
+        btn('Повторить', 'ghost', () => newTask(t), 'Новая задача с тем же агентом, директориями и текстом'),
         btn('Убрать из истории', 'ghost', () => forget(t)),
       ];
     }
@@ -208,7 +210,7 @@
     if (t.text) out.push(h('div', { class: 'ag-task-line', title: t.text }, `Задача: «${t.text}»`));
     for (const g of t.git) out.push(branchCard(t, g));
     const copies = t.folders.filter((f) => !f.git && f.mode !== 'ro');
-    if (copies.length) out.push(h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h3', {}, 'Папки без git')),
+    if (copies.length) out.push(h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h3', {}, 'Директории без git')),
       h('p', { class: 'small' }, `${copies.map((f) => base(f.hostPath)).join(', ')} — рабочая копия: изменения проверяются по файлам${isOpen(t) ? '' : ', пока машина была открыта'}.`),
       isOpen(t) ? h('a', { class: 'btn small-btn', href: `#/?machine=${enc(t.machine)}&tab=folders` }, 'Проверить копию') : null));
     if (t.profilePending.length) out.push(h('section', { class: 'card tk-mem' }, h('div', { class: 'card-head' }, h('h3', {}, 'Память агента')),
@@ -216,7 +218,7 @@
       h('a', { class: 'btn small-btn primary', href: `#/review?id=${enc(t.profilePending[0].id)}` }, 'Проверить')));
     if (!t.git.length && !copies.length && !t.profilePending.length) {
       out.push(h('section', { class: 'card ws-empty' }, ic('folder'), h('h3', {}, 'Без проекта'),
-        h('p', { class: 'muted' }, 'Задаче не дано git-репозитория: результат — только то, что агент сказал или запомнил. Чтобы получить изменения кода веткой, дайте задаче папку с git.')));
+        h('p', { class: 'muted' }, 'Задаче не дано git-репозитория: результат — только то, что агент сказал или запомнил. Чтобы получить изменения кода веткой, дайте задаче директорию с git.')));
     }
     return out;
   }
@@ -324,6 +326,15 @@
       t.text ? h('div', { class: 'ag-task-line', title: t.text }, `Задача: «${t.text}»`) : null,
       note ? h('div', { class: 'muted small' }, ...[].concat(note)) : null,
       tiles.length ? h('div', { class: 'aw-tiles sx-progs' }, ...tiles) : h('p', { class: 'muted' }, 'В этой машине нет программ агента.'),
+      t.policy ? h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h3', { class: 'h-ic' }, h('span', { class: `pc-${policies.find((x) => x.id === t.policy.id)?.color || 'gray'} pc-glyph` }, ic('shield')), `Политика «${t.policy.name}»`), h('span', { class: 'spacer' }),
+        h('a', { class: 'small', href: `#/policies?id=${enc(t.policy.id)}` }, 'открыть →')),
+        t.policyApplied ? h('div', { class: 'kv' },
+          h('div', {}, h('div', { class: 'k' }, 'Права в машине'), h('div', { class: 'v' }, t.policyApplied.sudo ? 'sudo (root)' : 'без root')),
+          h('div', {}, h('div', { class: 'k' }, 'Запрещённые программы'), h('div', { class: 'v' }, (t.policyApplied.deny || []).length
+            ? `${t.policyApplied.deny.join(', ')}${t.policyApplied.denied.length ? ` — закрыты в машине: ${t.policyApplied.denied.join(', ')}` : ' — в машине их нет; появятся — процесс остановится'}` : 'нет')),
+          h('div', {}, h('div', { class: 'k' }, 'Журнал процессов'), h('div', { class: 'v' }, t.policyApplied.journal ? h('a', { href: `#/audit?task=${enc(t.id)}` }, 'ведётся →') : 'нет')))
+          : h('div', { class: 'small muted' }, 'Применяется при открытии машины…'),
+        ...(t.policyApplied?.notes || []).map((n) => h('div', { class: 'small warnc' }, n))) : null,
       h('div', { class: 'muted small' }, `Машина `, h('span', { class: 'mono' }, t.machine), t.resets ? ` · сброшена ${plural(t.resets, 'раз', 'раза', 'раз')}` : '',
         ' · ', h('a', { href: `#/?machine=${enc(t.machine)}` }, 'консоль и файлы')),
     ];
@@ -358,7 +369,7 @@
       h('p', {}, 'Задача — то, что вы поручили агенту, и её результат. Здесь видно, кто сейчас работает, что ждёт вашего решения и чем закончилось раньше.'),
       h('ul', {},
         h('li', {}, h('b', {}, 'Каждая задача — чистая машина. '), 'Агент не видит ваш компьютер и другие задачи; куда ему можно ходить в сети и какие ключи он получит, задаёт агент (⚙ → «Агенты») и уровень доверия. Поэтому агенту можно разрешить работать без подтверждений на каждый шаг.'),
-        h('li', {}, h('b', {}, 'Результат — ветка, а не изменённая папка. '), 'Агент получает текущий код без истории, его работа возвращается веткой smolvm/… в вашем репозитории. Ваша рабочая папка не меняется, пока вы не нажмёте «Влить».'),
+        h('li', {}, h('b', {}, 'Результат — ветка, а не изменённая директория. '), 'Агент получает текущий код без истории, его работа возвращается веткой smolvm/… в вашем репозитории. Ваша рабочая директория не меняется, пока вы не нажмёте «Влить».'),
         h('li', {}, h('b', {}, 'Проверка перед слиянием. '), 'Во вкладке «Изменения» — коммиты и diff; изменения CI, хуков, зависимостей и подозрительные строки отмечены. «Что делал» — куда агент ходил в сети и что делал.'),
         h('li', {}, h('b', {}, 'Разовая или постоянная. '), 'Разовая: агент делает и отдаёт результат, машина закрывается по сроку. Постоянная: работаете вместе сколько нужно; «Сбросить» даёт чистую машину, работа продолжается с той же ветки.')),
       h('p', { class: 'muted small' }, 'Слева: «Ждут вас» — нужен ваш ответ или проверка, «Работают», «История». Повторяющуюся работу над одним репозиторием удобнее вести через «Проекты».'));
@@ -425,10 +436,13 @@
   }
 
   // ---------- «Новая задача» ----------
-  // from: a task to repeat (its agent, folders, text, trust, mode), or { project }.
+  // from: a task to repeat (its agent, folders, text, policy, mode), or { project }.
   async function newTask(from = null) {
-    let d; let prs;
-    try { [d, prs] = await Promise.all([sbx || api('GET', '/ui/sandbox'), api('GET', '/ui/projects').then((r) => r.projects).catch(() => [])]); } catch (e) { toast(e.message, 'err'); return; }
+    let d; let prs; let pls;
+    try {
+      [d, prs, pls] = await Promise.all([sbx || api('GET', '/ui/sandbox'), api('GET', '/ui/projects').then((r) => r.projects).catch(() => []),
+        api('GET', '/ui/policies').catch(() => ({ policies: [], summaries: {} }))]);
+    } catch (e) { toast(e.message, 'err'); return; }
     if (!d.profiles.length) {
       const c = await confirmDialog('Сначала нужен агент', 'Агент — это программа (Claude Code, Codex…), её изоляция, ключи и память. Задачи даются агенту.', false, '', 'Создать агента');
       if (c.ok) agentWizard({ onDone: () => refresh() });
@@ -438,7 +452,21 @@
     const prof = () => d.profiles.find((p) => p.id === profile);
     let project = from?.project && prs.some((p) => p.id === from.project) ? from.project : '';
     const projOf = () => prs.find((p) => p.id === project) || null;
-    let trust = from?.trust || projOf()?.trust || prof()?.trust || 'normal';
+    // The policy of the task: the one repeated, else the project's, else the agent's (or its former trust level).
+    const known = (id) => (pls.policies.some((x) => x.id === id) ? id : null);
+    const defaultPolicy = () => known(projOf()?.policy) || known(prof()?.policy) || known(projOf()?.trust) || known(prof()?.trust) || 'normal';
+    let policy = known(from?.policy?.id) || defaultPolicy();
+    const polSel = h('select', { class: 'input', id: 'tk-policy' });
+    const polInfo = h('div', { class: 'small muted' });
+    const drawPolicy = () => {
+      polSel.replaceChildren(...pls.policies.map((x) => h('option', { value: x.id }, x.builtin ? x.name : `${x.name} (своя)`)));
+      polSel.value = policy;
+      const cur = pls.policies.find((x) => x.id === policy);
+      polInfo.replaceChildren(h('span', { class: `pc-dot pc-${cur?.color || 'gray'}` }), pls.summaries[policy] || '');
+    };
+    polSel.addEventListener('change', () => { policy = polSel.value; drawPolicy(); });
+    drawPolicy();
+    const polTrust = () => { const x = pls.policies.find((y) => y.id === policy); return !x ? 'normal' : x.net.mode === 'off' || x.net.unknown === 'allow' ? 'trusted' : x.net.unknown === 'ask' ? 'normal' : 'careful'; };
     let persistent = !!from?.persistent;
     const startFolders = (p) => (p?.folders?.length ? p.folders : p?.folder ? [{ hostPath: p.folder, mode: 'review' }] : []).map((f) => ({ ...f }));
     let folders = from?.folders ? from.folders.map(({ hostPath, mode }) => ({ hostPath, mode })) : startFolders(prof());
@@ -450,17 +478,17 @@
     const dirsBox = h('div', { class: 'tk-dirs' });
     const drawDirs = () => {
       dirsBox.replaceChildren(...folders.map((f, i) => folderRow(f, () => { folders.splice(i, 1); drawDirs(); })),
-        h('button', { type: 'button', class: 'btn ghost small-btn', onclick: () => { folders.push({ hostPath: '', mode: 'review' }); drawDirs(); dirsBox.querySelector('.tk-dir:last-of-type input')?.focus(); } }, ic('plus'), 'Папка'));
+        h('button', { type: 'button', class: 'btn ghost small-btn', onclick: () => { folders.push({ hostPath: '', mode: 'review' }); drawDirs(); dirsBox.querySelector('.tk-dir:last-of-type input')?.focus(); } }, ic('plus'), 'Директория'));
     };
     drawDirs();
     // A project brings its agent, repository and template: those fields give way to a summary.
-    const projSel = h('select', { class: 'input', id: 'tk-project' }, h('option', { value: '' }, 'Без проекта — выбрать агента и папки'),
+    const projSel = h('select', { class: 'input', id: 'tk-project' }, h('option', { value: '' }, 'Без проекта — выбрать агента и директории'),
       prs.map((p) => h('option', { value: p.id }, p.name === base(p.hostPath) ? p.name : `${p.name} — ${base(p.hostPath)}`)));
     projSel.value = project;
     const projInfo = h('div', { class: 'small muted' });
     const whoField = h('label', { class: 'ws-field', for: 'tk-who' }, 'Агент', who);
     const dirsField = h('div', { class: 'ws-field' }, h('div', { class: 'label-like' }, 'Проект'), dirsBox,
-      h('div', { class: 'muted small' }, 'Git-репозиторий: агент получает текущий код без истории, результат возвращается веткой — ваша папка не меняется. Папка без git — рабочая копия с проверкой по файлам.'));
+      h('div', { class: 'muted small' }, 'Git-репозиторий: агент получает текущий код без истории, результат возвращается веткой — ваша директория не меняется. Директория без git — рабочая копия с проверкой по файлам.'));
     const drawProject = () => {
       const p = projOf();
       whoField.hidden = !!p; dirsField.hidden = !!p;
@@ -472,11 +500,10 @@
     };
     projSel.addEventListener('change', () => {
       project = projSel.value;
-      if (projOf()?.trust) { trust = projOf().trust; const nb = window.agentUi.trustPicker(trust, (v) => { trust = v; }); trustBox.replaceWith(nb); trustBox = nb; }
+      policy = defaultPolicy(); drawPolicy();
       drawProject();
     });
-    who.addEventListener('change', () => { profile = who.value; if (!from) { folders = startFolders(prof()); drawDirs(); } trustBox.replaceWith(trustBox = window.agentUi.trustPicker(trust = prof()?.trust || trust, (v) => { trust = v; })); });
-    let trustBox = window.agentUi.trustPicker(trust, (v) => { trust = v; });
+    who.addEventListener('change', () => { profile = who.value; if (!from) { folders = startFolders(prof()); drawDirs(); } policy = defaultPolicy(); drawPolicy(); });
     const mode = h('div', { class: 'tk-mode', role: 'radiogroup' });
     const pol = window.auth?.policy || {};
     const noPersistent = pol.allowPersistent === false || pol.maxTtlHours > 0;
@@ -497,7 +524,8 @@
         whoField,
         dirsField,
         h('div', { class: 'ws-field' }, h('div', { class: 'label-like' }, 'Как работаем'), mode),
-        h('div', { class: 'ws-field' }, h('div', { class: 'label-like' }, 'Насколько вы ему доверяете'), trustBox),
+        h('label', { class: 'ws-field', for: 'tk-policy' }, 'Политика', polSel, polInfo,
+          h('span', { class: 'muted small' }, 'Сеть, директории, права в машине, запрещённые программы и сроки — ⚙ → «Политики».')),
         h('label', { class: 'ag-check', for: 'tk-tab' }, tabBox, h('span', {}, 'Сразу открыть агента в отдельной вкладке браузера')),
         go));
     dlg.addEventListener('close', () => dlg.remove());
@@ -511,15 +539,15 @@
       const p = projOf() ? d.profiles.find((x) => x.id === projOf().profile) : prof();
       const wantTab = tabBox.checked && !!p?.agent;
       const w = wantTab ? agentTab() : null;
-      if (trust === 'trusted') {
+      if (polTrust() === 'trusted') {
         const c = await confirmDialog('Без ограничений сети?', 'Агент сможет ходить куда угодно в интернете и ничего не будет спрашивать. Всё, что он увидит в проекте, он сможет отправить наружу.', false, '', 'Да, доверяю');
         if (!c.ok) { if (w) w.close(); return; }
       }
       try { localStorage.setItem('smolvm.agentTab', tabBox.checked ? '1' : '0'); } catch {}
       go.disabled = true; go.replaceChildren(h('i', { class: 'spin' }), 'Открываю машину…');
       try {
-        const r = await api('POST', '/ui/tasks', projOf() ? { project, trust, task: text.value.trim() || null, persistent }
-          : { profile, agent: p?.agent || null, trust, task: text.value.trim() || null, folders: list, persistent });
+        const r = await api('POST', '/ui/tasks', projOf() ? { project, policy, task: text.value.trim() || null, persistent }
+          : { profile, agent: p?.agent || null, policy, task: text.value.trim() || null, folders: list, persistent });
         dlg.close();
         if (wantTab && r.url) { agentInTab(r.name, true); goAgent(w, r.url); } else if (w) w.close();
         refreshMachines();
@@ -567,7 +595,7 @@
     how.addEventListener('change', () => { f.mode = how.value; check(); });
     check();
     return h('div', { class: 'tk-dir' }, h('div', { class: 'tk-dir-row' }, input, list, how,
-      h('button', { type: 'button', class: 'btn ghost icon', title: 'Убрать', 'aria-label': 'Убрать папку', onclick: onRemove }, ic('x'))), info);
+      h('button', { type: 'button', class: 'btn ghost icon', title: 'Убрать', 'aria-label': 'Убрать директорию', onclick: onRemove }, ic('x'))), info);
   }
 
   window.newTask = (from) => newTask(from);

@@ -8,6 +8,7 @@
   let projects = [];
   let tasks = [];
   let profiles = [];
+  let policies = [];
   let selected = '';    // project id, or 'new'
   let timer = null;
   let lastSig = '';
@@ -22,7 +23,8 @@
   const SETUP_HINT = 'npm ci\n# pip install -r requirements.txt\n# go mod download';
 
   async function load() {
-    const [p, t, s] = await Promise.all([api('GET', '/ui/projects'), api('GET', '/ui/tasks').catch(() => ({ tasks })), api('GET', '/ui/sandbox').catch(() => ({ profiles }))]);
+    const [p, t, s, pl] = await Promise.all([api('GET', '/ui/projects'), api('GET', '/ui/tasks').catch(() => ({ tasks })), api('GET', '/ui/sandbox').catch(() => ({ profiles })), api('GET', '/ui/policies').catch(() => ({ policies }))]);
+    policies = pl.policies || [];
     projects = p.projects || [];
     tasks = t.tasks || [];
     profiles = s.profiles || [];
@@ -42,9 +44,9 @@
   // ---------- the form (new and existing project) ----------
   function form(p) {
     const isNew = !p;
-    const v = { name: p?.name || '', hostPath: p?.hostPath || '', profile: p?.profile || profiles[0]?.id || '', trust: p?.trust || 'normal', setup: p?.setup || '' };
+    const v = { name: p?.name || '', hostPath: p?.hostPath || '', profile: p?.profile || profiles[0]?.id || '', policy: p?.policy || p?.trust || '', setup: p?.setup || '' };
     const mark_ = () => { dirty = true; };
-    const name = h('input', { class: 'input', id: 'pj-name', value: v.name, maxlength: 60, placeholder: 'по имени папки', oninput: (e) => { v.name = e.target.value; mark_(); } });
+    const name = h('input', { class: 'input', id: 'pj-name', value: v.name, maxlength: 60, placeholder: 'по имени директории', oninput: (e) => { v.name = e.target.value; mark_(); } });
     const info = h('div', { class: 'small muted tk-dir-info' });
     let seq = 0;
     const check = async () => {
@@ -67,13 +69,15 @@
     const who = h('select', { class: 'input', id: 'pj-agent', onchange: (e) => { v.profile = e.target.value; mark_(); } },
       profiles.map((x) => h('option', { value: x.id }, `${x.name}${x.agent ? ` — ${AGENTS[x.agent] || x.agent}` : ''}`)));
     who.value = v.profile;
-    const trust = window.agentUi.trustPicker(v.trust, (t) => { v.trust = t; mark_(); });
+    const pol = h('select', { class: 'input', id: 'pj-policy', onchange: (e) => { v.policy = e.target.value; mark_(); } },
+      h('option', { value: '' }, 'Как у агента'), policies.map((x) => h('option', { value: x.id }, x.builtin ? x.name : `${x.name} (своя)`)));
+    pol.value = v.policy;
     const setup = h('textarea', { class: 'input mono', id: 'pj-setup', rows: 5, maxlength: 8000, placeholder: SETUP_HINT, oninput: (e) => { v.setup = e.target.value; mark_(); } });
     setup.value = v.setup;
     const saveBtn = h('button', { class: 'btn primary', onclick: async () => {
       saveBtn.disabled = true;
       try {
-        const body = { name: v.name, hostPath: v.hostPath, profile: v.profile, trust: v.trust, setup: v.setup };
+        const body = { name: v.name, hostPath: v.hostPath, profile: v.profile, policy: v.policy, setup: v.setup };
         const r = isNew ? await api('POST', '/ui/projects', body) : await api('PUT', `/ui/projects/${enc(p.id)}`, body);
         dirty = false;
         toast(isNew ? 'Проект создан' : 'Сохранено', 'ok');
@@ -91,12 +95,13 @@
     }
     return h('section', { class: 'card pj-form needs-admin' },
       h('div', { class: 'grid2' },
-        h('label', { class: 'ws-field', for: 'pj-path' }, 'Папка репозитория', path, sug, info),
+        h('label', { class: 'ws-field', for: 'pj-path' }, 'Директория репозитория', path, sug, info),
         h('label', { class: 'ws-field', for: 'pj-name' }, 'Название', name)),
       h('label', { class: 'ws-field', for: 'pj-agent' }, 'Агент по умолчанию', who),
-      h('div', { class: 'ws-field' }, h('div', { class: 'label-like' }, 'Доверие по умолчанию'), trust),
+      h('label', { class: 'ws-field', for: 'pj-policy' }, 'Политика по умолчанию', pol,
+        h('span', { class: 'muted small' }, 'Сеть, директории, права в машине, процессы и сроки задач проекта; шаблон проекта собирается в её сети. ⚙ → «Политики».')),
       h('label', { class: 'ws-field', for: 'pj-setup' }, 'Скрипт подготовки', setup,
-        h('span', { class: 'muted small' }, 'Выполняется один раз при сборке шаблона — в папке проекта, от пользователя агента, с его сетью (белыми списками). Например, установка зависимостей. Пусто — шаблон не нужен: задачи открываются из образа агента.')),
+        h('span', { class: 'muted small' }, 'Выполняется один раз при сборке шаблона — в директории проекта, от пользователя агента, с его сетью (белыми списками). Например, установка зависимостей. Пусто — шаблон не нужен: задачи открываются из образа агента.')),
       h('div', { class: 'row' }, h('span', { class: 'spacer' }), saveBtn));
   }
 
@@ -110,7 +115,7 @@
       !p.setup ? h('p', { class: 'small muted' }, 'Скрипта подготовки нет — каждая задача открывается из образа агента, проект копируется в машину при открытии.')
         : h('p', { class: 'small' }, p.templateReady
           ? `Собран ${ago(p.builtAt)} из ${p.builtFrom}${p.templateSize ? ` · ${fmtBytes(p.templateSize)}` : ''}. Задачи открываются из него: зависимости уже на месте, код — текущий HEAD репозитория.`
-          : p.stale ? 'Агент, папка или скрипт изменились после сборки — задачи открываются из образа агента, пока шаблон не пересобран.'
+          : p.stale ? 'Агент, директория или скрипт изменились после сборки — задачи открываются из образа агента, пока шаблон не пересобран.'
             : 'Пока шаблона нет, задачи открываются из образа агента без подготовки.'),
       err ? h('div', { class: 'error small' }, err) : null,
       log ? h('details', { open: !!err }, h('summary', { class: 'small' }, 'Вывод скрипта'), h('pre', { class: 'diff rv-pre pj-log' }, log)) : null,
@@ -155,11 +160,11 @@
     return helpButton('Зачем раздел «Проекты»',
       h('p', {}, 'Проект — ваш git-репозиторий с настройками задач по умолчанию: какой агент работает, насколько ему доверять и как подготовить окружение.'),
       h('ul', {},
-        h('li', {}, h('b', {}, 'Без проекта '), 'каждую задачу настраиваешь заново (агент, папка, доверие), а агент в чистой машине каждый раз заново ставит зависимости.'),
+        h('li', {}, h('b', {}, 'Без проекта '), 'каждую задачу настраиваешь заново (агент, директория, доверие), а агент в чистой машине каждый раз заново ставит зависимости.'),
         h('li', {}, h('b', {}, 'С проектом '), '«Новая задача» — это выбрать проект и написать, что сделать. Агент, репозиторий и доверие подставятся сами.'),
         h('li', {}, h('b', {}, 'Скрипт подготовки '), '(npm ci, pip install -r requirements.txt…) выполняется один раз при сборке шаблона проекта. Задачи открываются из шаблона за секунды: зависимости уже установлены, код — текущий HEAD.'),
-        h('li', {}, h('b', {}, 'Шаблон устаревает сам, '), 'если поменять агента, папку или скрипт; после обновления зависимостей нажмите «Пересобрать».')),
-      h('p', { class: 'muted small' }, 'Проект необязателен: разовую задачу можно дать и без него, выбрав агента и папку.'));
+        h('li', {}, h('b', {}, 'Шаблон устаревает сам, '), 'если поменять агента, директорию или скрипт; после обновления зависимостей нажмите «Пересобрать».')),
+      h('p', { class: 'muted small' }, 'Проект необязателен: разовую задачу можно дать и без него, выбрав агента и директорию.'));
   }
 
   function side() {

@@ -30,6 +30,7 @@
     net: { icon: 'globe', label: 'Сеть', cls: '' },
     netDeny: { icon: 'globe', label: 'Сеть: заблокировано', cls: 'bad' },
     sandbox: { icon: 'box', label: 'Песочница', cls: '' },
+    proc: { icon: 'terminal', label: 'Процесс', cls: '' },
     test: { icon: 'send', label: 'Тест', cls: '' },
   };
 
@@ -69,13 +70,14 @@
       tile('api', 'server', 'Действия с машинами', count('api')),
       tile('ui', 'sliders', 'Настройки и ревью', count('ui')),
       tile('fs', 'file', 'Изменения файлов', count('fs'), 'warn'),
+      tile('proc', 'terminal', 'Процессы', count('proc')),
       tile('alert', 'shield', 'Оповещения', count('alert'), 'bad'),
       h('div', { class: `aud-tile static${failed ? ' bad' : ''}` }, h('div', { class: 'set-tile-head' }, ic('x'), h('span', {}, 'С ошибкой')), h('div', { class: 'aud-num' }, String(failed))));
 
     // Filters
     const names = [...new Set([...state.machines.map((m) => m.name), ...data.entries.map((e) => e.machine).filter(Boolean)])].sort();
     const srcSeg = segmented([['all', 'Всё'], ['audit', 'Действия'], ['net', 'Сеть'], ['deny', 'Заблокировано']], filter.source, (v) => { filter.source = v; if (v !== 'audit') filter.type = ''; renderLog(); });
-    const typeSeg = filter.source === 'audit' ? segmented([['', 'Все'], ['exec', 'Команды'], ['api', 'Машины'], ['ui', 'Настройки'], ['fs', 'Файлы'], ['alert', 'Оповещения'], ['sandbox', 'Песочницы']], filter.type, (v) => { filter.type = v; renderLog(); }) : null;
+    const typeSeg = filter.source === 'audit' ? segmented([['', 'Все'], ['exec', 'Команды'], ['api', 'Машины'], ['ui', 'Настройки'], ['fs', 'Файлы'], ['alert', 'Оповещения'], ['sandbox', 'Песочницы'], ['proc', 'Процессы']], filter.type, (v) => { filter.type = v; renderLog(); }) : null;
     const tSel = h('select', { class: 'input small', name: 't', title: 'Все машины задачи, от её открытия до закрытия' }, h('option', { value: '' }, 'Все задачи'),
       taskList.map((t) => h('option', { value: t.id, selected: t.id === filter.task }, t.title.length > 50 ? `${t.title.slice(0, 50)}…` : t.title)));
     tSel.addEventListener('change', () => { filter.task = tSel.value; renderLog(); });
@@ -96,6 +98,7 @@
       const d = e.detail || {};
       if (e.type === 'exec') return [h('div', { class: 'ellipsis' }, e.action === 'exec' ? '' : `${e.action}: `, h('code', {}, d.command || d.prompt || (d.commands != null ? `${d.commands} команд` : '') || '')),
         d.user ? h('div', { class: 'muted small' }, `от ${d.user}${d.workdir ? ` · ${d.workdir}` : ''}`) : null];
+      if (e.type === 'proc') return [h('div', { class: `ellipsis${e.severity === 'notice' ? ' badc' : ''}` }, e.action, ': ', h('code', {}, d.command || '')), d.policy ? h('div', { class: 'muted small' }, `политика «${d.policy}»`) : null];
       if (e.type === 'fs') return [h('div', { class: 'ellipsis' }, e.action, ': ', h('code', {}, d.path)), h('div', { class: 'muted small mono ellipsis', title: d.root }, d.root)];
       if (e.type === 'alert') return [h('div', { class: 'badc' }, e.action), d.hosts?.length ? h('div', { class: 'muted small mono ellipsis' }, d.hosts.join(', ')) : null];
       const extra = d.files?.length ? d.files.join(', ') : d.hostPath ? `${d.hostPath}${d.mode ? ` · ${d.mode}` : ''}`  : '';
@@ -129,7 +132,7 @@
     fill(wrap, tiles, toolbar, feed,
       h('div', { class: 'aud-foot small muted' },
         h('div', {}, 'Файл журнала: ', h('code', {}, data.file)),
-        h('div', {}, 'Под наблюдением (папки на запись у работающих машин): ', data.watched.length
+        h('div', {}, 'Под наблюдением (директории на запись у работающих машин): ', data.watched.length
           ? data.watched.map((w) => h('span', { class: 'lst-host mono', title: w.machines.join(', ') }, w.path.replace(state.info?.home || '\u0000', '~'))) : 'нет'),
         h('div', {}, 'Экспорт в SIEM и оповещения — ', h('a', { href: '#', onclick: (ev) => { ev.preventDefault(); openSettings('audit'); } }, '«Настройки» → «Аудит и SIEM»'))));
     if (focused) wrap.querySelector(`[name=${focused}]`)?.focus();
@@ -204,7 +207,7 @@
             h('li', {}, 'Команды exec из консоли, init из Smolfile и установка агентов — с кодом выхода.'),
             h('li', {}, 'Действия с машинами: создание, запуск, остановка, удаление, ветки, загрузка файлов и образов.'),
             h('li', {}, 'Ревью (какие файлы применены на хост или отклонены), снимки и откаты, изменения секретов (без значений), доступа в сеть, директорий и настроек.'),
-            h('li', {}, 'Изменения файлов в папках хоста, подключённых к работающим машинам на запись. Источник изменения (машина или человек на хосте) по файловой системе не различить — в записи перечислены машины с доступом на запись.'),
+            h('li', {}, 'Изменения файлов в директориях хоста, подключённых к работающим машинам на запись. Источник изменения (машина или человек на хосте) по файловой системе не различить — в записи перечислены машины с доступом на запись.'),
             h('li', {}, 'Соединения машин через фильтр «Сеть»: куда, разрешено или заблокировано и почему. Они хранятся в памяти smolvm-web (последние записи) и в подписанный журнал не входят; в SIEM уходят по настройке «Сетевые события».'),
             h('li', {}, 'Фильтр по задаче показывает все её машины (и после «Сбросить») от открытия до закрытия.'),
             h('li', {}, 'Команды, которые агент выполняет внутри машины сам (без exec через smolvm-web), сюда не попадают: smolvm их не сообщает. Их след — сеть и изменения файлов.'))),

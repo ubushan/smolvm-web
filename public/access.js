@@ -79,7 +79,7 @@
     const nRole = roleSel(first ? 'admin' : 'operator');
     if (first) nRole.disabled = true;
     const add = h('button', { type: 'button', class: 'btn primary', onclick: async () => {
-      if (first && !(await confirmDialog('Включить вход?', 'После этого smolvm-web будет требовать вход у всех, включая вас. Запомните пароль: восстановить его можно, только удалив файл access.json в папке настроек smolvm-web.', false, '', 'Включить вход')).ok) return;
+      if (first && !(await confirmDialog('Включить вход?', 'После этого smolvm-web будет требовать вход у всех, включая вас. Запомните пароль: восстановить его можно, только удалив файл access.json в директории настроек smolvm-web.', false, '', 'Включить вход')).ok) return;
       try {
         await api('PUT', `/ui/access/users/${enc(nName.value.trim())}`, { role: nRole.value, password: nPass.value });
         toast(first ? 'Вход включён — вы вошли как администратор' : `Учётная запись ${nName.value.trim()} создана`, 'ok');

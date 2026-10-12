@@ -449,7 +449,7 @@ function reportDirs(name, d) {
   for (const w of d.warnings || []) toast(`${name}: ${w}`);
   if (d.users?.length) toast(`${name}: созданы пользователи ${d.users.join(', ')}`, 'ok');
   if (d.aclInstalled) toast(`${name}: установлен пакет acl`, 'ok');
-  if (d.uid) toast(`${name}: пользователь агента получил uid владельца папки (${d.uid.replace(/^\S+ /, '')}) — теперь он может в неё писать`, 'ok', 8000);
+  if (d.uid) toast(`${name}: пользователь агента получил uid владельца директории (${d.uid.replace(/^\S+ /, '')}) — теперь он может в неё писать`, 'ok', 8000);
 }
 
 function reportProvision(name, p, explicit) {
@@ -498,7 +498,7 @@ const TABS = [
   ['overview', 'Обзор'],
   ['agents', 'Программы'],
   ['net', 'Сеть'],
-  ['folders', 'Папки'],
+  ['folders', 'Директории'],
   ['console', 'Консоль'],
   ['details', 'Детали'],
   ['logs', 'Логи'],
@@ -552,9 +552,8 @@ function updateDetailHead(m) {
     iso ? h('span', { class: 'tag bad', title: `с ${new Date(iso.since).toLocaleString()}` }, 'изолирована') : null,
     h('div', { class: 'actions' },
       iso ? btn([ic('shield'), 'Снять изоляцию'], () => actions.unisolate(m), { title: 'Вернуть машине сеть и токены шлюза. Машина останется на паузе — возобновите её, агентов перезапустите' }) : null,
-      !iso && (running || paused) ? btn([ic('shield'), 'Изолировать'], () => actions.isolate(m), { cls: 'danger', title: 'Kill switch: мгновенно оборвать все соединения машины, отозвать токены шлюза, отклонить ожидающие подтверждения и поставить машину на паузу' }) : null,
       !iso && stopped ? btn([ic('play'), 'Старт'], () => actions.start(m), { cls: 'primary' }) : null,
-      !iso && running ? btn([ic('refresh'), 'Перезапуск'], () => actions.restart(m), { title: 'Остановить и снова запустить через smolvm-web: подключатся новые папки, применятся фильтр «Сеть», прокси и uid агента. Запущенные агенты остановятся' }) : null,
+      !iso && running ? btn([ic('refresh'), 'Перезапуск'], () => actions.restart(m), { title: 'Остановить и снова запустить через smolvm-web: подключатся новые директории, применятся фильтр «Сеть», прокси и uid агента. Запущенные агенты остановятся' }) : null,
       running ? btn([ic('pause'), 'Пауза'], () => actions.pause(m), { title: 'Сохранить RAM, CPU и диски и остановить' }) : null,
       paused && !iso ? btn([ic('play'), 'Возобновить'], () => actions.resume(m), { cls: 'primary' }) : null,
       running ? btn([ic('branch'), 'Ветка'], () => actions.branch(m), { disabled: !m.branchable, title: m.branchable ? 'Copy-on-write клон работающей машины' : 'Машина должна быть запущена как branchable' }) : null,
@@ -609,54 +608,22 @@ const bitem = (main, side) => h('div', { class: 'bitem' }, h('div', { class: 'bm
 const plural = (n, one, few, many) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? few : many}`;
 
 // «Смертельная триада»: private data + untrusted content + a way out. Breaking one link is enough.
-async function breakTrifecta(m) {
-  try {
-    const r = await api('PUT', `/ui/egress/machines/${enc(m.name)}`, { enabled: true });
-    for (const n of r.notes || []) toast(`${m.name}: ${n}`);
-    toast(`${m.name}: фильтр «Сеть» включён — наружу только разрешённые адреса (списки по умолчанию, серверы агентов и корпоративные репозитории)`, 'ok', 12000);
-  } catch (e) { toast(e.message, 'err'); }
-  renderTab();
+// A policy's icon in its colour (⚙ «Политики», the agent window, the agent, the task).
+const POLICY_COLORS = [['green', 'Зелёный'], ['blue', 'Синий'], ['red', 'Красный'], ['yellow', 'Жёлтый'], ['gray', 'Серый'], ['purple', 'Фиолетовый']];
+function policyIcon(p, small) {
+  return h('span', { class: `mark m-icon${small ? ' m-list' : ''} pc pc-${p?.color || 'gray'}` }, ic(p?.builtin ? 'shield' : 'sliders'));
 }
+window.policyIcon = policyIcon;
+window.POLICY_COLORS = POLICY_COLORS;
 
-function trifectaBanner(m, tri) {
-  return h('div', { class: 'notice bad-notice trifecta' },
-    h('div', {}, h('b', {}, '«Смертельная триада»: '),
-      'у агента одновременно есть приватные данные, недоверенный контент из интернета и свободный выход наружу. Через prompt injection в скачанной странице или файле агента можно заставить отправить данные куда угодно.'),
-    h('div', { class: 'row' }, h('button', { class: 'btn danger', onclick: () => breakTrifecta(m) }, ic('shield'), 'Разорвать: включить фильтр «Сеть»'),
-      h('span', { class: 'muted small' }, 'или уберите приватные данные: отвяжите секреты и папки')));
-}
-
-function trifectaBlock(m, tri) {
-  // ● open (red) · ◐ limited (yellow) · ○ closed (green)
-  const LV = { open: ['badc', '●'], limited: ['warnc', '◐'], none: ['okc', '○'] };
-  const row = (level, label, text) => {
-    const [cls, dot] = LV[level];
-    return bitem(h('span', {}, h('span', { class: cls }, `${dot} `), h('b', {}, label), h('div', { class: 'muted small' }, text)));
-  };
-  const hasData = tri.privateData.length > 0;
-  const untrusted = tri.untrustedLevel || (tri.untrusted ? 'open' : 'none');
-  const exfil = tri.exfilLevel || (tri.exfil ? 'open' : 'none');
-  return block({
-    icon: 'shield', title: 'Риск утечки', sub: '«смертельная триада»: опасны все три звена сразу', on: !tri.lethal,
-    badge: tri.lethal ? 'все три звена' : tri.limited ? 'ограничено' : 'разорвана',
-    items: [
-      row(hasData ? 'open' : 'none', 'Приватные данные', hasData ? tri.privateData.slice(0, 4).join(', ') + (tri.privateData.length > 4 ? ` и ещё ${tri.privateData.length - 4}` : '') : 'нет секретов и папок компьютера'),
-      row(untrusted, 'Недоверенный контент', tri.untrustedWhy || (tri.untrusted ? 'машина читает интернет' : 'сеть выключена')),
-      row(exfil, 'Выход наружу', tri.exfilWhy),
-      tri.note ? h('div', { class: 'small warnc' }, tri.note) : null,
-    ].filter(Boolean),
-    footer: tri.lethal ? [h('button', { class: 'btn danger', onclick: () => breakTrifecta(m) }, 'Разорвать')] : null,
-  });
-}
-
-// Risk of a leak in one line when the triad is broken; the three links on demand.
+// Risk of a leak in one line when the triad is broken; the three links on demand (an agent's overview).
 function riskLine(tri) {
   // ● open (red) · ◐ limited (yellow) · ○ closed (green)
   const LV = { open: ['badc', '●'], limited: ['warnc', '◐'], none: ['okc', '○'] };
   const untrusted = tri.untrustedLevel || (tri.untrusted ? 'open' : 'none');
   const exfil = tri.exfilLevel || (tri.exfil ? 'open' : 'none');
   const data = tri.privateData.length > 1 ? 'приватные данные' : tri.privateData[0];
-  const why = !tri.privateData.length ? 'нет секретов и папок этого компьютера'
+  const why = !tri.privateData.length ? 'нет секретов и директорий этого компьютера'
     : untrusted === 'none' ? `есть ${data}, но ${tri.untrustedWhy || 'сеть выключена'}`
       : `есть ${data}, но ${tri.exfilWhy}`;
   const row = (level, label, text) => { const [cls, dot] = LV[level]; return h('div', {}, h('span', { class: cls }, `${dot} `), h('b', {}, label), h('span', { class: 'muted' }, ` — ${text}`)); };
@@ -700,14 +667,13 @@ function limitsBlock(m, data) {
 }
 
 async function tabOverview(body, m) {
-  const [infoR, miR, egR, dvR, , imgR, riskR, limR] = await Promise.allSettled([
+  const [infoR, miR, egR, dvR, , imgR, limR] = await Promise.allSettled([
     api('GET', `/api/v1/machines/${enc(m.name)}`),
     api('GET', `/ui/machines/${enc(m.name)}`),
     api('GET', '/ui/egress'),
     api('GET', `/ui/machines/${enc(m.name)}/dirs`),
     loadVault(),
     m.state === 'running' ? api('GET', `/api/v1/machines/${enc(m.name)}/images`) : Promise.resolve(null),
-    api('GET', `/ui/machines/${enc(m.name)}/risk`),
     api('GET', `/ui/machines/${enc(m.name)}/limits`),
   ]);
   if (!$('#tab-body') || current()?.name !== m.name || state.tab !== 'overview') return;
@@ -733,13 +699,9 @@ async function tabOverview(body, m) {
     body.append(h('div', { class: 'notice bad-notice' }, h('b', {}, `Машина изолирована (kill switch) ${fmtAgo(iso.since / 1000)}`),
       ` — ${iso.reason || 'вручную'}, ${iso.by || ''}. Соединения через smolvm-web запрещены, токены шлюза заменены, запуск и возобновление заблокированы. Снимок состояния сохранён на паузе — можно разобраться, что произошло, затем «Снять изоляцию».`));
   }
-  const tri = riskR.value?.trifecta;
-  if (tri?.lethal) body.append(trifectaBanner(m, tri));
-  else if (tri) body.append(riskLine(tri));
   body.append(h('div', { class: 'kv' }, kv.map(([k, v]) => h('div', {}, h('div', { class: 'k' }, k), h('div', { class: 'v' }, String(v))))));
 
   const blocks = [];
-  if (tri?.lethal) blocks.push(trifectaBlock(m, tri));
   if (limR.value) blocks.push(limitsBlock(m, limR.value));
 
   // Ports
@@ -781,9 +743,9 @@ async function tabOverview(body, m) {
   {
     const n = (dv?.dirs.length || 0);
     const b = block({
-      icon: 'users', title: 'Папки агента', sub: 'что агент видит с этого компьютера', on: true,
+      icon: 'users', title: 'Директории агента', sub: 'что агент видит с этого компьютера', on: true,
       badge: null, items: [],
-      footer: [h('button', { class: 'btn', onclick: () => openFolderDialog({ machine: m.name, onDone: () => renderTab() }) }, ic('plus'), 'Дать доступ к папке'),
+      footer: [h('button', { class: 'btn', onclick: () => openFolderDialog({ machine: m.name, onDone: () => renderTab() }) }, ic('plus'), 'Дать доступ к директории'),
         h('a', { href: '#', class: 'small', onclick: (e) => { e.preventDefault(); switchTab('folders'); } }, 'Подробнее →')],
     });
     b.classList.toggle('on', n > 0);
@@ -884,16 +846,16 @@ async function tabReview(body, m, rerender = renderTab) {
   head.append(h('section', { class: 'card' },
     h('div', { class: 'card-head' }, h('h3', {}, 'Рабочие копии'),
       helpButton('Как работает ревью изменений',
-        h('p', {}, 'Агент получает не саму папку хоста, а её копию внутри машины. Всё, что он меняет, остаётся в машине, пока вы не нажмёте «Применить» — целиком или по файлам. «Отклонить» возвращает в машине версию файла с хоста.'),
+        h('p', {}, 'Агент получает не саму директорию хоста, а её копию внутри машины. Всё, что он меняет, остаётся в машине, пока вы не нажмёте «Применить» — целиком или по файлам. «Отклонить» возвращает в машине версию файла с хоста.'),
         h('ul', {},
           h('li', {}, 'Конфликт — файл изменился и в машине, и на хосте с момента копирования. Применение перезапишет версию на хосте; посмотрите diff.'),
           h('li', {}, '«Подтянуть с хоста» обновляет в машине файлы, которые агент не трогал, а на хосте они поменялись.'),
           h('li', {}, 'Исключения (node_modules, .git и т.п.) не копируются и не попадают в ревью — их агент может пересоздать сам.'),
           h('li', {}, 'Копия не монтируется, а копируется: на хост не попадает ничего без вашего «Применить».'),
           h('li', {}, 'Символические ссылки не применяются на хост автоматически.')))),
-    h('p', { class: 'muted small' }, 'Агент работает с копией папки, а на хост попадает только то, что вы одобрите после просмотра diff. Безопаснее, чем подключать папку на запись.'),
-    h('div', { class: 'grid2' }, h('label', {}, 'Папка на этом компьютере', hostIn), h('label', {}, 'Путь в машине', guestIn)),
-    h('label', {}, 'Исключить (имена папок/файлов через запятую)', exIn),
+    h('p', { class: 'muted small' }, 'Агент работает с копией директории, а на хост попадает только то, что вы одобрите после просмотра diff. Безопаснее, чем подключать директорию на запись.'),
+    h('div', { class: 'grid2' }, h('label', {}, 'Директория на этом компьютере', hostIn), h('label', {}, 'Путь в машине', guestIn)),
+    h('label', {}, 'Исключить (имена директорий/файлов через запятую)', exIn),
     h('div', { class: 'row' }, addBtn)));
 
   for (const d of data.dirs) list.append(await reviewDir(m, d, rerender));
@@ -1433,7 +1395,7 @@ function renderVersion() {
   const short = (c) => (c ? c.slice(0, 7) : '');
   const v = $('#app-version');
   v.replaceChildren(`smolvm-web ${b.version}`,
-    ...(b.commit ? [' · коммит ', h('code', { title: b.commit }, short(b.commit))] : [h('span', { title: 'smolvm-web запущен не из git-клона (архив или копия без папки .git) — номер коммита неизвестен' }, ' · коммит неизвестен (копия без .git)')]),
+    ...(b.commit ? [' · коммит ', h('code', { title: b.commit }, short(b.commit))] : [h('span', { title: 'smolvm-web запущен не из git-клона (архив или копия без директории .git) — номер коммита неизвестен' }, ' · коммит неизвестен (копия без .git)')]),
     ...(b.branch ? [` (${b.branch})`] : []));
   const r = $('#app-restart');
   // The code on disk changed (git pull) but the server still runs the old one.
@@ -1745,7 +1707,7 @@ $('#form-settings').addEventListener('submit', async (e) => {
 
 // ⚙: what is set up once and rarely visited — agents, templates, machines, network,
 // secrets, folders — and the settings window.
-const ADMIN_PAGES = { agents: 'agents', profile: 'agents', work: 'agents', sandbox: 'sandbox', session: 'sandbox', machines: 'machines', egress: 'egress', log: 'egress', secrets: 'secrets', dirs: 'dirs' };
+const ADMIN_PAGES = { projects: 'projects', sandbox: 'sandbox', machines: 'machines', egress: 'egress', log: 'egress', secrets: 'secrets', dirs: 'dirs' };
 $('#btn-settings').addEventListener('click', (e) => {
   e.stopPropagation();
   const old = document.querySelector('.admin-menu');
@@ -1759,12 +1721,12 @@ $('#btn-settings').addEventListener('click', (e) => {
   const menu = h('div', { class: 'theme-menu admin-menu', role: 'menu' },
     me ? h('div', { class: 'admin-me small' }, h('b', {}, me.name), h('span', { class: 'muted' }, ` · ${{ viewer: 'наблюдатель', operator: 'оператор', admin: 'администратор' }[me.role]}`)) : null,
     me ? h('hr') : null,
-    item('agents', '#/agents', 'bot', 'Агенты', 'программа, изоляция, ключи, память'),
+    item('projects', '#/projects', 'branch', 'Проекты', 'репозитории с агентом и шаблоном'),
     item('sandbox', '#/sandbox', 'box', 'Шаблоны', 'образы программ и снимки машин'),
     item('machines', '#/', 'server', 'Машины', 'все microVM, консоль, файлы'),
     item('egress', '#/egress', 'globe', 'Сеть', 'белые списки и журнал соединений'),
     item('secrets', '#/secrets', 'key', 'Секреты', 'API-ключи и токены'),
-    item('dirs', '#/dirs', 'folder', 'Папки', 'какие папки можно давать машинам'),
+    item('dirs', '#/dirs', 'folder', 'Директории', 'какие директории можно давать машинам'),
     h('hr'),
     admin ? h('button', { type: 'button', role: 'menuitem', onclick: () => { menu.remove(); createAgent(); } }, ic('plus'), h('span', {}, h('b', {}, 'Создать агента'))) : null,
     admin ? h('button', { type: 'button', role: 'menuitem', onclick: () => { menu.remove(); openSettings(); } }, ic('sliders'), h('span', {}, h('b', {}, 'Настройки…'), h('span', { class: 'muted small' }, 'доступ и политика, smolvm, прокси, сертификаты, SIEM'))) : null,
@@ -1814,7 +1776,7 @@ async function renderVault() {
   if (!v.ok) {
     fill(st, h('div', { class: 'error' }, v.error),
       v.resettable ? h('div', { class: 'row', style: 'margin-top:10px' }, h('button', { type: 'button', class: 'btn primary', onclick: async () => {
-        const c = await confirmDialog('Создать хранилище заново?', 'Старое хранилище и его ключ останутся в папке настроек (файлы с пометкой .old-<дата>), открыть их новой версией нельзя. Секреты нужно будет добавить заново и снова привязать к машинам.', false, '', 'Создать заново');
+        const c = await confirmDialog('Создать хранилище заново?', 'Старое хранилище и его ключ останутся в директории настроек (файлы с пометкой .old-<дата>), открыть их новой версией нельзя. Секреты нужно будет добавить заново и снова привязать к машинам.', false, '', 'Создать заново');
         if (!c.ok) return;
         try { await api('POST', '/ui/vault/reset', {}); vaultCache = []; toast('Хранилище секретов создано заново', 'ok'); } catch (e) { toast(e.message, 'err'); }
         renderVault();
@@ -2104,8 +2066,8 @@ async function tabAgents(body, m) {
   // What the agents see from this computer — outside `head`, which re-renders on every poll.
   const folders = folderList(m, { compact: true });
   body.append(head, h('section', { class: 'card agent-folders' },
-    h('div', { class: 'card-head' }, h('h3', { class: 'h-ic' }, ic('folder'), 'Агенту доступны папки'), h('span', { class: 'spacer' }),
-      h('button', { class: 'btn', onclick: () => openFolderDialog({ machine: m.name, onDone: () => folders.refresh() }) }, ic('plus'), 'Дать доступ к папке')),
+    h('div', { class: 'card-head' }, h('h3', { class: 'h-ic' }, ic('folder'), 'Агенту доступны директории'), h('span', { class: 'spacer' }),
+      h('button', { class: 'btn', onclick: () => openFolderDialog({ machine: m.name, onDone: () => folders.refresh() }) }, ic('plus'), 'Дать доступ к директории')),
     folders));
   let alive = true;
   let timer = null;
@@ -2174,9 +2136,6 @@ async function tabAgents(body, m) {
     if (st.missingPorts.length) {
       nodes.push(h('div', { class: 'notice' }, `Порты агентов (${st.missingPorts.map((p) => p.host).join(', ')}) ещё не опубликованы — они применятся при следующем запуске машины. `,
         running ? h('button', { class: 'btn', onclick: async () => { await actions.stop(m); await actions.start({ ...m }); refresh(); } }, 'Перезапустить') : null));
-    }
-    if (!st.providers?.providers?.length) {
-      nodes.push(h('div', { class: 'notice' }, 'К машине не привязан ключ модели. Добавьте ключ провайдера модели в «Секреты» (режим «Шлюз») и привяжите на вкладке «Обзор» — агенты подхватят его при следующем запуске. Без ключа агент может войти напрямую через сервер вендора (подписка, OAuth), если этот сервер не отозван.'));
     }
 
     nodes.push(h('div', { class: 'agents' }, st.agents.map((a) => {
@@ -2271,8 +2230,8 @@ setInterval(() => { if (!document.hidden) refreshPendingReviews(); }, 15000);
 
 function routeParams() {
   const m = location.hash.match(/^#\/(\w*)(?:\?(.*))?$/);
-  // No hash at all: the start page is «Задачи»; «#/» stays the machines list.
-  if (!location.hash || location.hash === '#') return { page: 'tasks', params: new URLSearchParams() };
+  // No hash at all: the start page is «Агенты»; «#/» stays the machines list.
+  if (!location.hash || location.hash === '#') return { page: 'agents', params: new URLSearchParams() };
   return { page: (m && m[1]) || 'machines', params: new URLSearchParams((m && m[2]) || '') };
 }
 function route() {
@@ -2284,7 +2243,7 @@ function route() {
   for (const k of Object.keys(pages)) $(`#page-${k}`).hidden = k !== id;
   // The session, profile and review screens belong to «Агенты»; «Песочница» has its own link.
   document.body.dataset.page = id;
-  const navId = id === 'review' ? 'decisions' : id;
+  const navId = id === 'review' ? 'decisions' : ['profile', 'work'].includes(id) ? 'agents' : id === 'session' ? 'tasks' : id;
   document.querySelectorAll('#pagenav a').forEach((a) => a.classList.toggle('active', a.dataset.page === navId));
   $('#btn-settings').classList.toggle('active', !!ADMIN_PAGES[id]);
   if (id !== 'machines') pageCleanup = pages[id].render($(`#page-${id}`), params) || null;
@@ -2355,7 +2314,8 @@ function renderApprovals(list) {
 }
 setInterval(() => { if (!document.hidden) pollLive(); }, 2000);
 
-$('#btn-isolate-all').addEventListener('click', async () => {
+// «Остановить всех агентов» (the head of «Агенты»): every running machine isolated at once.
+window.isolateAll = async () => {
   const running = state.machines.filter((m) => m.state === 'running' && !state.isolated?.[m.name]);
   if (!running.length) return toast('Нет работающих машин');
   const c = await confirmDialog('Остановить всех агентов?', `Изолировать все работающие машины: ${running.map((m) => m.name).join(', ')}. Соединения оборвутся, токены шлюза заменятся, машины встанут на паузу.`, false, '', 'Изолировать все');
@@ -2366,7 +2326,7 @@ $('#btn-isolate-all').addEventListener('click', async () => {
     toast(`Изолировано машин: ${n}`, 'ok', 10000);
   } catch (e) { toast(e.message, 'err'); }
   await pollLive(); await refreshMachines();
-});
+};
 
 // ---------- loop ----------
 let ticking = false;
