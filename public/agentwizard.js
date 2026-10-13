@@ -2,8 +2,9 @@
 // «Создать агента» / настройки агента: one wide window of a fixed height, step by step:
 //   Программа → Политика → Директории → Секреты → Агент
 // The program is an agent preset. smolvm-web keeps one image per preset (with or without
-// hard isolation) and prepares it once, in the background; every task opens a clean copy
-// of it. The agent's own network, directories and secrets are applied to each copy.
+// hard isolation) and prepares it once, in the background; the agent's machine is made from
+// it — anew on every launch («Песочница»), or once and kept («Постоянная машина»). The
+// agent's own network, directories and secrets are applied to it.
 // A template made from your own machine can be chosen instead of a preset.
 
 (() => {
@@ -67,11 +68,11 @@
       dirs: prof?.folders?.length ? prof.folders.map((f) => ({ ...f })) : prof?.folder ? [{ hostPath: prof.folder, mode: 'review' }] : [],
       name: prof?.name || '', trust: prof?.trust || 'normal',
       idle: prof?.idleMinutes ?? 0, ttl: prof?.ttlHours ?? 0,
-      review: prof ? !prof.autoSave : true, from: '', inTab: false,
+      review: prof ? !prof.autoSave : true, from: '',
+      mode: prof?.mode === 'persistent' ? 'persistent' : 'sandbox',
       // The policy: the agent's, else its former trust level (the built-in policies have its ids).
       policy: prof?.policy || prof?.trust || 'normal',
     };
-    try { st.inTab = localStorage.getItem('smolvm.agentTab') === '1'; } catch {}
     // A template of your own machine carries its isolation: the mode is fixed by it.
     const ownTpl = () => (st.template ? tplOf(st.template) : null);
     const polOf = (id) => (pl.policies || []).find((x) => x.id === id) || null;
@@ -220,7 +221,7 @@
       });
       const add = plusTile('Новая политика', '⚙ → «Политики»', () => { dlg.close(); location.hash = '#/policies?new=1'; });
       const p = polOf(st.policy);
-      const kv = (k, v) => h('div', {}, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v));
+      const kv = kvCell;
       const listNames = (ids) => (ids === 'default' ? 'для новых машин' : (ids || []).map((id) => (eg.lists || []).find((l) => l.id === id)?.name || id).join(', ') || 'нет');
       return {
         body: [
@@ -228,13 +229,13 @@
           h('div', { class: 'aw-tiles', role: 'radiogroup' }, ...tiles, add),
           p ? card(`Что разрешает «${p.name}»`, h('a', { class: 'small', href: `#/policies?id=${enc(p.id)}`, onclick: () => dlg.close() }, 'открыть политику →'),
             h('div', { class: 'kv aw-kv' },
-              kv('Сеть', { strict: 'только разрешённое — обойти нельзя', soft: 'только разрешённое, без изоляции', off: 'без ограничений' }[p.net.mode]),
-              p.net.mode === 'off' ? null : kv('Незнакомые адреса', { deny: 'запрещать', ask: 'спрашивать вас', allow: 'пропускать' }[p.net.unknown]),
-              p.net.mode === 'off' ? null : kv('Белые списки', listNames(p.net.lists)),
-              kv('Права в машине', p.account.sudo ? 'sudo (root)' : 'без root'),
-              kv('Запрещённые программы', p.processes.deny.length ? p.processes.deny.join(', ') : 'нет'),
-              kv('Журнал процессов', p.processes.journal ? 'ведётся' : 'нет'),
-              kv('Срок задачи', p.time.ttlHours ? `${p.time.ttlHours} ч` : 'без срока'))) : null,
+              kv('Сеть', { strict: 'только разрешённое — обойти нельзя', soft: 'только разрешённое, без изоляции', off: 'без ограничений' }[p.net.mode], 'globe'),
+              p.net.mode === 'off' ? null : kv('Незнакомые адреса', { deny: 'запрещать', ask: 'спрашивать вас', allow: 'пропускать' }[p.net.unknown], 'compass'),
+              p.net.mode === 'off' ? null : kv('Белые списки', listNames(p.net.lists), 'list-check'),
+              kv('Права в машине', p.account.sudo ? 'sudo (root)' : 'без root', 'user'),
+              kv('Запрещённые программы', p.processes.deny.length ? p.processes.deny.join(', ') : 'нет', 'ban'),
+              kv('Журнал процессов', p.processes.journal ? 'ведётся' : 'нет', 'activity'),
+              kv('Срок задачи', p.time.ttlHours ? `${p.time.ttlHours} ч` : 'без срока', 'clock'))) : null,
           st.preset && !fixed ? h('div', { class: 'muted small' }, 'С жёсткой изоляцией и без неё у программы разные образы — нужный подготовится сам.') : null,
         ],
         foot: [back(), h('span', { class: 'spacer' }), ...saveBtns(), next()],
@@ -260,11 +261,11 @@
           card('Директории агента', h('button', { type: 'button', class: 'btn small-btn', onclick: add }, ic('plus'), 'Дать доступ к директории'),
             rows.length ? h('div', { class: 'aw-rows' }, ...rows) : h('p', { class: 'muted small' }, 'Пока ни одной: агент получит только чистую машину.')),
           card('Как агент получает директорию', null,
-            h('ul', { class: 'small aw-hints' },
-              h('li', {}, h('b', {}, 'Git-репозиторий'), ' — текущий код без истории; работа агента возвращается веткой, ваша директория не меняется, пока вы не нажмёте «Влить».'),
-              h('li', {}, h('b', {}, 'Копия с проверкой'), ' — для директории без git: агент правит копию, на диск попадёт только то, что вы примете.'),
-              h('li', {}, h('b', {}, 'Только чтение'), ' — агент видит копию; на компьютер из неё ничего не записывается.'),
-              h('li', { class: 'muted' }, 'Прямой доступ «Чтение и запись» в задаче невозможен: smolvm не подключает директории к машине из образа.'))),
+            h('div', { class: 'kv aw-kv' },
+              kvCell('Git-репозиторий', 'текущий код без истории; работа агента возвращается веткой, ваша директория не меняется, пока вы не нажмёте «Влить»', 'branch'),
+              kvCell('Копия с проверкой', 'для директории без git: агент правит копию, на диск попадёт только то, что вы примете', 'copy'),
+              kvCell('Только чтение', 'агент видит копию; на компьютер из неё ничего не записывается', 'eye'),
+              kvCell('Чтение и запись', 'в задаче невозможно: smolvm не подключает директории к машине из образа', 'ban'))),
         ],
         foot: [back(), h('span', { class: 'spacer' }), ...saveBtns(), next()],
       };
@@ -355,8 +356,12 @@
 
       const review = h('input', { type: 'checkbox', id: 'aw-review', checked: st.review });
       review.addEventListener('change', () => { st.review = review.checked; });
-      const inTab = h('input', { type: 'checkbox', id: 'aw-tab', checked: st.inTab });
-      inTab.addEventListener('change', () => { st.inTab = inTab.checked; });
+      // How it runs. Persistent machines can be forbidden by the administrator's policy.
+      const ap = window.auth?.policy || {};
+      const noKeep = ap.allowPersistent === false || !!ap.maxTtlHours;
+      if (noKeep && st.mode === 'persistent' && !edit) st.mode = 'sandbox';
+      const modeTile = (id, icon, name, sub, disabled) => tile({ on: st.mode === id, disabled, icon: ic(icon), name, sub,
+        title: disabled ? 'Запрещено политикой администратора' : '', onclick: () => { st.mode = id; draw(); } });
       const running = (state.machines || []).filter((m) => m.state === 'running' && !state.marks?.[m.name]?.sandbox);
       const from = edit ? null : h('select', { class: 'input', id: 'aw-from' }, h('option', { value: '' }, 'Начать с чистого листа'),
         running.map((m) => h('option', { value: m.name, selected: st.from === m.name }, `Взять инструкции, MCP и skills из машины ${m.name}`)));
@@ -368,7 +373,7 @@
         ic('play'), edit ? 'Сохранить и запустить' : 'Создать и запустить');
       return {
         body: [
-          h('p', { class: 'muted' }, 'Как агента зовут, через какой интерфейс он работает и что запоминает между задачами.'),
+          h('p', { class: 'muted' }, 'Как агента зовут, через какой интерфейс он работает, что запоминает и как работает его машина.'),
           h('div', { class: 'aw-grid2' },
             card('Агент', null,
               h('label', { class: 'ws-field', for: 'aw-name' }, 'Имя', name),
@@ -376,8 +381,10 @@
             card('Память', edit ? h('a', { class: 'small', href: `#/profile?id=${enc(prof.id)}`, onclick: () => dlg.close() }, 'инструкции, MCP, skills →') : null,
               from ? h('label', { class: 'ws-field', for: 'aw-from' }, 'С чего начать', from) : null,
               h('label', { class: 'ag-check', for: 'aw-review' }, review, h('span', {}, 'Проверять, что агент запоминает', h('span', { class: 'muted small' }, ' — skills, MCP и настройки сохранятся только после вашего «да»'))))),
-          card('Запуск', null,
-            h('label', { class: 'ag-check', for: 'aw-tab' }, inTab, h('span', {}, 'Открывать агента в отдельной вкладке браузера')),
+          card('Как работает', null,
+            h('div', { class: 'aw-grid2', role: 'radiogroup', 'aria-label': 'Как работает' },
+              modeTile('sandbox', 'box', 'Песочница', 'Каждый запуск — чистая машина из шаблона. «Остановить» удаляет её: изменения — веткой во «Входящие», память — на проверку.'),
+              modeTile('persistent', 'server', 'Постоянная машина', 'Машина создаётся из шаблона один раз. «Остановить» её выключает, «Запустить» включает снова — всё внутри сохраняется.', noKeep && st.mode !== 'persistent')),
             img && !img.ready ? h('div', { class: 'ag-prep' }, h('b', {}, 'Образ программы готовится'), imageNote(img),
               h('span', { class: 'small' }, 'Агента можно создать уже сейчас; «Создать и запустить» включится, когда образ будет готов. Окно можно закрыть.')) : null),
         ],
@@ -386,10 +393,16 @@
     }
 
     async function removeAgent() {
-      if (d.sandboxes.some((x) => x.profile === prof.id)) { toast('Сначала закончите его открытые сессии', 'err'); return; }
-      const c = await confirmDialog('Удалить агента?', `«${prof.name}» и его память (инструкции, MCP, skills) будут удалены. Образ программы останется.`, false, '', 'Удалить');
+      const own = d.sandboxes.filter((x) => x.profile === prof.id);
+      // A sandbox is stopped first (its branch is taken); a kept machine goes with the agent.
+      if (own.some((x) => !x.persistent)) { toast('Сначала остановите агента', 'err'); return; }
+      const c = await confirmDialog('Удалить агента?', `«${prof.name}» и его память (инструкции, MCP, skills) будут удалены.${own.length ? ` Его машина ${own.map((x) => x.name).join(', ')} удалится тоже — не забранные в ветку изменения пропадут.` : ''} Образ программы останется.`, false, '', 'Удалить');
       if (!c.ok) return;
-      try { await api('DELETE', `/ui/sandbox/profiles/${enc(prof.id)}`); toast('Агент удалён', 'ok'); dlg.close(); } catch (e) { toast(e.message, 'err'); }
+      try {
+        for (const x of own) await api('POST', `/ui/sandbox/machines/${enc(x.name)}/close`, { save: false });
+        await api('DELETE', `/ui/sandbox/profiles/${enc(prof.id)}`);
+        toast('Агент удалён', 'ok'); dlg.close(); refreshMachines();
+      } catch (e) { toast(e.message, 'err'); }
     }
 
     async function submit(start) {
@@ -402,11 +415,11 @@
       }
       ensureImage();
       // The tab opens on the click itself: later the browser would block it.
-      const tab = start && st.inTab ? agentTab() : null;
+      const tab = start ? agentTab() : null;
       const fields = {
         name: st.name.trim(), preset: st.preset, template: ownTpl() ? st.template : null, agent: st.agent,
         net: netMode(), lists: st.lists, secrets: st.secrets, folders: st.dirs, folder: null,
-        trust: trustOf(polOf(st.policy)), policy: st.policy,
+        trust: trustOf(polOf(st.policy)), policy: st.policy, mode: st.mode,
       };
       let id = prof?.id;
       try {
@@ -415,7 +428,6 @@
           id = (await api('POST', '/ui/sandbox/profiles', { ...fields, from: st.from || null })).id;
           if (!st.review) await api('PUT', `/ui/sandbox/profiles/${enc(id)}`, { autoSave: true });
         }
-        try { localStorage.setItem('smolvm.agentTab', st.inTab ? '1' : '0'); } catch {}
       } catch (e) { if (tab) tab.close(); toast(e.message, 'err', 10000); return; }
       if (!start) {
         toast(edit ? 'Сохранено' : `Агент «${fields.name}» создан${image()?.ready ? '' : ' — образ программы готовится, запуск станет доступен через несколько минут'}`, 'ok', 8000);
@@ -424,12 +436,12 @@
       foot.querySelectorAll('button').forEach((b) => { b.disabled = true; });
       foot.append(h('span', { class: 'muted small' }, h('i', { class: 'spin' }), ' Запускается…'));
       try {
-        const r = await api('POST', '/ui/tasks', { profile: id, agent: st.agent, policy: st.policy, template: ownTpl() ? st.template : null });
+        const r = await api('POST', `/ui/run/${enc(id)}/launch`, { program: st.agent });
         dlg.close();
         if (tab && r.url) { agentInTab(r.name, true); goAgent(tab, r.url); } else if (tab) tab.close();
         toast('Агент запущен', 'ok');
         refreshMachines();
-        location.hash = `#/tasks?id=${enc(r.taskId)}`;
+        location.hash = `#/agents?id=${enc(id)}&tab=programs`;
       } catch (e) {
         if (tab) tab.close();
         toast(e.message, 'err', 12000);

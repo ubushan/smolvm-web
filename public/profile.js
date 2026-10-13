@@ -89,7 +89,7 @@
       try { await api('PUT', `/ui/sandbox/profiles/${enc(id)}`, { autoSave: !review.checked }); prof.autoSave = !review.checked; toast(review.checked ? 'То, что агент запомнит, будет идти к вам на проверку' : 'Память агента будет сохраняться без проверки', review.checked ? 'ok' : ''); }
       catch (e) { toast(e.message, 'err'); review.checked = !review.checked; }
     });
-    const openBtn = h('button', { class: 'btn primary', onclick: () => window.agentsLaunch?.({ profile: id }) }, ic('play'), 'Дать задачу');
+    const openBtn = h('button', { class: 'btn primary', onclick: () => window.agentsLaunch?.({ profile: id }) }, ic('play'), 'Запустить');
 
     const nav = h('div', { class: 'pf-nav' }, ...SECTIONS.filter(([sec]) => sec !== 'other' || inSection('other').length).map(([sec, title]) => {
       const n = inSection(sec).length;

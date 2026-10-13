@@ -75,13 +75,15 @@
         b('danger-outline', 'Запретить', 'deny')));
   }
 
-  // A closed task whose branch waits: accept or discard on the task screen.
+  // A run whose branch waits (the agent stopped, or its kept machine goes on): accept or
+  // discard on the run's screen.
   function branchCard(t) {
     const g = t.git.filter((x) => x.state === 'ready');
     const n = g.reduce((s, x) => s + (x.commits || 0), 0);
+    const prof = data.profiles.find((y) => y.id === t.profile);
     return h('article', { class: 'dc-card row' },
       h('div', { class: 'dc-grow' },
-        h('div', { class: 'dc-meta' }, h('b', {}, AGENTS[t.agent] || t.agent || 'агент'), h('span', {}, 'закончил задачу')),
+        h('div', { class: 'dc-meta' }, h('b', {}, prof?.name || AGENTS[t.agent] || t.agent || 'агент'), h('span', {}, t.closedAt ? 'закончил работу' : 'прислал изменения')),
         h('div', { class: 'dc-title' }, t.title),
         h('div', { class: 'muted small' }, `${plural(n, 'коммит', 'коммита', 'коммитов')} в ${g.map((x) => `${base(x.hostPath)} (${x.branch})`).join(', ')} · ваша директория не менялась`)),
       h('a', { class: 'btn primary', href: `#/tasks?id=${enc(t.id)}` }, 'Посмотреть и решить'));
@@ -98,7 +100,7 @@
         { added: '+ ', modified: '~ ', deleted: '− ' }[c.kind] || '', c.path.replace(/^\.smolvm-profile\/claude-mcp\.json$/, '~/.claude.json → mcpServers'))),
         x.changes.length > 5 ? h('div', { class: 'muted' }, `и ещё ${x.changes.length - 5}`) : null),
       exec.length ? h('div', { class: 'small badc' }, 'Среди них skills, MCP или настройки — они будут запускаться в каждой следующей сессии. Посмотрите, нет ли там чужих команд.') : null,
-      h('div', { class: 'dc-actions' }, h('a', { class: 'btn ink', href: `#/review?id=${enc(x.id)}` }, 'Посмотреть и решить')));
+      h('div', { class: 'dc-actions' }, h('a', { class: 'btn primary', href: `#/review?id=${enc(x.id)}` }, 'Посмотреть и решить')));
   }
 
   function projectCard(c) {
@@ -115,17 +117,17 @@
   }
 
   function side() {
-    const working = tasks.filter((t) => !t.closedAt).map((t) => h('div', { class: 'dc-side-card' },
-      h('b', {}, t.title),
+    const working = tasks.filter((t) => !t.closedAt && ['working', 'waiting', 'opening'].includes(t.status)).map((t) => h('div', { class: 'dc-side-card' },
+      h('b', {}, data.profiles.find((y) => y.id === t.profile)?.name || t.title),
       h('span', { class: `small ${t.status === 'waiting' ? 'warnc' : 'muted'}` }, t.status === 'waiting' ? 'ждёт вашего ответа' : t.status === 'opening' ? 'открывается' : AGENTS[t.agent] || 'работает'),
-      h('a', { class: 'small', href: `#/tasks?id=${enc(t.id)}` }, 'Открыть задачу')));
+      t.profile ? h('a', { class: 'small', href: `#/agents?id=${enc(t.profile)}` }, 'Открыть агента') : h('a', { class: 'small', href: `#/tasks?id=${enc(t.id)}` }, 'Открыть')));
     const said = today.slice(0, 8).map((e) => h('div', {},
       e.action.replace(/^подтверждение: /, '').replace(/^ревью: /, 'проект: ').replace(/^песочницы: изменения профиля/, 'память агента:'),
       e.detail?.title ? h('span', { class: 'mono' }, ` ${e.detail.title}`) : null,
       e.machine ? h('span', { class: 'muted' }, ` · ${who(e.machine)}`) : null));
     return h('aside', { class: 'dc-side' },
       h('div', { class: 'label-like' }, 'Сейчас работают'),
-      ...(working.length ? working : [h('div', { class: 'muted small' }, 'Никто. ', h('a', { href: '#/tasks?new=1' }, 'Новая задача'))]),
+      ...(working.length ? working : [h('div', { class: 'muted small' }, 'Никто. ', h('a', { href: '#/agents' }, 'Агенты'))]),
       h('div', { class: 'label-like dc-gap' }, 'Решено сегодня'),
       h('div', { class: 'dc-said small' }, ...(said.length ? said : [h('span', { class: 'muted' }, 'Пока ничего')])),
       h('a', { class: 'small', href: '#/audit' }, 'Вся история →'));
@@ -134,7 +136,7 @@
   function render() {
     if (!root || !data) return;
     const y = root.querySelector('.tab-body')?.scrollTop || 0;
-    const branches = tasks.filter((t) => t.closedAt && t.git.some((g) => g.state === 'ready'));
+    const branches = tasks.filter((t) => t.git.some((g) => g.state === 'ready'));
     const cards = [...approvals.map(askCard), ...branches.map(branchCard), ...data.pending.map(memoryCard), ...copies.map(projectCard)];
     fill(root, h('div', { class: 'layout dc-only' },
       h('section', { class: 'panel detail-panel' },
@@ -142,7 +144,7 @@
           h('div', { class: 'ag-title' }, h('h2', {}, 'Входящие'), h('span', { class: 'muted small' }, 'Всё, что агенты не могут сделать сами: запросы, ветки на проверку, память. Ответьте — и они продолжат работу.'))),
         h('div', { class: 'tab-body' }, h('div', { class: 'dc-wrap' },
           h('div', { class: 'dc-main' },
-            ...(cards.length ? cards : [h('section', { class: 'card ws-empty' }, ic('shield'), h('h3', {}, 'Всё решено'),
+            ...(cards.length ? cards : [h('section', { class: 'card ws-empty' }, ic('check-circle'), h('h3', {}, 'Всё решено'),
               h('p', { class: 'muted' }, 'Когда агент захочет на новый сайт, закончит задачу с изменениями в проекте или захочет запомнить навык, вопрос появится здесь.'))])),
           side())))));
     const tb = root.querySelector('.tab-body');

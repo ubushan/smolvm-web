@@ -192,9 +192,11 @@ async function refreshHealth() {
     $('#list-status').textContent = `${m ? `${m.running}/${m.total} запущено` : ''}${hres.uptime_seconds != null ? ` · uptime ${fmtDuration(hres.uptime_seconds)}` : ''}`;
   } catch (e) {
     state.healthy = false;
-    el.className = 'health bad';
-    el.innerHTML = `<span class="dot"></span><span>API недоступен</span>`;
-    el.title = 'smolvm serve не отвечает';
+    // Not logged in yet: the API answers, it just wants a login — no alarm in the header.
+    const auth = e.status === 401;
+    el.className = auth ? 'health' : 'health bad';
+    el.innerHTML = auth ? '' : `<span class="dot"></span><span>API недоступен</span>`;
+    el.title = auth ? 'нужно войти' : 'smolvm serve не отвечает';
     $('#capacity').innerHTML = '';
     $('#list-status').textContent = '';
     return false;
@@ -551,7 +553,7 @@ function updateDetailHead(m) {
     m.parentMachine ? h('span', { class: 'tag' }, `⑂ от ${m.parentMachine}`) : null,
     iso ? h('span', { class: 'tag bad', title: `с ${new Date(iso.since).toLocaleString()}` }, 'изолирована') : null,
     h('div', { class: 'actions' },
-      iso ? btn([ic('shield'), 'Снять изоляцию'], () => actions.unisolate(m), { title: 'Вернуть машине сеть и токены шлюза. Машина останется на паузе — возобновите её, агентов перезапустите' }) : null,
+      iso ? btn([ic('unlock'), 'Снять изоляцию'], () => actions.unisolate(m), { title: 'Вернуть машине сеть и токены шлюза. Машина останется на паузе — возобновите её, агентов перезапустите' }) : null,
       !iso && stopped ? btn([ic('play'), 'Старт'], () => actions.start(m), { cls: 'primary' }) : null,
       !iso && running ? btn([ic('refresh'), 'Перезапуск'], () => actions.restart(m), { title: 'Остановить и снова запустить через smolvm-web: подключатся новые директории, применятся фильтр «Сеть», прокси и uid агента. Запущенные агенты остановятся' }) : null,
       running ? btn([ic('pause'), 'Пауза'], () => actions.pause(m), { title: 'Сохранить RAM, CPU и диски и остановить' }) : null,
@@ -611,9 +613,15 @@ const plural = (n, one, few, many) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? o
 // A policy's icon in its colour (⚙ «Политики», the agent window, the agent, the task).
 const POLICY_COLORS = [['green', 'Зелёный'], ['blue', 'Синий'], ['red', 'Красный'], ['yellow', 'Жёлтый'], ['gray', 'Серый'], ['purple', 'Фиолетовый']];
 function policyIcon(p, small) {
-  return h('span', { class: `mark m-icon${small ? ' m-list' : ''} pc pc-${p?.color || 'gray'}` }, ic(p?.builtin ? 'shield' : 'sliders'));
+  return h('span', { class: `mark m-icon${small ? ' m-list' : ''} pc pc-${p?.color || 'gray'}` }, ic('policy'));
 }
 window.policyIcon = policyIcon;
+// A cell of a key–value table; with an icon, what the key is about reads at a glance.
+function kvCell(k, v, icon) {
+  if (!icon) return h('div', {}, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v));
+  return h('div', { class: 'kv-i' }, ic(icon), h('div', { class: 'kv-t' }, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v)));
+}
+window.kvCell = kvCell;
 window.POLICY_COLORS = POLICY_COLORS;
 
 // Risk of a leak in one line when the triad is broken; the three links on demand (an agent's overview).
@@ -1038,7 +1046,7 @@ function tabLogs(body, m) {
   const term = h('div', { class: 'term' });
   const follow = h('input', { type: 'checkbox', checked: true });
   const tail = h('input', { class: 'input small', type: 'number', min: '0', value: '500', title: 'Последние N строк' });
-  const reload = h('button', { class: 'btn' }, '↻ Перезагрузить');
+  const reload = h('button', { class: 'btn' }, ic('refresh'), 'Перезагрузить');
   const clear = h('button', { class: 'btn ghost' }, 'Очистить');
   body.append(h('div', { class: 'row' }, h('label', { class: 'check' }, follow, ' Следить (follow)'), h('label', { class: 'check' }, 'tail ', tail), reload, clear), term);
 
@@ -1094,7 +1102,7 @@ function tabFiles(body, m) {
   const up = h('button', { class: 'btn', title: 'Вверх' }, '↑');
   const go = h('button', { class: 'btn' }, 'Открыть');
   const fileInput = h('input', { type: 'file', multiple: true, hidden: true });
-  const upload = h('button', { class: 'btn primary' }, '⇪ Загрузить');
+  const upload = h('button', { class: 'btn primary' }, ic('upload'), 'Загрузить');
   const list = h('div');
   const drop = h('div', { class: 'dropzone' }, 'Перетащите файлы сюда, чтобы загрузить их в текущую директорию');
   body.append(h('div', { class: 'files-bar' }, up, pathInput, go, upload, fileInput), list, drop);
@@ -1806,17 +1814,17 @@ async function renderVault() {
     h('div', { class: 'actions' },
       h('button', { class: 'btn needs-admin', onclick: () => editSecret(x) }, 'Изменить'),
       h('button', { class: 'btn ghost icon danger needs-admin', title: 'Удалить', 'aria-label': 'Удалить секрет', onclick: () => deleteSecret(x) }, ic('trash'))));
-  const kv = (k, val) => h('div', {}, h('div', { class: 'k' }, k), h('div', { class: 'v' }, val));
+  const kv = kvCell;
   const where = x.mode === 'gateway' ? x.upstream : x.mode === 'substitute' ? x.hosts.join(', ') : '—';
   fill($('#secret-view'),
     h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h3', {}, 'Как передаётся')),
       h('div', { class: 'kv' },
-        kv('Режим', h('span', { class: `tag ${MODE_TAG[x.mode]}` }, MODE_LABEL[x.mode])),
-        kv('Переменная', h('span', { class: 'mono' }, x.envVar)),
-        x.baseUrlVar ? kv('Base URL', h('span', { class: 'mono' }, x.baseUrlVar)) : null,
-        kv(x.mode === 'gateway' ? 'Куда шлюз отправляет' : 'Хосты', h('span', { class: 'mono' }, where)),
-        x.model ? kv('Модель', h('span', { class: 'mono' }, x.model)) : null,
-        x.methods?.length ? kv('Методы', x.methods.join(', ')) : null),
+        kv('Режим', h('span', { class: `tag ${MODE_TAG[x.mode]}` }, MODE_LABEL[x.mode]), 'send'),
+        kv('Переменная', h('span', { class: 'mono' }, x.envVar), 'braces'),
+        x.baseUrlVar ? kv('Base URL', h('span', { class: 'mono' }, x.baseUrlVar), 'link') : null,
+        kv(x.mode === 'gateway' ? 'Куда шлюз отправляет' : 'Хосты', h('span', { class: 'mono' }, where), 'globe'),
+        x.model ? kv('Модель', h('span', { class: 'mono' }, x.model), 'bot') : null,
+        x.methods?.length ? kv('Методы', x.methods.join(', '), 'list-check') : null),
       x.confirm?.length ? h('p', { class: 'small warnc' }, `Подтверждение человеком: ${x.confirm.join(', ')}`) : null,
       x.mode === 'env' ? h('p', { class: 'small badc' }, 'Машина видит значение ключа. Для ключей моделей лучше шлюз.') : null),
     h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h3', {}, 'Привязан к машинам')),
@@ -2158,7 +2166,7 @@ async function tabAgents(body, m) {
         a.provider ? h('div', { class: 'muted small' }, `Модель: ${a.provider}`) : a.id !== 'terminal' ? h('div', { class: 'muted small' }, 'Модель: не задана') : h('div', { class: 'muted small' }, a.desc),
         h('div', { class: 'row' },
           a.running
-            ? [h('button', { class: 'btn primary', title: 'Открыть в новой вкладке', onclick: async () => {
+            ? [h('button', { class: 'btn', title: 'Открыть в новой вкладке', onclick: async () => {
                 const w = agentTab();
                 try { const r = await api('GET', `/ui/machines/${enc(m.name)}/agents/${a.id}/open`); goAgent(w, r.url); } catch (e) { if (w) w.close(); toast(e.message, 'err'); }
               } }, [ic('external'), 'Открыть']),
@@ -2208,6 +2216,15 @@ const pages = {}; // id -> { render(el, params), leave() }
 pages.secrets = {
   render() { $('#form-secret').hidden = true; renderVault(); return null; },
 };
+// An address no section answers to: say so instead of silently opening another page.
+pages.notfound = {
+  render(el) {
+    fill(el, h('section', { class: 'card ws-empty' }, ic('compass'), h('h3', {}, 'Такой страницы нет'),
+      h('p', { class: 'muted' }, 'Ссылка устарела или в адресе опечатка.'),
+      h('a', { class: 'btn primary', href: '#/agents' }, 'К агентам')));
+    return null;
+  },
+};
 let pageCleanup = null;
 
 // «Входящие» badge: requests waiting for a person, profile changes and task branches waiting for review.
@@ -2236,14 +2253,15 @@ function routeParams() {
 }
 function route() {
   const { page, params } = routeParams();
-  const id = pages[page] ? page : 'machines';
+  const id = pages[page] ? page : page === 'machines' ? 'machines' : 'notfound';
   if (pageCleanup) { try { pageCleanup(); } catch {} pageCleanup = null; }
   state.page = id;
   $('#page-machines').hidden = id !== 'machines';
   for (const k of Object.keys(pages)) $(`#page-${k}`).hidden = k !== id;
   // The session, profile and review screens belong to «Агенты»; «Песочница» has its own link.
   document.body.dataset.page = id;
-  const navId = id === 'review' ? 'decisions' : ['profile', 'work'].includes(id) ? 'agents' : id === 'session' ? 'tasks' : id;
+  // A run's screen (#/tasks) is opened from «Входящие»: its branch is decided there.
+  const navId = ['review', 'tasks', 'session'].includes(id) ? 'decisions' : ['profile', 'work'].includes(id) ? 'agents' : id;
   document.querySelectorAll('#pagenav a').forEach((a) => a.classList.toggle('active', a.dataset.page === navId));
   $('#btn-settings').classList.toggle('active', !!ADMIN_PAGES[id]);
   if (id !== 'machines') pageCleanup = pages[id].render($(`#page-${id}`), params) || null;

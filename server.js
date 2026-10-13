@@ -30,6 +30,7 @@ const smolfile = require('./lib/smolfile');
 const review = require('./lib/review');
 const gitwork = require('./lib/gitwork');
 const tasks = require('./lib/tasks');
+const agentrun = require('./lib/agentrun');
 const projects = require('./lib/projects');
 const access = require('./lib/access');
 const policies = require('./lib/policies');
@@ -186,6 +187,9 @@ const AUDIT_LABELS = [
   [/^POST \/ui\/host\/repair-rootfs$/, 'починка rootfs smolvm (Windows)'],
   [/^PUT \/ui\/audit\/settings$/, 'настройки аудита'],
   [/^(PUT|POST|DELETE) \/ui\/sandbox\/profiles/, 'песочницы: профиль агента'],
+  [/^POST \/ui\/run\/[\w-]+\/launch$/, 'агент: запуск'],
+  [/^POST \/ui\/run\/[\w-]+\/stop$/, 'агент: остановка'],
+  [/^POST \/ui\/run\/[\w-]+\/recreate$/, 'агент: новая машина из шаблона'],
   [/^POST \/ui\/sandbox\/pending\/[^/]+\/apply$/, 'песочницы: изменения профиля применены'],
   [/^DELETE \/ui\/sandbox\/pending\//, 'песочницы: изменения профиля отклонены'],
   [/^DELETE \/ui\/sandbox\/templates\//, 'песочницы: шаблон удалён'],
@@ -968,6 +972,21 @@ const UI = [
       trust: b.trust ? String(b.trust) : null, task: b.task ? String(b.task) : null, folders: Array.isArray(b.folders) ? b.folders : undefined,
       idleMinutes: b.idleMinutes, ttlHours: b.ttlHours, persistent: !!b.persistent, project: b.project ? String(b.project) : null, policy: b.policy ? String(b.policy) : null }, sandboxHooks)); } catch (e) { err(res, e); }
   }],
+  // ---- an agent run from its page: «Запустить» a program, «Остановить» ----
+  ['GET', /^\/ui\/run\/([\w-]+)$/, async (req, res, m) => {
+    try { sendJson(res, 200, await agentrun.status(m[1])); } catch (e) { err(res, e); }
+  }],
+  ['POST', /^\/ui\/run\/([\w-]+)\/(launch|stop|recreate)$/, async (req, res, m) => {
+    const b = await readJson(req);
+    try {
+      let r;
+      if (m[2] === 'launch') r = await agentrun.launch(m[1], b.program ? String(b.program) : null, sandboxHooks);
+      else if (m[2] === 'stop') r = await agentrun.stop(m[1], sandboxHooks);
+      else r = await agentrun.recreate(m[1], sandboxHooks);
+      res.auditDetail = { profile: m[1], program: b.program || undefined, machine: r.name || undefined };
+      sendJson(res, 200, r);
+    } catch (e) { err(res, e); }
+  }],
   // ---- projects: a repository with its agent, trust and prepared template ----
   ['GET', /^\/ui\/projects$/, (req, res) => sendJson(res, 200, { projects: projects.list() })],
   ['POST', /^\/ui\/projects$/, async (req, res) => {
@@ -1089,7 +1108,7 @@ const UI = [
   ['POST', /^\/ui\/sandbox\/profiles$/, async (req, res) => {
     const b = await readJson(req);
     try { sendJson(res, 200, await sandbox.createProfile({ name: b.name, from: b.from ? String(b.from) : null, template: b.template ? String(b.template) : null, agent: b.agent ? String(b.agent) : null, task: b.task, folder: b.folder, folders: b.folders, trust: b.trust, idleMinutes: b.idleMinutes, ttlHours: b.ttlHours,
-      preset: b.preset, net: b.net, lists: b.lists, secrets: b.secrets, policy: b.policy })); } catch (e) { err(res, e); }
+      preset: b.preset, net: b.net, lists: b.lists, secrets: b.secrets, policy: b.policy, mode: b.mode })); } catch (e) { err(res, e); }
   }],
   ['PUT', /^\/ui\/sandbox\/profiles\/([\w-]+)$/, async (req, res, m) => {
     const b = await readJson(req);
