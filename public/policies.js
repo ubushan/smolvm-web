@@ -153,7 +153,7 @@
       policyIcon(p, true), h('div', { class: 'name' }, p.name),
       p.builtin ? h('span', { class: 'ag-pill neutral' }, 'встроенная') : h('span'), h('div', { class: 'meta' }, summaries[p.id] || ''));
     return h('section', { class: 'panel list-panel' },
-      h('div', { class: 'panel-head' }, h('h2', { class: 'h-ic' }, ic('shield'), 'Политики'),
+      h('div', { class: 'panel-head' }, h('h2', { class: 'h-ic' }, ic('policy'), 'Политики'),
         helpButton('Что такое политика',
           h('p', {}, 'Политика — набор ограничений, с которыми агент работает в задаче: куда ходить в сети, какие директории компьютера получать, какие права у его учётной записи в машине, какие программы запускать, сколько живёт задача.'),
           h('ul', {},

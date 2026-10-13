@@ -88,7 +88,7 @@
     const live = h('button', { class: `btn small-btn log-live${paused ? '' : ' on'}`, title: paused ? 'Обновление остановлено' : 'Журнал обновляется каждые 4 секунды', onclick: () => { paused = !paused; renderLog(); } },
       h('span', { class: 'live-dot' }), paused ? 'Пауза' : 'Вживую');
     const toolbar = h('div', { class: 'log-toolbar' }, srcSeg, typeSeg, tSel, mSel, h('div', { class: 'log-search' }, ic('search'), qIn), h('span', { class: 'spacer' }), live,
-      h('button', { class: 'btn small-btn', title: 'Проверить цепочку подписей журнала: изменённые, удалённые или вставленные записи', onclick: verifyLog }, ic('shield'), 'Проверить целостность'),
+      h('button', { class: 'btn small-btn', title: 'Проверить цепочку подписей журнала: изменённые, удалённые или вставленные записи', onclick: verifyLog }, ic('check-circle'), 'Проверить целостность'),
       h('a', { class: 'btn small-btn', href: '/ui/audit/export', download: '', title: 'Весь журнал в формате JSON Lines' }, ic('download'), 'Экспорт'));
 
     // The feed, by day.
@@ -127,7 +127,7 @@
     const feed = data.entries.length ? h('div', { class: 'aud-feed' },
       h('div', { class: 'aud-row aud-head' }, h('span', {}, 'Время'), h('span', {}, ''), h('span', {}, 'Что произошло'), h('span', {}, 'Машина'), h('span', {}, 'Кто'), h('span', { class: 'right' }, 'Итог')),
       ...rows)
-      : h('div', { class: 'log-empty' }, ic('shield'), h('div', {}, filter.type || filter.machine || filter.q || filter.task || filter.source !== 'all' ? 'Под фильтр ничего не попало.' : 'Записей пока нет.'));
+      : h('div', { class: 'log-empty' }, ic('journal'), h('div', {}, filter.type || filter.machine || filter.q || filter.task || filter.source !== 'all' ? 'Под фильтр ничего не попало.' : 'Записей пока нет.'));
 
     fill(wrap, tiles, toolbar, feed,
       h('div', { class: 'aud-foot small muted' },
@@ -199,7 +199,7 @@
   async function render() {
     if (!root) return;
     fill(root, h('div', { class: 'layout dc-only' }, h('section', { class: 'panel detail-panel' },
-      h('div', { class: 'detail-head' }, h('span', { class: 'mark m-icon' }, ic('shield')),
+      h('div', { class: 'detail-head' }, h('span', { class: 'mark m-icon' }, ic('journal')),
         h('div', { class: 'ag-title' }, h('h2', {}, 'Журнал'), h('span', { class: 'muted small' }, 'Кто что делал с машинами и куда они ходили: команды, запуски и остановки, ревью, настройки, файлы, соединения.')),
         h('div', { class: 'actions' }, h('span', { id: 'aud-integrity', class: 'ss-pill' }, 'Проверка журнала…'), h('span', { id: 'aud-siem', class: 'ss-pill' }),
           helpButton('Что попадает в журнал',

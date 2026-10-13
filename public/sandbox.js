@@ -48,28 +48,27 @@
     const users = data.profiles.filter((p) => p.template === t.id || (p.preset && t.auto?.preset === p.preset && !!t.auto?.isolated === ((p.net || 'strict') === 'strict')));
     const iso = t.egress?.enabled && t.egress?.strict;
     const vers = Object.entries(t.versions || {});
-    const kv = (k, v) => h('div', {}, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v));
+    const kv = kvCell;
     return h('section', { class: 'panel detail-panel' },
       h('div', { class: 'detail-head' },
         t.agents ? mark(markOf(t)) : mark('vm'),
-        h('div', { class: 'ag-title' }, h('h2', {}, t.title), h('span', { class: 'muted small mono' }, t.auto ? 'образ программы · готовится сам' : `из машины ${t.source}`)),
+        h('div', { class: 'ag-title' }, h('h2', {}, t.title), h('span', { class: 'muted small' }, t.auto ? 'образ программы · готовится сам' : `из машины ${t.source}`)),
         status,
         t.creating ? null : h('div', { class: 'actions' },
           h('button', { class: `btn${t.updates?.length ? ' primary' : ''}`, disabled: running, title: 'Установить последнюю версию агентов в исходной машине и снять шаблон заново', onclick: () => upgrade(t) }, ic('download'), 'Обновить агента'),
           h('button', { class: 'btn ghost', disabled: running, title: 'Снять шаблон заново, ничего не обновляя (например, после ваших изменений в машине)', onclick: () => start({ source: t.source, id: t.id }, 'Снять шаблон заново?') }, ic('refresh'), 'Снять заново'),
           h('button', { class: 'btn ghost icon danger', disabled: running, title: 'Удалить шаблон', 'aria-label': 'Удалить шаблон', onclick: () => remove(t) }, ic('trash')))),
-      h('nav', { class: 'tabs' }, h('button', { class: 'tab active' }, 'Обзор')),
       h('div', { class: 'tab-body' },
         job?.status === 'error' ? h('div', { class: 'error small' }, job.error) : null,
         t.updates?.length ? h('div', { class: 'tpl-update' }, ic('refresh'), h('span', {}, 'Доступна новая версия: ', t.updates.map((u) => `${u.cmd} ${u.have} → ${u.latest}`).join(', '), ' — «Обновить агента».')) : null,
         h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h3', {}, 'Что внутри')),
           h('div', { class: 'kv' },
-            kv('Образ OCI', h('span', { class: 'mono' }, t.image || '—')),
-            kv('Агенты', vers.length ? vers.map(([c, v]) => `${AGENT_TITLES[c] || c} ${v}`).join(', ') : (t.agents?.agents || []).filter((x) => x !== 'terminal').map((x) => AGENT_TITLES[x] || x).join(', ') || '—'),
-            kv('Изоляция', iso ? 'жёсткая — обойти фильтр нельзя' : t.egress?.enabled ? 'фильтр без изоляции' : 'без ограничений'),
-            kv('Ресурсы', t.cpus ? `${t.cpus} vCPU · ${fmtMb(t.memoryMb)}` : '—'),
-            kv('Снимок', t.size ? fmtBytes(t.size) : '—'),
-            kv('Обновлён', t.updatedAt ? ago(t.updatedAt) : '—'))),
+            kv('Образ OCI', h('span', { class: 'mono' }, t.image || '—'), 'layers'),
+            kv('Агенты', vers.length ? vers.map(([c, v]) => `${AGENT_TITLES[c] || c} ${v}`).join(', ') : (t.agents?.agents || []).filter((x) => x !== 'terminal').map((x) => AGENT_TITLES[x] || x).join(', ') || '—', 'bot'),
+            kv('Изоляция', iso ? 'жёсткая — обойти фильтр нельзя' : t.egress?.enabled ? 'фильтр без изоляции' : 'без ограничений', 'lock'),
+            kv('Ресурсы', t.cpus ? `${t.cpus} vCPU · ${fmtMb(t.memoryMb)}` : '—', 'cpu'),
+            kv('Снимок', t.size ? fmtBytes(t.size) : '—', 'disk'),
+            kv('Обновлён', t.updatedAt ? ago(t.updatedAt) : '—', 'clock'))),
         h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h3', {}, 'Кто им пользуется')),
           h('p', { class: 'small' }, open ? `Сейчас из него открыто песочниц: ${open}.` : 'Сейчас песочниц из него нет.'),
           users.length ? h('div', { class: 'chips' }, ...users.map((p) => h('a', { class: 'chip', href: `#/agents?id=${enc(p.id)}` }, p.name)))

@@ -69,7 +69,7 @@
 
   function dirCard(d) {
     if (editingDir === d.id) return dirEditCard(d);
-    const kv = (k, v) => h('div', {}, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v));
+    const kv = kvCell;
     return h('section', { class: 'card' },
       h('div', { class: 'card-head' }, h('h3', {}, 'Директория'), h('span', { class: 'spacer' }),
         h('button', { class: 'btn small-btn', onclick: () => { editingDir = d.id; render(); } }, 'Изменить'),
@@ -79,10 +79,10 @@
           try { await api('DELETE', `/ui/dirs/${enc(d.id)}`); sel = ''; await load(); render(); } catch (e) { toast(e.message, 'err'); }
         } }, ic('trash'))),
       h('div', { class: 'kv' },
-        kv('На компьютере', h('span', { class: 'mono', title: d.hostPath }, d.hostPath.replace(state.info?.home || '\u0000', '~'))),
-        kv('В машине', h('span', { class: 'mono' }, d.guestPath)),
-        kv('Не больше, чем', LEVEL[d.ceiling]),
-        kv('Владелец', d.owner != null ? `uid ${d.owner}` : '—')),
+        kv('На компьютере', h('span', { class: 'mono', title: d.hostPath }, d.hostPath.replace(state.info?.home || '\u0000', '~')), 'folder'),
+        kv('В машине', h('span', { class: 'mono' }, d.guestPath), 'server'),
+        kv('Не больше, чем', LEVEL[d.ceiling], 'lock'),
+        kv('Владелец', d.owner != null ? `uid ${d.owner}` : '—', 'user')),
       !d.exists ? h('p', { class: 'small badc' }, 'Директория не найдена на компьютере.') : null,
       d.note ? h('p', { class: 'small muted' }, d.note) : null,
       h('div', { class: 'label-like' }, 'Подключена к машинам'),
@@ -143,7 +143,7 @@
         h('button', { class: 'btn primary icon', title: 'Дать доступ к директории', 'aria-label': 'Дать доступ к директории',
           onclick: () => openFolderDialog({ machine: state.machines[0]?.name, onDone: async () => { await load(); render(); } }) }, ic('plus'))),
       h('div', { class: 'machines' },
-        item('mode', h('span', { class: 'mark m-icon m-list' }, ic('shield')), 'Какие директории можно давать', reg.strict ? 'только из списка' : 'любые, кроме опасных', pill(reg.strict ? 'ok' : 'neutral', reg.strict ? 'строго' : 'свободно')),
+        item('mode', h('span', { class: 'mark m-icon m-list' }, ic('sliders')), 'Какие директории можно давать', reg.strict ? 'только из списка' : 'любые, кроме опасных', pill(reg.strict ? 'ok' : 'neutral', reg.strict ? 'строго' : 'свободно')),
         h('div', { class: 'sb-group' }, 'Список директорий', h('span', { class: 'muted' }, String(reg.dirs.length))),
         ...reg.dirs.map((d) => item(`dir:${d.id}`, h('span', { class: 'mark m-icon m-list' }, ic('folder')), d.id,
           `${d.hostPath.replace(state.info?.home || '\u0000', '~')}`, d.exists ? pill(LEVEL_TAG[d.ceiling] || 'neutral', LEVEL[d.ceiling]) : pill('bad', 'не найдена'))),
@@ -154,7 +154,7 @@
   function detail() {
     const head = (icon, title, sub) => h('div', { class: 'detail-head' }, icon, h('div', { class: 'ag-title' }, h('h2', {}, title), sub ? h('span', { class: 'muted small' }, sub) : null));
     const panel = (hd, ...body) => h('section', { class: 'panel detail-panel' }, hd, h('div', { class: 'tab-body' }, ...body.flat().filter(Boolean)));
-    if (sel === 'mode') return panel(head(h('span', { class: 'mark m-icon' }, ic('shield')), 'Какие директории можно давать', 'Какие директории этого компьютера вообще можно давать машинам и агентам.'), modeCard());
+    if (sel === 'mode') return panel(head(h('span', { class: 'mark m-icon' }, ic('sliders')), 'Какие директории можно давать', 'Какие директории этого компьютера вообще можно давать машинам и агентам.'), modeCard());
     if (sel === 'dir:new') return panel(head(h('span', { class: 'mark m-icon' }, ic('plus')), 'Новая директория в списке', reg.strict ? 'В строгом режиме машинам можно давать только директории из списка.' : 'Обычно директории попадают в список сами, когда к ним дают доступ.'), dirEditCard(null));
     if (sel.startsWith('dir:')) {
       const d = reg.dirs.find((x) => `dir:${x.id}` === sel);

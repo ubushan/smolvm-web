@@ -244,7 +244,7 @@
     if (['ready', 'accepted'].includes(g.state) && g.tip) {
       const cmd = `git merge ${g.branch}`;
       body.push(h('div', { class: 'tk-merge' },
-        g.baseRef ? [h('button', { class: 'btn small-btn ink needs-merge', disabled: !!busy, onclick: () => mergeOne(t, g, 'merge') }, `Влить в ${g.baseRef}`),
+        g.baseRef ? [h('button', { class: 'btn small-btn primary needs-merge', disabled: !!busy, onclick: () => mergeOne(t, g, 'merge') }, `Влить в ${g.baseRef}`),
           h('button', { class: 'btn small-btn needs-merge', disabled: !!busy, onclick: () => mergeOne(t, g, 'squash') }, 'Одним коммитом')] : null,
         h('span', { class: 'small muted' }, g.baseRef ? 'или вручную:' : 'Задача началась не с ветки — влейте вручную:'), h('code', { class: 'mono' }, cmd),
         h('button', { class: 'btn ghost small-btn', onclick: () => { navigator.clipboard?.writeText(`cd ${g.hostPath} && ${cmd}`); toast('Скопировано', 'ok'); } }, 'Копировать')));
@@ -326,13 +326,13 @@
       t.text ? h('div', { class: 'ag-task-line', title: t.text }, `Задача: «${t.text}»`) : null,
       note ? h('div', { class: 'muted small' }, ...[].concat(note)) : null,
       tiles.length ? h('div', { class: 'aw-tiles sx-progs' }, ...tiles) : h('p', { class: 'muted' }, 'В этой машине нет программ агента.'),
-      t.policy ? h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h3', { class: 'h-ic' }, h('span', { class: `pc-${policies.find((x) => x.id === t.policy.id)?.color || 'gray'} pc-glyph` }, ic('shield')), `Политика «${t.policy.name}»`), h('span', { class: 'spacer' }),
+      t.policy ? h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h3', { class: 'h-ic' }, h('span', { class: `pc-${policies.find((x) => x.id === t.policy.id)?.color || 'gray'} pc-glyph` }, ic('policy')), `Политика «${t.policy.name}»`), h('span', { class: 'spacer' }),
         h('a', { class: 'small', href: `#/policies?id=${enc(t.policy.id)}` }, 'открыть →')),
         t.policyApplied ? h('div', { class: 'kv' },
-          h('div', {}, h('div', { class: 'k' }, 'Права в машине'), h('div', { class: 'v' }, t.policyApplied.sudo ? 'sudo (root)' : 'без root')),
-          h('div', {}, h('div', { class: 'k' }, 'Запрещённые программы'), h('div', { class: 'v' }, (t.policyApplied.deny || []).length
-            ? `${t.policyApplied.deny.join(', ')}${t.policyApplied.denied.length ? ` — закрыты в машине: ${t.policyApplied.denied.join(', ')}` : ' — в машине их нет; появятся — процесс остановится'}` : 'нет')),
-          h('div', {}, h('div', { class: 'k' }, 'Журнал процессов'), h('div', { class: 'v' }, t.policyApplied.journal ? h('a', { href: `#/audit?task=${enc(t.id)}` }, 'ведётся →') : 'нет')))
+          kvCell('Права в машине', t.policyApplied.sudo ? 'sudo (root)' : 'без root', 'user'),
+          kvCell('Запрещённые программы', (t.policyApplied.deny || []).length
+            ? `${t.policyApplied.deny.join(', ')}${t.policyApplied.denied.length ? ` — закрыты в машине: ${t.policyApplied.denied.join(', ')}` : ' — в машине их нет; появятся — процесс остановится'}` : 'нет', 'ban'),
+          kvCell('Журнал процессов', t.policyApplied.journal ? h('a', { href: `#/audit?task=${enc(t.id)}` }, 'ведётся →') : 'нет', 'activity'))
           : h('div', { class: 'small muted' }, 'Применяется при открытии машины…'),
         ...(t.policyApplied?.notes || []).map((n) => h('div', { class: 'small warnc' }, n))) : null,
       h('div', { class: 'muted small' }, `Машина `, h('span', { class: 'mono' }, t.machine), t.resets ? ` · сброшена ${plural(t.resets, 'раз', 'раза', 'раз')}` : '',
@@ -350,14 +350,14 @@
   }
 
   function decisionsTab(t) {
-    if (!t.approvals.length) return [h('section', { class: 'card ws-empty' }, ic('shield'), h('h3', {}, 'Всё решено'),
+    if (!t.approvals.length) return [h('section', { class: 'card ws-empty' }, ic('check-circle'), h('h3', {}, 'Всё решено'),
       h('p', { class: 'muted' }, 'Когда агент попросит незнакомый сайт или опасный вызов API, вопрос появится здесь.'))];
     return t.approvals.map((a) => h('section', { class: 'dc-card' },
       h('div', { class: 'dc-meta' }, h('span', {}, a.kind === 'net' ? 'хочет зайти на сайт' : `хочет вызвать API · ключ ${a.detail?.secret || ''}`)),
       h('div', { class: 'dc-title' }, h('span', { class: 'mono' }, a.title)),
       h('div', { class: 'dc-actions' },
-        a.kind === 'net' ? [h('button', { class: 'btn ink needs-operator', onclick: () => decide(a, 'always') }, 'Разрешить всегда'), h('button', { class: 'btn needs-operator', onclick: () => decide(a, 'once') }, 'На 10 минут')]
-          : h('button', { class: 'btn ink needs-operator', onclick: () => decide(a, 'once') }, 'Разрешить'),
+        a.kind === 'net' ? [h('button', { class: 'btn primary needs-operator', onclick: () => decide(a, 'always') }, 'Разрешить всегда'), h('button', { class: 'btn needs-operator', onclick: () => decide(a, 'once') }, 'На 10 минут')]
+          : h('button', { class: 'btn primary needs-operator', onclick: () => decide(a, 'once') }, 'Разрешить'),
         h('button', { class: 'btn danger-outline needs-operator', onclick: () => decide(a, 'deny') }, 'Запретить'))));
   }
 

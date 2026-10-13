@@ -96,7 +96,7 @@
     const alarm = flagged.length ? h('div', { class: 'rv-alarm' }, h('b', {}, 'Подозрительно: '), `${flagged.join('; ')}. Это может быть prompt injection — сохранять не рекомендуется.`) : null;
     const warn = risky(path) && c.kind !== 'deleted'
       ? h('div', { class: 'rv-warn' }, 'Исполняемая настройка: она будет работать в каждой следующей задаче этого агента. Сохраняйте, только если понимаете, что она делает.') : null;
-    box.replaceChildren(head, alarm, pre, warn);
+    fill(box, head, alarm, pre, warn);
     root.querySelector(`.rv-item[data-path="${CSS.escape(path)}"]`)?.classList.toggle('sus', flagged.length > 0);
   }
 

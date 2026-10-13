@@ -377,7 +377,7 @@
       const users = usersOf(l);
       if (editingList === l.id) return listEditor(l, users);
       return h('div', { class: 'lst-card' },
-        h('div', { class: 'lst-head' }, h('span', { class: 'mark m-icon' }, ic('shield')),
+        h('div', { class: 'lst-head' }, h('span', { class: 'mark m-icon' }, ic('list-check')),
           h('div', { class: 'lst-title' }, h('b', {}, l.name), h('div', { class: 'muted small' }, plural3(l.rules.length, 'адрес', 'адреса', 'адресов'))),
           h('span', { class: 'spacer' }), picker ? pick(l) : l.default ? h('span', { class: 'tag ok', title: 'Подключается к новым машинам' }, 'для новых машин') : null),
         preview(l.rules.map((r) => r.host + (r.ports && r.ports !== '443' ? `:${r.ports}` : ''))),
@@ -411,7 +411,7 @@
     const name = h('input', { class: 'input', value: l.name, maxlength: 64 });
     const def = h('input', { type: 'checkbox', checked: l.default });
     return h('div', { class: 'lst-card lst-edit' },
-      h('div', { class: 'lst-head' }, h('span', { class: 'mark m-icon' }, ic('shield')),
+      h('div', { class: 'lst-head' }, h('span', { class: 'mark m-icon' }, ic('list-check')),
         h('label', { class: 'lst-name' }, 'Название', name),
         h('label', { class: 'check small' }, def, ' подключать к новым машинам'),
         h('span', { class: 'spacer' }),
@@ -607,7 +607,7 @@
       h('div', { class: 'machines' },
         item('log', h('span', { class: 'mark m-icon m-list' }, ic('list')), 'Журнал соединений', 'что разрешено и заблокировано', denied.length ? h('span', { class: 'nav-count attn', title: 'Недавно заблокированных адресов' }, String(denied.length)) : null),
         h('div', { class: 'sb-group' }, 'Белые списки', h('span', { class: 'muted' }, String(data.lists.length))),
-        ...data.lists.map((l) => item(`list:${l.id}`, h('span', { class: 'mark m-icon m-list' }, ic('shield')), l.name,
+        ...data.lists.map((l) => item(`list:${l.id}`, h('span', { class: 'mark m-icon m-list' }, ic('list-check')), l.name,
           `${plural3(l.rules.length, 'адрес', 'адреса', 'адресов')}${usersOf(l).length ? ` · ${plural3(usersOf(l).length, 'машина', 'машины', 'машин')}` : ''}`, l.default ? pill('neutral', 'для новых') : null)),
         item('list:new', h('span', { class: 'mark m-icon m-list' }, ic('plus')), 'Новый список', 'пустой или из шаблона', null, 'sb-add')));
   }
@@ -623,7 +623,7 @@
     if (sel.startsWith('list:')) {
       const l = data.lists.find((x) => `list:${x.id}` === sel);
       const users = usersOf(l);
-      return panel(head(h('span', { class: 'mark m-icon' }, ic('shield')), l.name, users.length ? `Подключён: ${users.join(', ')} — изменения действуют сразу` : 'Не подключён ни к одной машине'), listEditor(l, users, true));
+      return panel(head(h('span', { class: 'mark m-icon' }, ic('list-check')), l.name, users.length ? `Подключён: ${users.join(', ')} — изменения действуют сразу` : 'Не подключён ни к одной машине'), listEditor(l, users, true));
     }
     return null;
   }
