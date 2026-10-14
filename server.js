@@ -31,7 +31,6 @@ const review = require('./lib/review');
 const gitwork = require('./lib/gitwork');
 const tasks = require('./lib/tasks');
 const agentrun = require('./lib/agentrun');
-const projects = require('./lib/projects');
 const access = require('./lib/access');
 const policies = require('./lib/policies');
 require('./lib/procwatch').start();
@@ -108,7 +107,7 @@ function readBody(req, limit = 4 * 1024 * 1024) {
 async function readJson(req) {
   const buf = await readBody(req);
   if (!buf.length) return {};
-  return JSON.parse(buf.toString('utf8'));
+  try { return JSON.parse(buf.toString('utf8')); } catch (e) { throw Object.assign(e, { status: 400 }); }
 }
 
 // ---------- plain proxy ----------
@@ -209,14 +208,15 @@ const AUDIT_LABELS = [
   [/^POST \/ui\/tasks\/t-[0-9a-f]+\/close$/, 'задача закрыта'],
   [/^POST \/ui\/tasks\/t-[0-9a-f]+\/reset$/, 'задача: машина сброшена'],
   [/^DELETE \/ui\/tasks\//, 'задача убрана из истории'],
-  [/^POST \/ui\/projects/, 'проект: создан или собран'],
-  [/^(PUT|DELETE) \/ui\/projects\//, 'проект изменён'],
   [/^POST \/ui\/sandbox\/machines\/[^/]+\/extend$/, 'песочница продлена'],
 ];
 
+// A malformed escape in a name must not throw where nothing catches it.
+const safeDecode = (s) => { try { return decodeURIComponent(s); } catch { return s; } };
+
 function auditRequest(req, res, url) {
   const key = `${req.method} ${url.pathname}`;
-  if (/^(GET|HEAD|OPTIONS) /.test(key) || /\/ui\/smolfile\/parse$|\/ui\/audit\/test$|\/ui\/proxy\/test$|\/ui\/ca\/preview$/.test(url.pathname)) return;
+  if (/^(GET|HEAD|OPTIONS) /.test(key) || /\/ui\/smolfile\/parse$|\/ui\/audit\/test$|\/ui\/proxy\/test$|\/ui\/ca\/preview$|\/dirs\/verify$/.test(url.pathname)) return;
   const label = (AUDIT_LABELS.find(([re]) => re.test(key)) || [null, key])[1];
   const mm = url.pathname.match(/^\/(?:api\/v1|ui)\/machines\/([^/]+)/);
   // A task's own actions (finish, close, merge…) belong to its journal too.
@@ -226,7 +226,7 @@ function auditRequest(req, res, url) {
   res.on('finish', () => {
     if (res.auditDone) return;
     audit.record({
-      type: url.pathname.startsWith('/ui/') ? 'ui' : 'api', actor: actorOf(req), machine: mm ? decodeURIComponent(mm[1]) : null,
+      type: url.pathname.startsWith('/ui/') ? 'ui' : 'api', actor: actorOf(req), machine: mm ? safeDecode(mm[1]) : null,
       action: label, status: res.statusCode, ms: Date.now() - started,
       detail: { method: req.method, path: url.pathname, ...(tm?.[1] ? { task: tm[1] } : {}), ...(res.auditDetail || {}) },
       severity: res.statusCode >= 400 ? 'notice' : 'info',
@@ -458,6 +458,45 @@ async function lethalTrifecta(name) {
 // New versions of the agents in templates: once a day (the first check a minute after the start).
 setTimeout(() => sandbox.checkUpdates().catch(() => {}), 60000).unref();
 setInterval(() => sandbox.checkUpdates().catch(() => {}), 24 * 3600000).unref();
+
+// Machines deleted outside smolvm-web (the smolvm CLI, another instance) leave their records
+// here: rules, folders, agent ports, sandbox entries. A name is forgotten once it is missing from
+// two lists in a row, ten minutes apart (a machine being opened is not there yet). An empty or
+// failed list forgets nothing: a restarted or different smolvm serve must not wipe live machines.
+const SWEEP_MS = 10 * 60000;
+const missingSince = new Map();
+function recordedMachineNames() {
+  const names = new Set();
+  const read = (file, ...keys) => {
+    try {
+      const d = JSON.parse(fs.readFileSync(path.join(cfg.DIR, file), 'utf8'));
+      for (const k of keys) for (const n of Object.keys(d?.[k] || {})) names.add(n);
+    } catch {}
+  };
+  read('agents.json', 'machines'); read('egress.json', 'machines'); read('dirs.json', 'machines');
+  read('review.json', 'machines'); read('limits.json', 'machines', 'runs'); read('isolation.json', 'machines');
+  read('smolfile.json', 'machines'); read('sandbox.json', 'sandboxes'); read('state.json', 'provisioned');
+  return names;
+}
+async function sweepGoneMachines() {
+  const r = await up.request('GET', '/api/v1/machines').catch(() => null);
+  const list = r?.status === 200 && Array.isArray(r.data?.machines) ? r.data.machines : [];
+  if (!list.length) return;
+  const live = new Set(list.map((m) => m.name));
+  const recorded = recordedMachineNames();
+  for (const name of missingSince.keys()) if (!recorded.has(name) || live.has(name)) missingSince.delete(name);
+  for (const name of recorded) {
+    if (live.has(name)) continue;
+    const since = missingSince.get(name);
+    if (!since) { missingSince.set(name, Date.now()); continue; }
+    if (Date.now() - since < SWEEP_MS) continue;
+    missingSince.delete(name);
+    await forgetMachine(name).catch(() => {});
+    audit.record({ type: 'api', actor: 'smolvm-web', machine: name, action: 'машина удалена вне smolvm-web: её записи убраны', severity: 'notice' });
+  }
+}
+setTimeout(() => sweepGoneMachines().catch(() => {}), 90000).unref();
+setInterval(() => sweepGoneMachines().catch(() => {}), SWEEP_MS).unref();
 
 // Agents past their time limit are stopped (checked every 30 s).
 setInterval(async () => {
@@ -970,7 +1009,7 @@ const UI = [
     res.auditDone = true;
     try { sendJson(res, 200, await tasks.open({ template: String(b.template || ''), profile: b.profile ? String(b.profile) : null, agent: b.agent ? String(b.agent) : null,
       trust: b.trust ? String(b.trust) : null, task: b.task ? String(b.task) : null, folders: Array.isArray(b.folders) ? b.folders : undefined,
-      idleMinutes: b.idleMinutes, ttlHours: b.ttlHours, persistent: !!b.persistent, project: b.project ? String(b.project) : null, policy: b.policy ? String(b.policy) : null }, sandboxHooks)); } catch (e) { err(res, e); }
+      idleMinutes: b.idleMinutes, ttlHours: b.ttlHours, persistent: !!b.persistent, policy: b.policy ? String(b.policy) : null }, sandboxHooks)); } catch (e) { err(res, e); }
   }],
   // ---- an agent run from its page: «Запустить» a program, «Остановить» ----
   ['GET', /^\/ui\/run\/([\w-]+)$/, async (req, res, m) => {
@@ -986,23 +1025,6 @@ const UI = [
       res.auditDetail = { profile: m[1], program: b.program || undefined, machine: r.name || undefined };
       sendJson(res, 200, r);
     } catch (e) { err(res, e); }
-  }],
-  // ---- projects: a repository with its agent, trust and prepared template ----
-  ['GET', /^\/ui\/projects$/, (req, res) => sendJson(res, 200, { projects: projects.list() })],
-  ['POST', /^\/ui\/projects$/, async (req, res) => {
-    try { sendJson(res, 200, await projects.create(await readJson(req))); } catch (e) { err(res, e); }
-  }],
-  ['GET', /^\/ui\/projects\/(pr-[0-9a-f]+)$/, (req, res, m) => {
-    try { sendJson(res, 200, projects.get(m[1])); } catch (e) { err(res, e); }
-  }],
-  ['PUT', /^\/ui\/projects\/(pr-[0-9a-f]+)$/, async (req, res, m) => {
-    try { sendJson(res, 200, await projects.update(m[1], await readJson(req))); } catch (e) { err(res, e); }
-  }],
-  ['DELETE', /^\/ui\/projects\/(pr-[0-9a-f]+)$/, (req, res, m) => {
-    try { projects.remove(m[1]); sendJson(res, 200, { ok: true }); } catch (e) { err(res, e); }
-  }],
-  ['POST', /^\/ui\/projects\/(pr-[0-9a-f]+)\/build$/, (req, res, m) => {
-    try { sendJson(res, 200, projects.build(m[1], sandboxHooks)); } catch (e) { err(res, e); }
   }],
   ['GET', /^\/ui\/tasks\/(t-[0-9a-f]+)$/, async (req, res, m) => {
     try { sendJson(res, 200, await tasks.detail(m[1])); } catch (e) { err(res, e); }
@@ -1075,18 +1097,8 @@ const UI = [
   ['POST', /^\/ui\/sandbox\/templates\/([\w-]+)\/upgrade$/, (req, res, m) => {
     try { sendJson(res, 200, sandbox.upgradeTemplate(m[1], sandboxHooks)); } catch (e) { err(res, e); }
   }],
-  ['POST', /^\/ui\/sandbox\/updates\/check$/, async (req, res) => {
-    try { sendJson(res, 200, { latest: await sandbox.checkUpdates() }); } catch (e) { err(res, e); }
-  }],
   ['DELETE', /^\/ui\/sandbox\/templates\/([\w-]+)$/, (req, res, m) => {
     try { sandbox.deleteTemplate(m[1]); sendJson(res, 200, { ok: true }); } catch (e) { err(res, e); }
-  }],
-  ['POST', /^\/ui\/sandbox\/open$/, async (req, res) => {
-    const b = await readJson(req);
-    res.auditDone = true;
-    try { sendJson(res, 200, await sandbox.open({ template: String(b.template || ''), profile: b.profile ? String(b.profile) : null, agent: b.agent ? String(b.agent) : null,
-      trust: b.trust ? String(b.trust) : null, task: b.task ? String(b.task) : null, folder: b.folder ? String(b.folder) : null,
-      folders: Array.isArray(b.folders) ? b.folders : undefined, idleMinutes: b.idleMinutes, ttlHours: b.ttlHours }, sandboxHooks)); } catch (e) { err(res, e); }
   }],
   ['POST', /^\/ui\/sandbox\/machines\/([^/]+)\/close$/, async (req, res, m) => {
     const b = await readJson(req);
@@ -1101,9 +1113,6 @@ const UI = [
   ['POST', /^\/ui\/sandbox\/machines\/([^/]+)\/extend$/, async (req, res, m) => {
     const b = await readJson(req);
     try { sendJson(res, 200, sandbox.extend(decodeURIComponent(m[1]), b.hours)); } catch (e) { err(res, e); }
-  }],
-  ['GET', /^\/ui\/sandbox\/machines\/([^/]+)\/changes$/, async (req, res, m) => {
-    try { sendJson(res, 200, await sandbox.previewChanges(decodeURIComponent(m[1]))); } catch (e) { err(res, e); }
   }],
   ['POST', /^\/ui\/sandbox\/profiles$/, async (req, res) => {
     const b = await readJson(req);
@@ -1200,10 +1209,6 @@ const UI = [
     try { sendJson(res, 200, await agents.open(decodeURIComponent(m[1]), m[2])); }
     catch (e) { sendJson(res, 400, { error: e.message }); }
   }],
-  ['GET', new RegExp(`${AG}/([\\w-]+)/log$`), async (req, res, m) => {
-    try { sendJson(res, 200, { log: await agents.logTail(decodeURIComponent(m[1]), m[2], 20000) }); }
-    catch (e) { sendJson(res, 400, { error: e.message }); }
-  }],
   // Human approvals and isolation state, polled by the UI.
   ['GET', /^\/ui\/live$/, (req, res) => sendJson(res, 200, { approvals: approvals.list(), isolated: isolation.all() })],
   ['POST', /^\/ui\/approvals\/([\w-]+)$/, async (req, res, m) => {
@@ -1236,7 +1241,6 @@ const UI = [
     const name = decodeURIComponent(m[1]);
     try { sendJson(res, 200, { limits: limits.set(name, await readJson(req)), usage: limits.usage(name) }); } catch (e) { sendJson(res, 400, { error: e.message }); }
   }],
-  ['GET', /^\/ui\/machines\/([^/]+)\/risk$/, async (req, res, m) => sendJson(res, 200, { trifecta: await lethalTrifecta(decodeURIComponent(m[1])) })],
   ['GET', /^\/ui\/info$/, async (req, res) => {
     const s = cfg.getSettings();
     const sys = upproxy.systemMode();
@@ -1357,6 +1361,8 @@ const UI = [
   }],
   ['GET', /^\/ui\/machines\/([^/]+)$/, async (req, res, m) => {
     const name = decodeURIComponent(m[1]);
+    const vm = await up.request('GET', `/api/v1/machines/${encodeURIComponent(name)}`).catch(() => null);
+    if (vm?.status === 404) return sendJson(res, 404, { error: 'машина не найдена' });
     const secrets = (await vault.machineSecrets(name).catch(() => [])).map((x) => ({ name: x.name, mode: x.mode, envVar: x.envVar, baseUrlVar: x.baseUrlVar }));
     const am = agents.get(name);
     const agentPorts = am ? am.agents.filter((id) => am.ports?.[id]).map((id) => ({ id, title: agents.AGENTS[id].title, host: am.ports[id], guest: agents.AGENTS[id].port })) : [];
@@ -1558,21 +1564,6 @@ const UI = [
     } catch (e) { sendJson(res, 400, { error: e.message }); }
   }],
   ['GET', /^\/ui\/machines\/([^/]+)\/dirs$/, (req, res, m) => sendJson(res, 200, dirs.machineView(decodeURIComponent(m[1])))],
-  ['PUT', /^\/ui\/machines\/([^/]+)\/dirs$/, async (req, res, m) => {
-    const name = decodeURIComponent(m[1]);
-    try { dirs.saveMachine(name, await readJson(req)); } catch (e) { return sendJson(res, 400, { error: e.message }); }
-    const view = dirs.machineView(name);
-    const state = await machineState(name).catch(() => null);
-    let report = null;
-    // Per-user changes inside mounted views apply at once.
-    if (state === 'running') {
-      try { report = await mc.provisionDirs(name); } catch (e) { report = { errors: [e.message], warnings: [], users: [] }; }
-    }
-    sendJson(res, 200, { ...view, state, report });
-  }],
-  ['POST', /^\/ui\/machines\/([^/]+)\/dirs\/apply$/, async (req, res, m) => {
-    try { sendJson(res, 200, await mc.provisionDirs(decodeURIComponent(m[1]))); } catch (e) { sendJson(res, 500, { error: e.message }); }
-  }],
   ['POST', /^\/ui\/machines\/([^/]+)\/dirs\/verify$/, async (req, res, m) => {
     try { sendJson(res, 200, await dirs.verify(decodeURIComponent(m[1]))); } catch (e) { sendJson(res, 500, { error: e.message }); }
   }],
@@ -1600,7 +1591,9 @@ async function dispatch(table, req, res, url) {
 }
 
 function serveStatic(req, res) {
-  let urlPath = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+  // A malformed escape (%E0%A4%A) throws: outside the handler's try it would stop the server.
+  let urlPath;
+  try { urlPath = decodeURIComponent(new URL(req.url, 'http://x').pathname); } catch { return sendJson(res, 400, { error: 'bad url' }); }
   if (urlPath === '/') urlPath = '/index.html';
   const file = path.normalize(path.join(PUBLIC_DIR, urlPath));
   if (!file.startsWith(PUBLIC_DIR + path.sep)) return sendJson(res, 404, { error: 'not found' });
@@ -1657,10 +1650,11 @@ const server = http.createServer(async (req, res) => {
     }
   } catch (e) {
     const unreachable = ['ECONNREFUSED', 'ENOENT', 'ECONNRESET'].includes(e.code);
+    const bad = e instanceof SyntaxError || e instanceof URIError;
     if (!res.headersSent) {
-      sendJson(res, unreachable ? 502 : (e instanceof SyntaxError ? 400 : 500), {
+      sendJson(res, unreachable ? 502 : bad ? 400 : 500, {
         error: unreachable ? `smolvm API недоступен (${up.UPSTREAM}): ${e.code}` : e.message,
-        code: unreachable ? 'UPSTREAM_UNAVAILABLE' : 'INTERNAL',
+        code: unreachable ? 'UPSTREAM_UNAVAILABLE' : bad ? 'BAD_REQUEST' : 'INTERNAL',
       });
     } else res.destroy();
     return;

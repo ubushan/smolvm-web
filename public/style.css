@@ -314,6 +314,9 @@ label.check .mark.sm { margin-left: 2px; }
   html, body { height: auto; min-height: 100%; }
   .layout { grid-template-columns: 1fr; padding: 12px; }
   .detail-panel { min-height: 75vh; overflow: visible; }
+  /* Nothing selected: the panel is only a hint under the list, not a screen of blank space. */
+  .detail-panel:has(> .empty-state) { min-height: 0; }
+  .detail-panel > .empty-state { padding: 24px 16px; }
   .detail-panel .tab-body { overflow: visible; }
   .list-panel { max-height: none; }
   .list-panel .machines { overflow: visible; }
@@ -1209,34 +1212,17 @@ body[data-page="decisions"] #approvals, body[data-page="session"] #approvals { d
 .dc-side-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
 .dc-said { display: flex; flex-direction: column; gap: 6px; color: var(--text-2); }
 
-/* ---------- «Сеанс»: agent and controller side by side ---------- */
-.page.page-session { padding: 16px; gap: 0; max-width: none; }
-.sx-wrap { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
-.sx-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 16px; background: var(--header); border: 1px solid var(--border); border-radius: 14px; }
-.sx-title { display: flex; align-items: center; gap: 12px; min-width: 0; flex-wrap: wrap; }
-.sx-title b { font-size: 16px; }
-.sx-task { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sx-switch { width: auto; min-width: 0; max-width: 240px; }
-.sx-body { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; flex: 1; min-height: 0; }
-.sx-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; overflow: auto; max-height: calc(100vh - 290px); }
-.sx-ask { background: var(--warn-soft); border: 1px solid var(--warn-border); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
-.sx-ask > .small { color: var(--warn); }
-.sx-ask-title { font-weight: 700; font-size: 15px; overflow-wrap: anywhere; }
-.sx-ask .dc-actions .btn { min-height: 36px; padding: 0 12px; }
 .sx-did { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .sx-did > div { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; }
 .sx-did > div > span:last-child { overflow-wrap: anywhere; }
-.sx-change { gap: 8px; color: var(--text-2); }
 
 @media (max-width: 1000px) {
-  .dc-wrap, .sx-body { grid-template-columns: minmax(0, 1fr); }
+  .dc-wrap { grid-template-columns: minmax(0, 1fr); }
   .dc-side { position: static; }
-  .sx-side { max-height: none; }
   .ag-trust { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 640px) {
   .ag-grid { grid-template-columns: minmax(0, 1fr); }
-  .page.page-session { padding: 12px; }
 }
 
 /* ---------- «Уведомления» in the header ---------- */
@@ -1301,16 +1287,7 @@ body[data-page="decisions"] #approvals, body[data-page="session"] #approvals { d
 @media (max-width: 1180px) { .mf-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 720px) { .mf-cards { grid-template-columns: minmax(0, 1fr); } }
 
-/* ---------- «Песочница»: head shared by «Агенты», «Решения», «Шаблоны» ---------- */
-.sx-section { display: flex; flex-direction: column; gap: 14px; }
-.sx-section .ws-head-text { flex: none; }
-.sx-section h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -.01em; }
-.sx-section .ws-head-text p { margin: 4px 0 0; }
 .ag-toolbar { padding: 0; }
-
-.sx-section.compact { gap: 10px; }
-.sx-section.compact h1 { font-size: 22px; }
-.page.page-session .sx-section { margin-bottom: 4px; }
 
 /* ---------- «Создать агента» / настройки агента ---------- */
 .dialog.aw-dialog { width: min(1640px, calc(100vw - 32px)); }
@@ -1432,15 +1409,10 @@ body[data-page="decisions"] #approvals, body[data-page="session"] #approvals { d
 .ag-sess .aw-tiles { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
 .ag-prog .aw-tile-text .small { color: var(--accent-2); }
 
-/* «Сеанс»: the programs of the sandbox, each opens in a browser tab */
-.sx-programs { align-self: start; }
+/* The programs of a sandbox, each opens in a browser tab */
 .sx-progs { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 .sx-prog-open { color: var(--accent-2); }
 
-.sx-tabs-nav { margin-top: 0; }
-.sx-tabs-nav a { display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 8px; color: var(--muted); font-size: 13.5px; font-weight: 600; text-decoration: none; white-space: nowrap; }
-.sx-tabs-nav a:hover { color: var(--text); }
-.sx-tabs-nav a.active { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
 
 /* «Песочница»: the panel of the section */
 .sb-group { display: flex; align-items: center; justify-content: space-between; padding: 14px 10px 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
@@ -1471,16 +1443,6 @@ body[data-page="decisions"] #approvals, body[data-page="session"] #approvals { d
 #page-tasks .detail-head { flex-wrap: wrap; }
 #page-tasks .detail-head .ag-title { flex: 1 1 320px; min-width: 0; }
 #page-tasks .detail-head .actions { flex-wrap: wrap; justify-content: flex-end; }
-
-/* «Проекты» */
-.pj-form { display: flex; flex-direction: column; gap: 14px; }
-.pj-log { max-height: 260px; white-space: pre-wrap; }
-.pj-tasks { display: flex; flex-direction: column; }
-.pj-task { display: flex; justify-content: space-between; gap: 12px; padding: 8px 4px; border-top: 1px solid var(--border); color: var(--text); text-decoration: none; min-width: 0; }
-.pj-task:first-child { border-top: 0; }
-.pj-task:hover { background: var(--panel-2); }
-#page-projects .detail-head { flex-wrap: wrap; }
-#page-projects .detail-head .ag-title { flex: 1 1 280px; min-width: 0; }
 
 /* ⚙ menu */
 .admin-menu { width: 280px; }
@@ -1715,35 +1677,27 @@ input[type="checkbox"], input[type="radio"] { width: 16px; height: 16px; accent-
 /* «Все агенты»: a neutral tile like the other programs instead of a gradient. */
 .mark.m-all { background: var(--panel-3); color: var(--text); }
 
-/* ---------- one level of boxes ----------
-   The panel (or a dialog) is the box. Sections inside it are not boxed again: a title, the content and
-   a hairline above. Inside a panel only alerts, clickable tiles and data tables keep a frame. */
-:is(.detail-panel, dialog) :is(.card, .block, .pol-card, .lst-card, .dc-card):not(.ag-risk):not(.ag-prog):not(.aw-tile) {
+/* ---------- «Настройки»: one level of boxes ----------
+   In the settings dialog the dialog itself is the box: its sections are a title, the content and a
+   hairline between them. Everywhere else blocks keep their frames. */
+#dlg-settings :is(.card, .pol-card, .lst-card) {
   background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 0; overflow: visible;
 }
-/* A hairline between neighbouring sections — never under the head or the tabs. */
-:is(.detail-panel, dialog) :is(.card, .block, .pol-card, .lst-card, .dc-card):not(.ag-risk):not(.ag-prog):not(.aw-tile)
-  ~ :is(.card, .block, .pol-card, .lst-card, .dc-card):not(.ag-risk):not(.ag-prog):not(.aw-tile),
-.detail-panel :is(.ag-ov-grid, .blocks, .mf-cards, .net-cards) > :is(.card, .block):not(.ag-risk):not(.ag-prog):not(.aw-tile) { border-top: 1px solid var(--border); padding-top: 18px; }
-.detail-panel .tab-body { gap: 20px; }
-/* Policy sections: the head is the section title, rows keep their hairlines. */
-:is(.detail-panel, dialog) .pl-sec .pl-sec-head { padding: 0 0 6px; border-bottom: 0; }
-:is(.detail-panel, dialog) .pol-card .pol-row { padding: 12px 0; }
-:is(.detail-panel, dialog) #access-settings .pol-card > .row { padding: 12px 0; }
-/* Empty states inside a panel: centred text, no frame of their own. */
-:is(.detail-panel, dialog) .ws-empty { border: 0; box-shadow: none; background: transparent; padding: 32px 16px; }
-:is(.detail-panel, dialog) .log-empty { border: 0; padding: 24px 0; }
-/* Machine blocks in their grid: hairline sections, the grid gap separates the columns. */
-.detail-panel .block { gap: 10px; }
-.detail-panel .blocks { gap: 20px 28px; }
-/* «Входящие»: the side column is a column, not a second card. */
-.page-agents .dc-side { border: 0; border-left: 1px solid var(--border); border-radius: 0; box-shadow: none; background: transparent; padding: 0 0 0 20px; }
+#dlg-settings :is(.card, .pol-card, .lst-card) ~ :is(.card, .pol-card, .lst-card) { border-top: 1px solid var(--border); padding-top: 18px; }
+#dlg-settings .pol-card .pol-row { padding: 12px 0; }
+#dlg-settings #access-settings .pol-card > .row { padding: 12px 0; }
 
-/* ---------- key–value tables with icons ---------- */
-.kv > .kv-i { display: flex; align-items: flex-start; gap: 10px; flex: 1 1 160px; }
-.kv > .kv-i > .ic { width: var(--ic-md); height: var(--ic-md); margin-top: 3px; color: var(--muted); }
+/* ---------- key–value tables ----------
+   The name of a row in semibold, the value in regular text; icons at 18px next to two lines. */
+.kv { border-radius: var(--r-md); }
+.kv > div { padding: 9px 12px; }
+.kv .k { font-size: 12.5px; font-weight: 600; color: var(--text-2); line-height: 1.35; }
+.kv .v { font-size: 14px; font-weight: 400; color: var(--text); line-height: 1.45; margin-top: 2px; }
+.kv > .kv-i { display: flex; align-items: flex-start; gap: 12px; flex: 1 1 180px; }
+.kv > .kv-i > .ic { width: 18px; height: 18px; margin-top: 1px; color: var(--muted); }
 .kv-t { min-width: 0; flex: 1; }
 .kv > .kv-i .ellipsis { display: block; }
+#secret-view .kv .k { margin-bottom: 0; }
 
 /* ---------- policy colours: solid tiles, told apart at a glance ---------- */
 .pc-green { --pc: #1E8E4E; --pc-on: #fff; }

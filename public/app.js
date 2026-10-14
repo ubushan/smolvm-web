@@ -514,7 +514,7 @@ function renderDetail() {
   const m = state.machines.find((x) => x.name === state.selected);
   box.dataset.name = m ? m.name : '';
   if (!m) {
-    box.innerHTML = `<div class="empty-state"><div class="big"><svg class="ic"><use href="#i-server"/></svg></div><p>Выберите машину слева или создайте новую.</p><button type="button" class="btn primary" id="btn-create-empty"><svg class="ic"><use href="#i-plus"/></svg>Создать машину</button></div>`;
+    box.innerHTML = `<div class="empty-state"><div class="big"><svg class="ic"><use href="#i-server"/></svg></div><p>Выберите машину в списке или создайте новую.</p><button type="button" class="btn primary" id="btn-create-empty"><svg class="ic"><use href="#i-plus"/></svg>Создать машину</button></div>`;
     return;
   }
   box.innerHTML = '';
@@ -609,7 +609,6 @@ function block({ icon, title, sub, badge, on, items = [], empty, footer }) {
 const bitem = (main, side) => h('div', { class: 'bitem' }, h('div', { class: 'bmain' }, main), side ? h('div', { class: 'bside' }, side) : null);
 const plural = (n, one, few, many) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? few : many}`;
 
-// «Смертельная триада»: private data + untrusted content + a way out. Breaking one link is enough.
 // A policy's icon in its colour (⚙ «Политики», the agent window, the agent, the task).
 const POLICY_COLORS = [['green', 'Зелёный'], ['blue', 'Синий'], ['red', 'Красный'], ['yellow', 'Жёлтый'], ['gray', 'Серый'], ['purple', 'Фиолетовый']];
 function policyIcon(p, small) {
@@ -823,50 +822,6 @@ async function tabDetails(body, m) {
   body.replaceChildren(
     h('p', { class: 'muted small' }, 'Полный ответ smolvm об этой машине (GET /api/v1/machines/…): PID, образ, статистика памяти (RSS/PSS), сетевой режим, GPU/CUDA, политики. Нужен для диагностики.'),
     h('pre', { class: 'json details-json' }, JSON.stringify(info, null, 2)));
-}
-
-// --- review copies: the agent works on a copy, you apply its changes
-async function tabReview(body, m, rerender = renderTab) {
-  let alive = true;
-  tabCleanup = () => { alive = false; };
-  const head = h('div');
-  const list = h('div', { class: 'review-list' });
-  body.append(head, list);
-  let data;
-  try { data = await api('GET', `/ui/machines/${enc(m.name)}/review`); } catch (e) { body.replaceChildren(h('div', { class: 'error' }, e.message)); return; }
-  if (!alive) return;
-
-  // Add form
-  const hostIn = h('input', { class: 'input mono', placeholder: state.info?.platform === 'win32' ? 'C:\\Users\\me\\project' : '/Users/me/project' });
-  const guestIn = h('input', { class: 'input mono', placeholder: '/work/project' });
-  const exIn = h('input', { class: 'input mono', value: data.defaultExclude.join(', ') });
-  hostIn.addEventListener('input', () => { if (!guestIn.dataset.touched) guestIn.value = hostIn.value ? `/work/${hostIn.value.split(/[\\/]/).filter(Boolean).pop() || 'project'}` : ''; });
-  guestIn.addEventListener('input', () => { guestIn.dataset.touched = '1'; });
-  const addBtn = h('button', { class: 'btn primary' }, ic('plus'), 'Создать рабочую копию');
-  addBtn.addEventListener('click', async () => {
-    addBtn.disabled = true; addBtn.textContent = 'Копирование…';
-    try {
-      await api('POST', `/ui/machines/${enc(m.name)}/review`, { hostPath: hostIn.value.trim(), guestPath: guestIn.value.trim() || undefined, exclude: csv(exIn.value) });
-      toast(m.state === 'running' ? 'Рабочая копия создана' : 'Копия создастся при запуске машины', 'ok');
-      rerender();
-    } catch (e) { toast(e.message, 'err'); addBtn.disabled = false; addBtn.replaceChildren(ic('plus'), 'Создать рабочую копию'); }
-  });
-  head.append(h('section', { class: 'card' },
-    h('div', { class: 'card-head' }, h('h3', {}, 'Рабочие копии'),
-      helpButton('Как работает ревью изменений',
-        h('p', {}, 'Агент получает не саму директорию хоста, а её копию внутри машины. Всё, что он меняет, остаётся в машине, пока вы не нажмёте «Применить» — целиком или по файлам. «Отклонить» возвращает в машине версию файла с хоста.'),
-        h('ul', {},
-          h('li', {}, 'Конфликт — файл изменился и в машине, и на хосте с момента копирования. Применение перезапишет версию на хосте; посмотрите diff.'),
-          h('li', {}, '«Подтянуть с хоста» обновляет в машине файлы, которые агент не трогал, а на хосте они поменялись.'),
-          h('li', {}, 'Исключения (node_modules, .git и т.п.) не копируются и не попадают в ревью — их агент может пересоздать сам.'),
-          h('li', {}, 'Копия не монтируется, а копируется: на хост не попадает ничего без вашего «Применить».'),
-          h('li', {}, 'Символические ссылки не применяются на хост автоматически.')))),
-    h('p', { class: 'muted small' }, 'Агент работает с копией директории, а на хост попадает только то, что вы одобрите после просмотра diff. Безопаснее, чем подключать директорию на запись.'),
-    h('div', { class: 'grid2' }, h('label', {}, 'Директория на этом компьютере', hostIn), h('label', {}, 'Путь в машине', guestIn)),
-    h('label', {}, 'Исключить (имена директорий/файлов через запятую)', exIn),
-    h('div', { class: 'row' }, addBtn)));
-
-  for (const d of data.dirs) list.append(await reviewDir(m, d, rerender));
 }
 
 async function reviewDir(m, d, rerender = renderTab) {
@@ -1247,7 +1202,7 @@ $('#btn-create').addEventListener('click', openCreate);
 // The empty detail panel is re-rendered: its button is found by delegation.
 document.addEventListener('click', (e) => { if (e.target.closest('#btn-create-empty')) openCreate(); });
 // «Создать агента» in the header: the agent window from any page; the open page catches up after.
-const createAgent = () => agentWizard({ onDone: () => { if (['agents', 'sandbox', 'session', 'tasks', 'projects'].includes(state.page)) route(); } });
+const createAgent = () => agentWizard({ onDone: () => { if (['agents', 'sandbox', 'tasks'].includes(state.page)) route(); } });
 document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => b.closest('dialog').close()));
 
 const lines = (s) => s.split('\n').map((x) => x.trim()).filter(Boolean);
@@ -1715,7 +1670,7 @@ $('#form-settings').addEventListener('submit', async (e) => {
 
 // ⚙: what is set up once and rarely visited — agents, templates, machines, network,
 // secrets, folders — and the settings window.
-const ADMIN_PAGES = { projects: 'projects', sandbox: 'sandbox', machines: 'machines', egress: 'egress', log: 'egress', secrets: 'secrets', dirs: 'dirs' };
+const ADMIN_PAGES = { sandbox: 'sandbox', machines: 'machines', egress: 'egress', log: 'egress', secrets: 'secrets', dirs: 'dirs' };
 $('#btn-settings').addEventListener('click', (e) => {
   e.stopPropagation();
   const old = document.querySelector('.admin-menu');
@@ -1729,7 +1684,6 @@ $('#btn-settings').addEventListener('click', (e) => {
   const menu = h('div', { class: 'theme-menu admin-menu', role: 'menu' },
     me ? h('div', { class: 'admin-me small' }, h('b', {}, me.name), h('span', { class: 'muted' }, ` · ${{ viewer: 'наблюдатель', operator: 'оператор', admin: 'администратор' }[me.role]}`)) : null,
     me ? h('hr') : null,
-    item('projects', '#/projects', 'branch', 'Проекты', 'репозитории с агентом и шаблоном'),
     item('sandbox', '#/sandbox', 'box', 'Шаблоны', 'образы программ и снимки машин'),
     item('machines', '#/', 'server', 'Машины', 'все microVM, консоль, файлы'),
     item('egress', '#/egress', 'globe', 'Сеть', 'белые списки и журнал соединений'),
@@ -2258,10 +2212,10 @@ function route() {
   state.page = id;
   $('#page-machines').hidden = id !== 'machines';
   for (const k of Object.keys(pages)) $(`#page-${k}`).hidden = k !== id;
-  // The session, profile and review screens belong to «Агенты»; «Песочница» has its own link.
+  // The profile screen belongs to «Агенты»; review and tasks to «Входящие».
   document.body.dataset.page = id;
   // A run's screen (#/tasks) is opened from «Входящие»: its branch is decided there.
-  const navId = ['review', 'tasks', 'session'].includes(id) ? 'decisions' : ['profile', 'work'].includes(id) ? 'agents' : id;
+  const navId = ['review', 'tasks'].includes(id) ? 'decisions' : id === 'profile' ? 'agents' : id;
   document.querySelectorAll('#pagenav a').forEach((a) => a.classList.toggle('active', a.dataset.page === navId));
   $('#btn-settings').classList.toggle('active', !!ADMIN_PAGES[id]);
   if (id !== 'machines') pageCleanup = pages[id].render($(`#page-${id}`), params) || null;

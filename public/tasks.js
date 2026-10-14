@@ -8,7 +8,6 @@
   let root = null;
   let tasks = [];        // GET /ui/tasks
   let sbx = null;        // GET /ui/sandbox: profiles, open sandboxes with their programs
-  let projects = [];     // GET /ui/projects
   let policies = [];     // GET /ui/policies (their colours)
   let selected = '';
   let tab = '';          // changes | agent | did | decisions; '' — chosen by status
@@ -38,11 +37,10 @@
   const isOpen = (t) => OPEN.includes(t.status);
 
   async function load() {
-    const [r, d, pr, pl] = await Promise.all([api('GET', '/ui/tasks'), api('GET', '/ui/sandbox').catch(() => sbx), api('GET', '/ui/projects').catch(() => ({ projects })), api('GET', '/ui/policies').catch(() => ({ policies }))]);
+    const [r, d, pl] = await Promise.all([api('GET', '/ui/tasks'), api('GET', '/ui/sandbox').catch(() => sbx), api('GET', '/ui/policies').catch(() => ({ policies }))]);
     policies = pl.policies || [];
     tasks = r.tasks || [];
     sbx = d;
-    projects = pr.projects || [];
     if (!cur()) selected = tasks[0]?.id || '';
     const t = cur();
     if (!t) return;
@@ -372,7 +370,7 @@
         h('li', {}, h('b', {}, 'Результат — ветка, а не изменённая директория. '), 'Агент получает текущий код без истории, его работа возвращается веткой smolvm/… в вашем репозитории. Ваша рабочая директория не меняется, пока вы не нажмёте «Влить».'),
         h('li', {}, h('b', {}, 'Проверка перед слиянием. '), 'Во вкладке «Изменения» — коммиты и diff; изменения CI, хуков, зависимостей и подозрительные строки отмечены. «Что делал» — куда агент ходил в сети и что делал.'),
         h('li', {}, h('b', {}, 'Разовая или постоянная. '), 'Разовая: агент делает и отдаёт результат, машина закрывается по сроку. Постоянная: работаете вместе сколько нужно; «Сбросить» даёт чистую машину, работа продолжается с той же ветки.')),
-      h('p', { class: 'muted small' }, 'Слева: «Ждут вас» — нужен ваш ответ или проверка, «Работают», «История». Повторяющуюся работу над одним репозиторием удобнее вести через «Проекты».'));
+      h('p', { class: 'muted small' }, 'Слева: «Ждут вас» — нужен ваш ответ или проверка, «Работают», «История».'));
   }
 
   // ---------- the list on the left ----------
@@ -383,7 +381,7 @@
       ['История', tasks.filter((t) => ['done', 'lost'].includes(t.status))],
     ];
     const item = (t) => {
-      const sub = [projects.find((p) => p.id === t.project)?.name || AGENTS[t.agent] || t.agent, t.persistent ? 'постоянная' : null, t.result.commits ? plural(t.result.commits, 'коммит', 'коммита', 'коммитов') : null,
+      const sub = [AGENTS[t.agent] || t.agent, t.persistent ? 'постоянная' : null, t.result.commits ? plural(t.result.commits, 'коммит', 'коммита', 'коммитов') : null,
         ago(t.closedAt || t.createdAt)].filter(Boolean).join(' · ');
       return h('a', { class: `machine ag-item sb-item${t0?.id === t.id ? ' active' : ''}${t.status === 'working' ? ' running' : ''}`, href: `#/tasks?id=${enc(t.id)}` },
         mark(MARKS[t.agent] || 'vm', true), h('div', { class: 'name', title: t.text || '' }, t.title), pill(t.status), h('div', { class: 'meta' }, sub));
@@ -436,11 +434,11 @@
   }
 
   // ---------- «Новая задача» ----------
-  // from: a task to repeat (its agent, folders, text, policy, mode), or { project }.
+  // from: a task to repeat (its agent, folders, text, policy, mode).
   async function newTask(from = null) {
-    let d; let prs; let pls;
+    let d; let pls;
     try {
-      [d, prs, pls] = await Promise.all([sbx || api('GET', '/ui/sandbox'), api('GET', '/ui/projects').then((r) => r.projects).catch(() => []),
+      [d, pls] = await Promise.all([sbx || api('GET', '/ui/sandbox'),
         api('GET', '/ui/policies').catch(() => ({ policies: [], summaries: {} }))]);
     } catch (e) { toast(e.message, 'err'); return; }
     if (!d.profiles.length) {
@@ -450,11 +448,9 @@
     }
     let profile = from?.profile && d.profiles.some((p) => p.id === from.profile) ? from.profile : d.profiles[0].id;
     const prof = () => d.profiles.find((p) => p.id === profile);
-    let project = from?.project && prs.some((p) => p.id === from.project) ? from.project : '';
-    const projOf = () => prs.find((p) => p.id === project) || null;
-    // The policy of the task: the one repeated, else the project's, else the agent's (or its former trust level).
+    // The policy of the task: the one repeated, else the agent's (or its former trust level).
     const known = (id) => (pls.policies.some((x) => x.id === id) ? id : null);
-    const defaultPolicy = () => known(projOf()?.policy) || known(prof()?.policy) || known(projOf()?.trust) || known(prof()?.trust) || 'normal';
+    const defaultPolicy = () => known(prof()?.policy) || known(prof()?.trust) || 'normal';
     let policy = known(from?.policy?.id) || defaultPolicy();
     const polSel = h('select', { class: 'input', id: 'tk-policy' });
     const polInfo = h('div', { class: 'small muted' });
@@ -481,28 +477,9 @@
         h('button', { type: 'button', class: 'btn ghost small-btn', onclick: () => { folders.push({ hostPath: '', mode: 'review' }); drawDirs(); dirsBox.querySelector('.tk-dir:last-of-type input')?.focus(); } }, ic('plus'), 'Директория'));
     };
     drawDirs();
-    // A project brings its agent, repository and template: those fields give way to a summary.
-    const projSel = h('select', { class: 'input', id: 'tk-project' }, h('option', { value: '' }, 'Без проекта — выбрать агента и директории'),
-      prs.map((p) => h('option', { value: p.id }, p.name === base(p.hostPath) ? p.name : `${p.name} — ${base(p.hostPath)}`)));
-    projSel.value = project;
-    const projInfo = h('div', { class: 'small muted' });
     const whoField = h('label', { class: 'ws-field', for: 'tk-who' }, 'Агент', who);
-    const dirsField = h('div', { class: 'ws-field' }, h('div', { class: 'label-like' }, 'Проект'), dirsBox,
+    const dirsField = h('div', { class: 'ws-field' }, h('div', { class: 'label-like' }, 'Директории'), dirsBox,
       h('div', { class: 'muted small' }, 'Git-репозиторий: агент получает текущий код без истории, результат возвращается веткой — ваша директория не меняется. Директория без git — рабочая копия с проверкой по файлам.'));
-    const drawProject = () => {
-      const p = projOf();
-      whoField.hidden = !!p; dirsField.hidden = !!p;
-      if (!p) { projInfo.replaceChildren(); return; }
-      const ag = d.profiles.find((x) => x.id === p.profile);
-      const tpl = p.build?.status === 'running' ? `шаблон собирается (${p.build.step}) — задача откроется из образа агента, без подготовки`
-        : p.templateReady ? 'из шаблона проекта: зависимости уже установлены' : p.setup ? 'шаблона нет — из образа агента, без подготовки' : 'из образа агента';
-      projInfo.replaceChildren(`Агент «${ag?.name || '—'}», репозиторий `, h('span', { class: 'mono' }, p.hostPath), `; откроется ${tpl}. Результат — ветка в репозитории.`);
-    };
-    projSel.addEventListener('change', () => {
-      project = projSel.value;
-      policy = defaultPolicy(); drawPolicy();
-      drawProject();
-    });
     who.addEventListener('change', () => { profile = who.value; if (!from) { folders = startFolders(prof()); drawDirs(); } policy = defaultPolicy(); drawPolicy(); });
     const mode = h('div', { class: 'tk-mode', role: 'radiogroup' });
     const pol = window.auth?.policy || {};
@@ -520,7 +497,6 @@
       h('header', {}, h('h3', {}, from?.id ? 'Повторить задачу' : 'Новая задача'), h('button', { type: 'button', class: 'btn ghost icon', title: 'Закрыть', 'aria-label': 'Закрыть', onclick: () => dlg.close() }, ic('x'))),
       h('div', { class: 'dialog-body' },
         h('label', { class: 'ws-field', for: 'tk-text' }, 'Что сделать', text),
-        prs.length ? h('label', { class: 'ws-field', for: 'tk-project' }, 'Проект', projSel, projInfo) : null,
         whoField,
         dirsField,
         h('div', { class: 'ws-field' }, h('div', { class: 'label-like' }, 'Как работаем'), mode),
@@ -531,12 +507,11 @@
     dlg.addEventListener('close', () => dlg.remove());
     document.body.append(dlg);
     dlg.showModal();
-    drawProject();
     setTimeout(() => text.focus(), 0);
 
     go.addEventListener('click', async () => {
       const list = folders.filter((f) => f.hostPath.trim()).map((f) => ({ hostPath: f.hostPath.trim(), mode: f.mode }));
-      const p = projOf() ? d.profiles.find((x) => x.id === projOf().profile) : prof();
+      const p = prof();
       const wantTab = tabBox.checked && !!p?.agent;
       const w = wantTab ? agentTab() : null;
       if (polTrust() === 'trusted') {
@@ -546,8 +521,7 @@
       try { localStorage.setItem('smolvm.agentTab', tabBox.checked ? '1' : '0'); } catch {}
       go.disabled = true; go.replaceChildren(h('i', { class: 'spin' }), 'Открываю машину…');
       try {
-        const r = await api('POST', '/ui/tasks', projOf() ? { project, policy, task: text.value.trim() || null, persistent }
-          : { profile, agent: p?.agent || null, policy, task: text.value.trim() || null, folders: list, persistent });
+        const r = await api('POST', '/ui/tasks', { profile, agent: p?.agent || null, policy, task: text.value.trim() || null, folders: list, persistent });
         dlg.close();
         if (wantTab && r.url) { agentInTab(r.name, true); goAgent(w, r.url); } else if (w) w.close();
         refreshMachines();
@@ -599,18 +573,6 @@
   }
 
   window.newTask = (from) => newTask(from);
-
-  // The former session screen: its address leads to the task of that machine.
-  pages.session = {
-    render(el, p) {
-      const name = p.get('name');
-      api('GET', '/ui/tasks').then((r) => {
-        const t = (r.tasks || []).find((x) => x.machine === name || (x.machines || []).includes(name));
-        location.replace(t ? `#/tasks?id=${enc(t.id)}` : '#/tasks');
-      }).catch(() => location.replace('#/tasks'));
-      return null;
-    },
-  };
 
   pages.tasks = {
     render(el, p) {

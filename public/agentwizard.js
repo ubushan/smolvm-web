@@ -257,7 +257,7 @@
         h('button', { type: 'button', class: 'btn ghost icon danger', title: 'Убрать', 'aria-label': `Убрать ${base(f.hostPath)}`, onclick: () => { st.dirs = st.dirs.filter((x) => x !== f); draw(); } }, ic('x'))));
       return {
         body: [
-          h('p', { class: 'muted' }, 'Какие директории компьютера агент получает в каждой задаче. Директорию можно дать и в самой задаче, а для репозитория удобнее «Проекты».'),
+          h('p', { class: 'muted' }, 'Какие директории компьютера агент получает в каждой задаче. Директорию можно дать и в самой задаче.'),
           card('Директории агента', h('button', { type: 'button', class: 'btn small-btn', onclick: add }, ic('plus'), 'Дать доступ к директории'),
             rows.length ? h('div', { class: 'aw-rows' }, ...rows) : h('p', { class: 'muted small' }, 'Пока ни одной: агент получит только чистую машину.')),
           card('Как агент получает директорию', null,

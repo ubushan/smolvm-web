@@ -121,10 +121,10 @@
   }
 
   function usersCard(p) {
-    const u = p.users || { agents: [], projects: [] };
-    const chips = [...u.agents.map((a) => h('a', { class: 'lst-host', href: `#/agents?id=${enc(a.id)}` }, `агент «${a.name}»`)), ...u.projects.map((x) => h('a', { class: 'lst-host', href: `#/projects?id=${enc(x.id)}` }, `проект «${x.name}»`))];
+    const u = p.users || { agents: [] };
+    const chips = [...u.agents.map((a) => h('a', { class: 'lst-host', href: `#/agents?id=${enc(a.id)}` }, `агент «${a.name}»`))];
     return h('section', { class: 'pol-card pl-sec' }, h('div', { class: 'pl-sec-head' }, h('b', {}, 'Кто использует')),
-      h('div', { class: 'pol-row' }, chips.length ? h('div', { class: 'chips' }, ...chips) : h('span', { class: 'muted small' }, 'Ни один агент и проект. В задаче политику можно выбрать и вручную.')));
+      h('div', { class: 'pol-row' }, chips.length ? h('div', { class: 'chips' }, ...chips) : h('span', { class: 'muted small' }, 'Ни один агент. В задаче политику можно выбрать и вручную.')));
   }
 
   let headIcon = null; // the head's icon: its colour follows the form
@@ -157,7 +157,7 @@
         helpButton('Что такое политика',
           h('p', {}, 'Политика — набор ограничений, с которыми агент работает в задаче: куда ходить в сети, какие директории компьютера получать, какие права у его учётной записи в машине, какие программы запускать, сколько живёт задача.'),
           h('ul', {},
-            h('li', {}, 'Агент и проект указывают свою политику; в «Новой задаче» её можно выбрать другую.'),
+            h('li', {}, 'Агент указывает свою политику; в «Новой задаче» её можно выбрать другую.'),
             h('li', {}, 'Задача запоминает политику, с которой открылась: изменения действуют только на новые задачи.'),
             h('li', {}, '«Осторожно», «Обычно», «Доверяю» — встроенные; сделайте копию, чтобы поправить.'),
             h('li', {}, 'Политика администратора (⚙ → «Настройки…» → «Доступ») — потолок над всеми: мягче её задача не откроется.')))),

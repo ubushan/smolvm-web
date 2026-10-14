@@ -427,7 +427,7 @@
     const p = data.profiles.find((x) => x.id === selected);
     if (!p) {
       return h('section', { class: 'panel detail-panel' }, h('div', { class: 'empty-state' }, h('div', { class: 'big' }, ic('bot')),
-        h('p', {}, data.profiles.length ? 'Выберите агента слева.' : 'Создайте первого агента: программа, политика, директории и секреты — в одном окне.'),
+        h('p', {}, data.profiles.length ? 'Выберите агента в списке.' : 'Создайте первого агента: программа, политика, директории и секреты — в одном окне.'),
         h('button', { class: 'btn primary', onclick: () => create() }, ic('plus'), 'Создать агента')));
     }
     const [tone, text] = agentState(p);
@@ -496,7 +496,7 @@
       const tone = running ? ['busy', 'готовится'] : t.missing || t.job?.status === 'error' ? ['bad', 'ошибка'] : t.updates?.length ? ['warn', 'есть обновление'] : ['neutral', 'готов'];
       return item({ on: active.kind === 'template' && active.id === t.id, href: `#/sandbox?id=${enc(t.id)}`,
         icon: h('span', { class: 'mark m-icon m-list' }, ic('box')), name: t.title,
-        sub: t.auto?.project ? 'шаблон проекта' : t.auto ? 'образ программы' : `из машины ${t.source}`, pill: pillOf(...tone) });
+        sub: t.auto ? 'образ программы' : `из машины ${t.source}`, pill: pillOf(...tone) });
     });
     return h('section', { class: 'panel list-panel' },
       h('div', { class: 'panel-head' }, h('h2', { class: 'h-ic' }, ic('box'), 'Шаблоны')),
@@ -520,10 +520,6 @@
       h('p', {}, 'Что агент просит (подключиться к незнакомому адресу, вызвать опасный API) — во вкладке «Журнал соединений» и во «Входящих».'),
       h('p', { class: 'muted small' }, 'Долгие шаги — подготовка образа, обновление — идут на сервере: окно можно закрыть, они продолжатся.'));
   }
-
-
-  // «Рабочие места» became «Агенты»: the old address leads here.
-  pages.work = { render() { location.replace('#/agents'); return null; } };
 
   window.agentUi = { TRUST, trustPicker };
   // «Запустить» from elsewhere (the agent's memory page): its programs.

@@ -11,7 +11,6 @@
   const logFilter = { machine: '', decision: '', q: '' };
 
   const machineNames = () => [...new Set([...state.machines.map((m) => m.name), ...Object.keys(data?.machines || {})])].sort();
-  const stateOf = (name) => state.machines.find((m) => m.name === name)?.state;
 
   // The page: the connection log and the white lists on the left, the chosen one on the right.
   // A machine's own network is its tab «Сеть» on «Машины» (window.machineNetTab).
